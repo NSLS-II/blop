@@ -1,1 +1,8 @@
 # List required packages in this file, one per line.
+numpy
+matplotlib
+sirepo_bluesky
+ophyd
+bluesky
+databroker
+ipython
