@@ -119,10 +119,13 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
             return ret_vels
 
 
-def run_hardware_fly(motors, detector, population, max_velocity, min_velocity):
+def run_hardware_fly(motors, detector, population, max_velocity, min_velocity,
+                     start_det, read_det, stop_det, watch_func):
     uid_list = []
     flyers = generate_hardware_flyers(motors=motors, detector=detector, population=population,
-                                      max_velocity=max_velocity, min_velocity=min_velocity)
+                                      max_velocity=max_velocity, min_velocity=min_velocity,
+                                      start_det=start_det, read_det=read_det, stop_det=stop_det,
+                                      watch_func=watch_func)
     for flyer in flyers:
         yield from bp.fly([flyer])
     for i in range(-len(flyers), 0):
@@ -133,7 +136,8 @@ def run_hardware_fly(motors, detector, population, max_velocity, min_velocity):
     return uid_list
 
 
-def generate_hardware_flyers(motors, detector, population, max_velocity, min_velocity):
+def generate_hardware_flyers(motors, detector, population, max_velocity, min_velocity,
+                             start_det, read_det, stop_det, watch_func):
     hf_flyers = []
     velocities_list = []
     distances_list = []
@@ -183,7 +187,12 @@ def generate_hardware_flyers(motors, detector, population, max_velocity, min_vel
                            velocities=vel,
                            time_to_travel=time_,
                            detector=detector,
-                           motors=motors)
+                           motors=motors,
+                           start_det=start_det,
+                           read_det=read_det,
+                           stop_det=stop_det,
+                           watch_func=watch_func
+                           )
         hf_flyers.append(hf)
     return hf_flyers
 
