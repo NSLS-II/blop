@@ -3,13 +3,13 @@ import random
 
 import matplotlib.pyplot as plt
 
-import databroker as db
+import bluesky.plan_stubs as bps
 
 from .DE_opt_utils import check_opt_bounds, move_to_optimized_positions
 
 
 def omea_evaluation(motors, bounds, popsize, num_interm_vals, num_scans_at_once,
-                    uids, flyer_name, intensity_name):
+                    uids, flyer_name, intensity_name, db):
     if motors is not None:
         # hardware
         # get the data from databroker
@@ -139,7 +139,7 @@ def rand_1(pop, popsize, target_indx, mut, bounds):
     for elem, param in x_1.items():
         v_donor[elem] = {}
         for param_name in param.keys():
-            v_donor[elem][param_name] = x_1[elem][param_name] + mut *\
+            v_donor[elem][param_name] = x_1[elem][param_name] + mut * \
                                         (x_2[elem][param_name] - x_3[elem][param_name])
     v_donor = ensure_bounds(vec=v_donor, bounds=bounds)
     return v_donor
@@ -205,10 +205,10 @@ def create_selection_params(motors, population, cross_indv):
         # hardware
         positions = [elm for elm in cross_indv]
         indv = {}
-        for elem, field in motors.items():
+        for elem, param in motors.items():
             indv[elem] = {}
-            for field_name, elem_obj in field.items():
-                indv[elem][field_name] = elem_obj.user_readback.get()
+            for param_name, elem_obj in param.items():
+                indv[elem][param_name] = (yield from bps.read(elem_obj))[elem]['value']
         positions.insert(0, indv)
         return positions
     if motors is None and population is not None:
@@ -227,7 +227,7 @@ def create_rand_selection_params(motors, population, intensities, bounds):
         for elem, param in motors.items():
             indv[elem] = {}
             for param_name, elem_obj in param.items():
-                indv[elem][param_name] = elem_obj.user_readback.get()
+                indv[elem][param_name] = (yield from bps.read(elem_obj))[elem]['value']
         positions.append(indv)
         indv = {}
         for elem, param in bounds.items():
@@ -251,19 +251,19 @@ def create_rand_selection_params(motors, population, intensities, bounds):
 
 
 def select(population, intensities, motors, bounds, num_interm_vals,
-           num_scans_at_once, uids, flyer_name, intensity_name):
+           num_scans_at_once, uids, flyer_name, intensity_name, db):
     if motors is not None:
         # hardware
         new_population, new_intensities = omea_evaluation(motors=motors, bounds=bounds, popsize=None,
                                                           num_interm_vals=None, num_scans_at_once=None,
                                                           uids=uids, flyer_name=flyer_name,
-                                                          intensity_name=intensity_name)
+                                                          intensity_name=intensity_name, db=db)
     else:
         new_population, new_intensities = omea_evaluation(motors=None, bounds=bounds, popsize=len(population) + 1,
                                                           num_interm_vals=num_interm_vals,
                                                           num_scans_at_once=num_scans_at_once,
                                                           uids=uids, flyer_name=flyer_name,
-                                                          intensity_name=intensity_name)
+                                                          intensity_name=intensity_name, db=db)
     del new_population[0]
     del new_intensities[0]
     assert len(new_population) == len(population)
@@ -279,11 +279,12 @@ def select(population, intensities, motors, bounds, num_interm_vals,
 
 # TODO: rename to optimization_plan - all 3 profiles
 # expect yield from inside
-def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min_velocity=0,
-             run_parallel=None, num_interm_vals=None, num_scans_at_once=None, sim_id=None,
-             server_name=None, root_dir=None, watch_name=None, popsize=5, crosspb=.8, mut=.1,
-             mut_type='rand/1', threshold=0, max_iter=100, flyer_name='tes_hardware_flyer',
-             intensity_name='intensity', opt_type='hardware'):
+def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velocity=0.2, min_velocity=0,
+                      start_det=None, read_det=None, stop_det=None, watch_func=None,
+                      run_parallel=None, num_interm_vals=None, num_scans_at_once=None, sim_id=None,
+                      server_name=None, root_dir=None, watch_name=None, popsize=5, crosspb=.8, mut=.1,
+                      mut_type='rand/1', threshold=0, max_iter=100, flyer_name='hardware_flyer',
+                      intensity_name='intensity', opt_type='hardware'):
     """
     Optimize beamline using hardware flyers and differential evolution
 
@@ -294,18 +295,42 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
     fly_plan : callable
                Fly scan plan for current type of flyer.
                Currently the only option is `run_hardware_fly`, but another will be added for sirepo simulations
+    bounds : dict of dicts
+             Keys are motor names and values are dicts of low and high bounds. See format below.
+             {'motor_name': {'low': lower_bound, 'high': upper_bound}}
+    db : Broker
     motors : dict
              Keys are motor names and values are motor objects
     detector : detector object or None
                Detector to use, or None if no detector will be used
-    bounds : dict of dicts
-             Keys are motor names and values are dicts of low and high bounds. See format below.
-             {'motor_name': {'low': lower_bound, 'high': upper_bound}}
     max_velocity : float, optional
                    Absolute maximum velocity for all motors
                    Default is 0.2
     min_velocity : float, optional
-                   Absolute minumum velocity for all motors
+                   Absolute minimum velocity for all motors
+    start_det : callable
+                Function to start detector
+    read_det : callable
+               Function to read detector
+    stop_det : callable
+               Function to stop detector
+    watch_func : callable
+                 Function to 'watch' positions/intensities/time as hardware
+                 moves or is read
+    run_parallel : bool
+                   Run simulations in parallel
+    num_interm_vals : int
+                      Number of positions to check in between individuals
+    num_scans_at_once : int
+                        Number of scans to run at one time
+    sim_id : str
+             Simulation id
+             Last 8 symbols of simulation URL
+    server_name : str
+                  Name of server Sirepo runs on
+    root_dir :
+    watch_name : str
+                 Name of watch point to use as detector
     popsize : int, optional
               Size of population
     crosspb : float, optional
@@ -322,20 +347,26 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
                Maximum iterations to allow
     flyer_name : str, optional
                  Name of flyer. DataBroker stream name
-                 Default is 'tes_hardware_flyer'
+                 Default is 'hardware_flyer'
     intensity_name : {'intensity', 'mean'}, optional
-                     Hardware optimization would use 'intensity'. Sirepo optimization would use 'mean'
+                     Use 'intensity' for hardware optimization or 'mean' for Sirepo optimization
                      Default is 'intensity'
+    opt_type : {'hardware', 'sirepo'}
+               Type of optimization to perform
+               Default is 'hardware'
     """
     global optimized_positions
+    needed_param_names = {'hardware': ['motors', 'start_det', 'read_det', 'stop_det', 'watch_func'],
+                          'sirepo': ['run_parallel', 'num_interm_vals', 'num_scans_at_once', 'sim_id',
+                                     'server_name', 'root_dir', 'watch_name']}
     if opt_type == 'hardware':
-        # make sure all parameters needed for hardware optimization aren't None
-        needed_params = [motors]
+        # make sure all required parameters needed for hardware optimization aren't None
+        needed_params = [motors, start_det, read_det, stop_det, watch_func]
         if any(p is None for p in needed_params):
             invalid_params = []
             for p in range(len(needed_params)):
                 if needed_params[p] is None:
-                    invalid_params.append(needed_params[p])
+                    invalid_params.append(needed_param_names['hardware'][p])
             raise ValueError(f'The following parameters are set to None, but '
                              f'need to be set: {invalid_params}')
         # check if bounds passed in are within the actual bounds of the motors
@@ -348,9 +379,7 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
                 for elem, param in motors.items():
                     indv[elem] = {}
                     for param_name, elem_obj in param.items():
-                        # TODO: try to rework to use bps.read not .get()
-                        # yield from bps.read
-                        indv[elem][param_name] = elem_obj.user_readback.get()
+                        indv[elem][param_name] = (yield from bps.read(elem_obj))[elem]['value']
             else:
                 for elem, param in bounds.items():
                     indv[elem] = {}
@@ -358,18 +387,20 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
                         indv[elem][param_name] = random.uniform(bound[0], bound[1])
             initial_population.append(indv)
         uid_list = (yield from fly_plan(motors=motors, detector=detector, population=initial_population,
-                                        max_velocity=max_velocity, min_velocity=min_velocity))
+                                        max_velocity=max_velocity, min_velocity=min_velocity,
+                                        start_det=start_det, read_det=read_det, stop_det=stop_det,
+                                        watch_func=watch_func))
         pop_positions, pop_intensity = omea_evaluation(motors=motors, bounds=None, popsize=None, num_interm_vals=None,
                                                        num_scans_at_once=None, uids=uid_list, flyer_name=flyer_name,
-                                                       intensity_name=intensity_name)
+                                                       intensity_name=intensity_name, db=db)
     elif opt_type == 'sirepo':
-        # make sure all parameters needed for sirepo optimization aren't None
+        # make sure all required parameters needed for sirepo optimization aren't None
         needed_params = [run_parallel, num_interm_vals, num_scans_at_once, sim_id, server_name, root_dir, watch_name]
         if any(p is None for p in needed_params):
             invalid_params = []
             for p in range(len(needed_params)):
                 if needed_params[p] is None:
-                    invalid_params.append(needed_params[p])
+                    invalid_params.append(needed_param_names['sirepo'][p])
             raise ValueError(f'The following parameters are set to None, but '
                              f'need to be set: {invalid_params}')
         # Initial population
@@ -390,7 +421,7 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
         pop_positions, pop_intensity = omea_evaluation(motors=None, bounds=bounds, popsize=len(initial_population),
                                                        num_interm_vals=num_interm_vals,
                                                        num_scans_at_once=num_scans_at_once, uids=uid_list,
-                                                       flyer_name=flyer_name, intensity_name=intensity_name)
+                                                       flyer_name=flyer_name, intensity_name=intensity_name, db=db)
         pop_positions.reverse()
         pop_intensity.reverse()
     else:
@@ -411,18 +442,20 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
                                     crosspb=crosspb)
         # select
         if opt_type == 'hardware':
-            select_positions = create_selection_params(motors=motors, population=None,
-                                                       cross_indv=cross_trial_pop)
+            select_positions = yield from create_selection_params(motors=motors, population=None,
+                                                                  cross_indv=cross_trial_pop)
             uid_list = (yield from fly_plan(motors=motors, detector=detector, population=select_positions,
-                                            max_velocity=max_velocity, min_velocity=min_velocity))
+                                            max_velocity=max_velocity, min_velocity=min_velocity,
+                                            start_det=start_det, read_det=read_det, stop_det=stop_det,
+                                            watch_func=watch_func))
 
             pop_positions, pop_intensity = select(population=pop_positions, intensities=pop_intensity,
                                                   motors=motors, bounds=None, num_interm_vals=None,
                                                   num_scans_at_once=None, uids=uid_list,
-                                                  flyer_name=flyer_name, intensity_name=intensity_name)
+                                                  flyer_name=flyer_name, intensity_name=intensity_name, db=db)
         else:
-            select_positions = create_selection_params(motors=None, population=pop_positions,
-                                                       cross_indv=cross_trial_pop)
+            select_positions = yield from create_selection_params(motors=None, population=pop_positions,
+                                                                  cross_indv=cross_trial_pop)
             uid_list = (yield from fly_plan(population=select_positions, num_interm_vals=num_interm_vals,
                                             num_scans_at_once=num_scans_at_once, sim_id=sim_id,
                                             server_name=server_name, root_dir=root_dir,
@@ -430,7 +463,7 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
             pop_positions, pop_intensity = select(population=pop_positions, intensities=pop_intensity,
                                                   motors=None, bounds=bounds, num_interm_vals=num_interm_vals,
                                                   num_scans_at_once=num_scans_at_once, uids=uid_list,
-                                                  flyer_name=flyer_name, intensity_name=intensity_name)
+                                                  flyer_name=flyer_name, intensity_name=intensity_name, db=db)
         # get best solution
         gen_best = np.max(pop_intensity)
         best_indv = pop_positions[pop_intensity.index(gen_best)]
@@ -453,17 +486,21 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
             break
         else:
             if opt_type == 'hardware':
-                positions, change_indx = create_rand_selection_params(motors=motors, population=None,
-                                                                      intensities=pop_intensity, bounds=bounds)
+                positions, change_indx = yield from create_rand_selection_params(motors=motors, population=None,
+                                                                                 intensities=pop_intensity,
+                                                                                 bounds=bounds)
                 uid_list = (yield from fly_plan(motors=motors, detector=detector, population=positions,
-                                                max_velocity=max_velocity, min_velocity=min_velocity))
+                                                max_velocity=max_velocity, min_velocity=min_velocity,
+                                                start_det=start_det, read_det=read_det, stop_det=stop_det,
+                                                watch_func=watch_func))
                 rand_pop, rand_int = select(population=[pop_positions[change_indx]],
                                             intensities=[pop_intensity[change_indx]],
                                             motors=motors, bounds=bounds, num_interm_vals=None, num_scans_at_once=None,
-                                            uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name)
+                                            uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name, db=db)
             else:
-                positions, change_indx = create_rand_selection_params(motors=None, population=pop_positions,
-                                                                      intensities=pop_intensity, bounds=bounds)
+                positions, change_indx = yield from create_rand_selection_params(motors=None, population=pop_positions,
+                                                                                 intensities=pop_intensity,
+                                                                                 bounds=bounds)
                 uid_list = (yield from fly_plan(population=positions, num_interm_vals=num_interm_vals,
                                                 num_scans_at_once=num_scans_at_once, sim_id=sim_id,
                                                 server_name=server_name, root_dir=root_dir, watch_name=watch_name,
@@ -471,7 +508,7 @@ def optimize(fly_plan, bounds, motors=None, detector=None, max_velocity=0.2, min
                 rand_pop, rand_int = select(population=[pop_positions[change_indx]],
                                             intensities=[pop_intensity[change_indx]], motors=None, bounds=bounds,
                                             num_interm_vals=num_interm_vals, num_scans_at_once=num_scans_at_once,
-                                            uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name)
+                                            uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name, db=db)
             assert len(rand_pop) == 1 and len(rand_int) == 1
             pop_positions[change_indx] = rand_pop[0]
             pop_intensity[change_indx] = rand_int[0]
