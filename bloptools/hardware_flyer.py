@@ -41,7 +41,8 @@ class BlueskyFlyer:
 
 class HardwareFlyer(BlueskyFlyer):
     def __init__(self, params_to_change, velocities, time_to_travel,
-                 detector, motors):
+                 detector, motors, start_det, read_det, stop_det,
+                 watch_func):
         super().__init__()
         self.name = 'hardware_flyer'
         # TODO: These 3 lists to be merged later
@@ -54,12 +55,16 @@ class HardwareFlyer(BlueskyFlyer):
         self.watch_intensities = []
         self.watch_timestamps = []
         self.motor_move_status = None
+        self.start_det = start_det
+        self.read_det = read_det
+        self.stop_det = stop_det
+        self.watch_func = watch_func
 
     def kickoff(self):
         slowest_motor = sorted(self.time_to_travel,
                                key=lambda x: self.time_to_travel[x],
                                reverse=True)[0]
-        start_detector(self.detector)
+        self.start_det(self.detector)
 
         # Call this function once before we start moving all motors to collect the first points.
         self._watch_function()
@@ -96,7 +101,7 @@ class HardwareFlyer(BlueskyFlyer):
         return return_dict
 
     def collect(self):
-        stop_detector(self.detector)
+        self.stop_det(self.detector)
         for ind in range(len(self.watch_intensities)):
             motor_dict = {}
             for motor_name, field in self.motors.items():
@@ -129,7 +134,7 @@ class HardwareFlyer(BlueskyFlyer):
         #        'filled': {key: False for key in data}}
 
     def _watch_function(self, *args, **kwargs):
-        watch_pos, watch_int, watch_time = watch_function(self.motors, self.detector)
+        watch_pos, watch_int, watch_time = self.watch_func(self.motors, self.detector)
         for motor_name, field in self.motors.items():
             for field_name, val in field.items():
                 self.watch_positions[motor_name][field_name].extend(watch_pos[motor_name][field_name])
