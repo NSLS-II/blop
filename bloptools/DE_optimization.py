@@ -98,12 +98,18 @@ def omea_evaluation(motors, bounds, popsize, num_interm_vals, num_scans_at_once,
         # picking best positions
         interm_max_idx = []
         for i in range(len(interm_int)):
-            curr_max_int = np.max(interm_int[i])
-            interm_max_idx.append(interm_int[i].index(curr_max_int))
+            if len(interm_int[i]) == 0:
+                interm_max_idx.append(None)
+            else:
+                curr_max_int = np.max(interm_int[i])
+                interm_max_idx.append(interm_int[i].index(curr_max_int))
         for i in range(len(interm_max_idx)):
-            if interm_int[i][interm_max_idx[i]] > pop_intensities[i + 1]:
-                pop_intensities[i + 1] = interm_int[i][interm_max_idx[i]]
-                pop_positions[i + 1] = interm_pos[i][interm_max_idx[i]]
+            if interm_max_idx[i] is None:
+                pass
+            else:
+                if interm_int[i][interm_max_idx[i]] > pop_intensities[i + 1]:
+                    pop_intensities[i + 1] = interm_int[i][interm_max_idx[i]]
+                    pop_positions[i + 1] = interm_pos[i][interm_max_idx[i]]
         return pop_positions, pop_intensities
 
 
