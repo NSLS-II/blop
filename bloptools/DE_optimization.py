@@ -283,8 +283,6 @@ def select(population, intensities, motors, bounds, num_interm_vals,
     return population, intensities
 
 
-# TODO: rename to optimization_plan - all 3 profiles
-# expect yield from inside
 def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velocity=0.2, min_velocity=0,
                       start_det=None, read_det=None, stop_det=None, watch_func=None,
                       run_parallel=None, num_interm_vals=None, num_scans_at_once=None, sim_id=None,
@@ -334,7 +332,8 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
              Last 8 symbols of simulation URL
     server_name : str
                   Name of server Sirepo runs on
-    root_dir :
+    root_dir : str
+               Path to store databroker documents
     watch_name : str
                  Name of watch point to use as detector
     popsize : int, optional
