@@ -65,9 +65,7 @@ class HardwareFlyer(BlueskyFlyer):
                                key=lambda x: self.time_to_travel[x],
                                reverse=True)[0]
         self.start_det(self.detector)
-
-        # Call this function once before we start moving all motors to collect the first points.
-        self._watch_function()
+        ttime.sleep(1.0)
         for motor_name, field in self.motors.items():
             for field_name, motor_obj in field.items():
                 motor_obj.velocity.put(self.velocities[motor_name])
@@ -77,6 +75,8 @@ class HardwareFlyer(BlueskyFlyer):
                     self.motor_move_status = motor_obj.set(self.params_to_change[motor_name][field_name])
                 else:
                     motor_obj.set(self.params_to_change[motor_name][field_name])
+        # Call this function once before we start moving all motors to collect the first points.
+        self._watch_function()
         self.motor_move_status.watch(self._watch_function)
         return NullStatus()
 
