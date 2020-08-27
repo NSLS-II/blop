@@ -297,68 +297,69 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
     Parameters
     ----------
     fly_plan : callable
-               Fly scan plan for current type of flyer.
-               Currently the only option is `run_hardware_fly`, but another will be added for sirepo simulations
+        Fly scan plan for current type of flyer.
+        Currently the only option is `run_hardware_fly`, but another will be added for sirepo simulations
     bounds : dict of dicts
-             Keys are motor names and values are dicts of low and high bounds. See format below.
-             {'motor_name': {'low': lower_bound, 'high': upper_bound}}
-    db : Broker
+        Keys are motor names and values are dicts of low and high bounds. See format below.
+        {'motor_name': {'low': lower_bound, 'high': upper_bound}}
+    db : databroker.Broker
+        databroker V1 instance
     motors : dict
-             Keys are motor names and values are motor objects
+        Keys are motor names and values are motor objects
     detector : detector object or None
-               Detector to use, or None if no detector will be used
+        Detector to use, or None if no detector will be used
     max_velocity : float, optional
-                   Absolute maximum velocity for all motors
-                   Default is 0.2
+        Absolute maximum velocity for all motors
+        Default is 0.2
     min_velocity : float, optional
-                   Absolute minimum velocity for all motors
+        Absolute minimum velocity for all motors
     start_det : callable
-                Function to start detector
+        Function to start detector
     read_det : callable
-               Function to read detector
+        Function to read detector
     stop_det : callable
-               Function to stop detector
+        Function to stop detector
     watch_func : callable
-                 Function to 'watch' positions/intensities/time as hardware
-                 moves or is read
+        Function to 'watch' positions/intensities/time as hardware
+        moves or is read
     run_parallel : bool
-                   Run simulations in parallel
+        Run simulations in parallel
     num_interm_vals : int
-                      Number of positions to check in between individuals
+        Number of positions to check in between individuals
     num_scans_at_once : int
-                        Number of scans to run at one time
+        Number of scans to run at one time
     sim_id : str
-             Simulation id
-             Last 8 symbols of simulation URL
+        Simulation id
+        Last 8 symbols of simulation URL
     server_name : str
-                  Name of server Sirepo runs on
+        Name of server Sirepo runs on
     root_dir : str
-               Path to store databroker documents
+        Path to store databroker documents
     watch_name : str
-                 Name of watch point to use as detector
+        Name of watch point to use as detector
     popsize : int, optional
-              Size of population
+        Size of population
     crosspb : float, optional
-              Probability of crossover. Must be in range [0, 1]
+        Probability of crossover. Must be in range [0, 1]
     mut : float, optional
-          Mutation factor. Must be in range [0, 1]
+        Mutation factor. Must be in range [0, 1]
     mut_type : {'rand/1', 'best/1'}, optional
-               Mutation strategy to use. 'rand/1' chooses random individuals to compare to.
-               'best/1' uses the best individual to compare to.
-               Default is 'rand/1'
+        Mutation strategy to use. 'rand/1' chooses random individuals to compare to.
+        'best/1' uses the best individual to compare to.
+        Default is 'rand/1'
     threshold : float, optional
-                Threshold that intensity must be greater than or equal to to stop execution
+        Threshold that intensity must be greater than or equal to to stop execution
     max_iter : int, optional
-               Maximum iterations to allow
+        Maximum iterations to allow
     flyer_name : str, optional
-                 Name of flyer. DataBroker stream name
-                 Default is 'hardware_flyer'
+        Name of flyer. DataBroker stream name
+        Default is 'hardware_flyer'
     intensity_name : {'intensity', 'mean'}, optional
-                     Use 'intensity' for hardware optimization or 'mean' for Sirepo optimization
-                     Default is 'intensity'
+        Use 'intensity' for hardware optimization or 'mean' for Sirepo optimization
+        Default is 'intensity'
     opt_type : {'hardware', 'sirepo'}
-               Type of optimization to perform
-               Default is 'hardware'
+        Type of optimization to perform
+        Default is 'hardware'
     """
     global optimized_positions
     needed_param_names = {'hardware': ['motors', 'start_det', 'read_det', 'stop_det', 'watch_func'],
