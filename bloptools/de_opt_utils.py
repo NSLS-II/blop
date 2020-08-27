@@ -141,8 +141,8 @@ def run_hardware_fly(motors, detector, population, max_velocity, min_velocity,
 def run_fly_sim(population, num_interm_vals, num_scans_at_once,
                 sim_id, server_name, root_dir, watch_name, run_parallel):
     flyers = generate_sim_flyers(population=population, num_between_vals=num_interm_vals,
-                             sim_id=sim_id, server_name=server_name, root_dir=root_dir,
-                             watch_name=watch_name, run_parallel=run_parallel)
+                                 sim_id=sim_id, server_name=server_name, root_dir=root_dir,
+                                 watch_name=watch_name, run_parallel=run_parallel)
     # make list of flyers into list of list of flyers
     # pass 1 sublist of flyers at a time
     flyers = [flyers[i:i+num_scans_at_once] for i in range(0, len(flyers), num_scans_at_once)]
