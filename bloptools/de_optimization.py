@@ -537,5 +537,5 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
         print('Done')
 
     plot_index = np.arange(len(best_fitness))
-    plt.figure()
+    # plt.figure()
     plt.plot(plot_index, best_fitness)
