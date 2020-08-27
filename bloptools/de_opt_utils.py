@@ -17,22 +17,22 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
     Parameters
     ----------
     motors : dict
-             In the format {motor_name: motor_object}
-             E.g., {sample_stage.x.name: sample_stage.x}
+        In the format {motor_name: motor_object}
+        E.g., {sample_stage.x.name: sample_stage.x}
     dists : list
-            List of distances each motor has to move
+        List of distances each motor has to move
     velocity_limits : list of dicts
-                      list of dicts for each motor. Dictionary has keys of motor, low, high;
-                      values are motor_name, velocity low limit, velocity high limit
+        list of dicts for each motor. Dictionary has keys of motor, low, high;
+        values are motor_name, velocity low limit, velocity high limit
     max_velocity : float
-                   Set this to limit the absolute highest velocity of any motor
+        Set this to limit the absolute highest velocity of any motor
     min_velocity : float
-                   Set this to limit the absolute lowest velocity of any motor
+        Set this to limit the absolute lowest velocity of any motor
 
     Returns
     -------
     ret_vels : list
-               List of velocities for each motor
+        List of velocities for each motor
     """
     ret_vels = []
     # check that max_velocity is not None if at least 1 motor doesn't have upper velocity limit
@@ -121,39 +121,32 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
             return ret_vels
 
 
+def _run_flyers(flyers):
+    uid_list = []
+    for flyer in flyers:
+        uid = (yield from bp.fly([flyer]))
+        uid_list.append(uid)
+    return uid_list
+
+
 def run_hardware_fly(motors, detector, population, max_velocity, min_velocity,
                      start_det, read_det, stop_det, watch_func):
-    uid_list = []
     flyers = generate_hardware_flyers(motors=motors, detector=detector, population=population,
                                       max_velocity=max_velocity, min_velocity=min_velocity,
                                       start_det=start_det, read_det=read_det, stop_det=stop_det,
                                       watch_func=watch_func)
-    for flyer in flyers:
-        yield from bp.fly([flyer])
-    for i in range(-len(flyers), 0):
-        uid_list.append(i)
-    # TODO: update later for use with newer bluesky
-    # uid = (yield from bp.fly([hf]))
-    # uid_list.append(uid)
-    return uid_list
+    return _run_flyers(flyers)
 
 
 def run_fly_sim(population, num_interm_vals, num_scans_at_once,
                 sim_id, server_name, root_dir, watch_name, run_parallel):
-    uid_list = []
     flyers = generate_sim_flyers(population=population, num_between_vals=num_interm_vals,
                              sim_id=sim_id, server_name=server_name, root_dir=root_dir,
                              watch_name=watch_name, run_parallel=run_parallel)
     # make list of flyers into list of list of flyers
     # pass 1 sublist of flyers at a time
     flyers = [flyers[i:i+num_scans_at_once] for i in range(0, len(flyers), num_scans_at_once)]
-    for i in range(len(flyers)):
-        # uids = (yield from bp.fly(flyers[i]))
-        yield from bp.fly(flyers[i])
-        # uid_list.append(uids)
-    for i in range(-len(flyers), 0):
-        uid_list.append(i)
-    return uid_list
+    return _run_flyers(flyers)
 
 
 def generate_hardware_flyers(motors, detector, population, max_velocity, min_velocity,
