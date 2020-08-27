@@ -1,8 +1,6 @@
-# List required packages in this file, one per line.
-numpy
-matplotlib
-sirepo_bluesky
-ophyd
-bluesky
+bluesky>=1.6.1
 databroker
-ipython
+matplotlib
+numpy
+ophyd
+sirepo_bluesky
