@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 import bluesky.plan_stubs as bps
 
-from .DE_opt_utils import check_opt_bounds, move_to_optimized_positions
+from .de_opt_utils import check_opt_bounds, move_to_optimized_positions
 
 
 def omea_evaluation(motors, bounds, popsize, num_interm_vals, num_scans_at_once,
@@ -396,12 +396,14 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
                                         max_velocity=max_velocity, min_velocity=min_velocity,
                                         start_det=start_det, read_det=read_det, stop_det=stop_det,
                                         watch_func=watch_func))
-        pop_positions, pop_intensity = omea_evaluation(motors=motors, bounds=None, popsize=None, num_interm_vals=None,
-                                                       num_scans_at_once=None, uids=uid_list, flyer_name=flyer_name,
+        pop_positions, pop_intensity = omea_evaluation(motors=motors, bounds=None, popsize=None,
+                                                       num_interm_vals=None, num_scans_at_once=None,
+                                                       uids=uid_list, flyer_name=flyer_name,
                                                        intensity_name=intensity_name, db=db)
     elif opt_type == 'sirepo':
         # make sure all required parameters needed for sirepo optimization aren't None
-        needed_params = [run_parallel, num_interm_vals, num_scans_at_once, sim_id, server_name, root_dir, watch_name]
+        needed_params = [run_parallel, num_interm_vals, num_scans_at_once, sim_id, server_name,
+                         root_dir, watch_name]
         if any(p is None for p in needed_params):
             invalid_params = []
             for p in range(len(needed_params)):
@@ -422,8 +424,9 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
         first_param_name = list(bounds[first_optic].keys())[0]
         initial_population = sorted(initial_population, key=lambda kv: kv[first_optic][first_param_name])
         uid_list = (yield from fly_plan(population=initial_population, num_interm_vals=num_interm_vals,
-                                        num_scans_at_once=num_scans_at_once, sim_id=sim_id, server_name=server_name,
-                                        root_dir=root_dir, watch_name=watch_name, run_parallel=run_parallel))
+                                        num_scans_at_once=num_scans_at_once, sim_id=sim_id,
+                                        server_name=server_name, root_dir=root_dir, watch_name=watch_name,
+                                        run_parallel=run_parallel))
         pop_positions, pop_intensity = omea_evaluation(motors=None, bounds=bounds, popsize=len(initial_population),
                                                        num_interm_vals=num_interm_vals,
                                                        num_scans_at_once=num_scans_at_once, uids=uid_list,
@@ -501,10 +504,12 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
                                                 watch_func=watch_func))
                 rand_pop, rand_int = select(population=[pop_positions[change_indx]],
                                             intensities=[pop_intensity[change_indx]],
-                                            motors=motors, bounds=bounds, num_interm_vals=None, num_scans_at_once=None,
-                                            uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name, db=db)
+                                            motors=motors, bounds=bounds, num_interm_vals=None,
+                                            num_scans_at_once=None, uids=uid_list, flyer_name=flyer_name,
+                                            intensity_name=intensity_name, db=db)
             else:
-                positions, change_indx = yield from create_rand_selection_params(motors=None, population=pop_positions,
+                positions, change_indx = yield from create_rand_selection_params(motors=None,
+                                                                                 population=pop_positions,
                                                                                  intensities=pop_intensity,
                                                                                  bounds=bounds)
                 uid_list = (yield from fly_plan(population=positions, num_interm_vals=num_interm_vals,
@@ -514,7 +519,8 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
                 rand_pop, rand_int = select(population=[pop_positions[change_indx]],
                                             intensities=[pop_intensity[change_indx]], motors=None, bounds=bounds,
                                             num_interm_vals=num_interm_vals, num_scans_at_once=num_scans_at_once,
-                                            uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name, db=db)
+                                            uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name,
+                                            db=db)
             assert len(rand_pop) == 1 and len(rand_int) == 1
             pop_positions[change_indx] = rand_pop[0]
             pop_intensity[change_indx] = rand_int[0]
