@@ -4,6 +4,7 @@ import random
 import matplotlib.pyplot as plt
 
 import bluesky.plan_stubs as bps
+import bluesky.plans as bp
 
 from .de_opt_utils import check_opt_bounds, move_to_optimized_positions
 
@@ -362,8 +363,6 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
         Type of optimization to perform
         Default is 'hardware'
     """
-    global optimized_positions
-    global best_fitness  # convergence list
     needed_param_names = {'hardware': ['motors', 'start_det', 'read_det', 'stop_det', 'watch_func'],
                           'sirepo': ['run_parallel', 'num_interm_vals', 'num_scans_at_once', 'sim_id',
                                      'server_name', 'root_dir', 'watch_name']}
@@ -442,6 +441,7 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
     consec_best_ctr = 0  # counting successive generations with no change to best value
     old_best_fit_val = 0
     best_fitness = [0]
+    all_uids = {}
     while not ((v > max_iter) or (consec_best_ctr >= 5 and old_best_fit_val >= threshold)):
         print(f'GENERATION {v + 1}')
         best_gen_sol = []
@@ -459,7 +459,6 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
                                             max_velocity=max_velocity, min_velocity=min_velocity,
                                             start_det=start_det, read_det=read_det, stop_det=stop_det,
                                             watch_func=watch_func))
-
             pop_positions, pop_intensity = select(population=pop_positions, intensities=pop_intensity,
                                                   motors=motors, bounds=None, num_interm_vals=None,
                                                   num_scans_at_once=None, uids=uid_list,
@@ -475,6 +474,8 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
                                                   motors=None, bounds=bounds, num_interm_vals=num_interm_vals,
                                                   num_scans_at_once=num_scans_at_once, uids=uid_list,
                                                   flyer_name=flyer_name, intensity_name=intensity_name, db=db)
+        all_uids[f'gen-{v + 1}'] = uid_list
+
         # get best solution
         gen_best = np.max(pop_intensity)
         best_indv = pop_positions[pop_intensity.index(gen_best)]
@@ -523,6 +524,8 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
                                             num_interm_vals=num_interm_vals, num_scans_at_once=num_scans_at_once,
                                             uids=uid_list, flyer_name=flyer_name, intensity_name=intensity_name,
                                             db=db)
+            all_uids[f'gen-{v}'] += uid_list
+
             assert len(rand_pop) == 1 and len(rand_int) == 1
             pop_positions[change_indx] = rand_pop[0]
             pop_intensity[change_indx] = rand_int[0]
@@ -538,3 +541,5 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
         print('Done')
     
     print(f"Convergence list: {best_fitness}")
+
+    yield from bp.count([], md={'best_fitness': best_fitness, 'optimized_positions': optimized_positions, 'uids': all_uids})
