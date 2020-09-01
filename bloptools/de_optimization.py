@@ -8,6 +8,7 @@ import bluesky.plan_stubs as bps
 from .de_opt_utils import check_opt_bounds, move_to_optimized_positions
 
 
+
 def omea_evaluation(motors, bounds, popsize, num_interm_vals, num_scans_at_once,
                     uids, flyer_name, intensity_name, db):
     if motors is not None:
@@ -362,6 +363,7 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
         Default is 'hardware'
     """
     global optimized_positions
+    global best_fitness  # convergence list
     needed_param_names = {'hardware': ['motors', 'start_det', 'read_det', 'stop_det', 'watch_func'],
                           'sirepo': ['run_parallel', 'num_interm_vals', 'num_scans_at_once', 'sim_id',
                                      'server_name', 'root_dir', 'watch_name']}
@@ -526,16 +528,13 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
             pop_intensity[change_indx] = rand_int[0]
 
     # best solution overall should be last one
-    x_best = best_gen_sol[-1]
-    optimized_positions = x_best
-    print('\nThe best individual is', x_best, 'with a fitness of', gen_best)
+    optimized_positions = best_gen_sol[-1]
+    print('\nThe best individual is', optimized_positions, 'with a fitness of', gen_best)
     print('It took', v, 'generations')
 
     if opt_type == 'hardware':
         print('Moving to optimal positions')
         yield from move_to_optimized_positions(motors, optimized_positions)
         print('Done')
-
-    plot_index = np.arange(len(best_fitness))
-    # plt.figure()
-    plt.plot(plot_index, best_fitness)
+    
+    print(f"Convergence list: {best_fitness}")
