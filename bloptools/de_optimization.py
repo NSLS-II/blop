@@ -1,13 +1,10 @@
 import numpy as np
 import random
 
-import matplotlib.pyplot as plt
-
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 
 from .de_opt_utils import check_opt_bounds, move_to_optimized_positions
-
 
 
 def omea_evaluation(motors, bounds, popsize, num_interm_vals, num_scans_at_once,
@@ -539,7 +536,8 @@ def optimization_plan(fly_plan, bounds, db, motors=None, detector=None, max_velo
         print('Moving to optimal positions')
         yield from move_to_optimized_positions(motors, optimized_positions)
         print('Done')
-    
+
     print(f"Convergence list: {best_fitness}")
 
-    yield from bp.count([], md={'best_fitness': best_fitness, 'optimized_positions': optimized_positions, 'uids': all_uids})
+    yield from bp.count([], md={'best_fitness': best_fitness, 'optimized_positions':
+                                optimized_positions, 'uids': all_uids})
