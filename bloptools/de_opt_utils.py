@@ -124,7 +124,7 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
 def _run_flyers(flyers):
     uid_list = []
     for flyer in flyers:
-        uid = (yield from bp.fly([flyer]))
+        uid = (yield from bp.fly(flyer))
         uid_list.append(uid)
     return uid_list
 
@@ -206,7 +206,7 @@ def generate_hardware_flyers(motors, detector, population, max_velocity, min_vel
                            stop_det=stop_det,
                            watch_func=watch_func
                            )
-        hf_flyers.append(hf)
+        hf_flyers.append([hf])
     return hf_flyers
 
 
