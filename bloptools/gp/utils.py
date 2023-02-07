@@ -1,52 +1,67 @@
 import numpy as np
 import scipy as sp
+import pandas as pd
 
-def get_density(image, extent=None):
+def parse_images(images, index_to_parse, n_max_median=1024, verbose=False):
+    '''
+    Parse a stack of images of shape (n_f, n_y, n_x)
+    '''
     
-    if not image.sum() > 0: return np.nan 
+    # sample at most n_max_median points in estimating the background
+    background = np.median(images[np.unique(np.linspace(0,len(images)-1,n_max_median).astype(int))], axis=0)
+    
+    beam_stats = pd.DataFrame(columns=['x_min', 'x_max', 'y_min', 'y_max', 'flux', 'separability'])
+
+    for i, image in enumerate(images):
         
-    (xmin, xmax), (ymin, ymax) = extent if extent is not None else ((0, 1), (0, 1))
-    
-    # print((xmin, xmax), (ymin, ymax))
-    
-    x_peak, y_peak, x_width, y_width, x_bounds, y_bounds, flux = get_beam_stats(image, ((xmin, xmax), (ymin, ymax)))
-    
-    return flux / (x_width * y_width)
+        if not i in index_to_parse:
+            continue
+        
+        beam_stats.loc[i] = _get_beam_stats(image)# - background)
+        if verbose: print(i); ip.display.clear_output(wait=True)
+        
+    return beam_stats
 
-def get_beam_stats(image, extents, q_beam=0.8):
+def _get_beam_stats(image, beam_prop=0.8):
+    '''
+    Parse the beam from an image. Returns the bounding box, along with a flux 
+    estimate and a goodness of fit parameter. This should go off without a hitch
+    as long as beam_prop is less than 1. 
+    '''
     
-    _image = image + 1e-6 * image.std() * np.random.standard_normal(image.shape)
-    _imsum = _image.sum()
+    n_y, n_x = image.shape
+    u, s, v = np.linalg.svd(image - image.mean())
+    
+    separability = np.square(s[0])/np.square(s).sum()
+    
+    # q refers to "quantile"
+    q_min, q_max = 0.5 * (1 - beam_prop), 0.5 * (1 + beam_prop)
+    
+    # these represent the cumulative proportion of the beam, as captured by the SVD.
+    cs_beam_x = np.cumsum(v[0]) / np.sum(v[0])
+    cs_beam_y = np.cumsum(u[:,0]) / np.sum(u[:,0])
 
-    q  = np.linspace(0,1,1024)
-    dq = np.gradient(q).mean()
-    nq = int(q_beam / dq)
+    # the first coordinate where the cumulative beam is greater than the minimum
+    i_q_min_x = np.where((cs_beam_x[1:] > q_min) & (cs_beam_x[:-1] < q_min))[0][0]
+    i_q_min_y = np.where((cs_beam_y[1:] > q_min) & (cs_beam_y[:-1] < q_min))[0][0]
+    
+    # the last coordinate where the cumulative beam is less than the maximum
+    i_q_max_x = np.where((cs_beam_x[1:] > q_max) & (cs_beam_x[:-1] < q_max))[0][-1]
+    i_q_max_y = np.where((cs_beam_y[1:] > q_max) & (cs_beam_y[:-1] < q_max))[0][-1]
 
-    nx, ny = _image.shape
-    xe, ye = extents 
+    # interpolate, so that we can go finer than one pixel. this quartet is the "bounding box"
+    x_min = np.interp(q_min, cs_beam_x[[i_q_min_x,i_q_min_x+1]], [i_q_min_x,i_q_min_x+1])
+    x_max = np.interp(q_max, cs_beam_x[[i_q_max_x,i_q_max_x+1]], [i_q_max_x,i_q_max_x+1])
+    y_min = np.interp(q_min, cs_beam_y[[i_q_min_y,i_q_min_y+1]], [i_q_min_y,i_q_min_y+1])
+    y_max = np.interp(q_max, cs_beam_y[[i_q_max_y,i_q_max_y+1]], [i_q_max_y,i_q_max_y+1])
     
-    us_x, us_y = np.linspace(*xe, 1024), np.linspace(*ye, 1024)
+    # the center and width of the bounding box
+    c_x, w_x = 0.5 * (x_min + x_max), x_max - x_min
+    c_y, w_y = 0.5 * (y_min + y_max), y_max - y_min
     
-    # find the smallest bounds such that they have at least q_beam times the total flux between them
-
-    # normalized cumulative sum
-    ncs0 = sp.interpolate.interp1d(np.cumsum(_image.sum(axis=0))/_imsum, np.arange(nx), kind='linear', fill_value='extrapolate')(q)
-    ncs1 = sp.interpolate.interp1d(np.cumsum(_image.sum(axis=1))/_imsum, np.arange(ny), kind='linear', fill_value='extrapolate')(q)
+    flux = image[int(np.max([0,c_y-w_y])):int(np.min([c_y+w_y,n_y-1]))][:,int(np.max([0,c_x-w_x])):int(np.min([c_x+w_x,n_x-1]))].sum()
     
-    is0 = (ncs0[nq:] - ncs0[:-nq]).argmin()
-    is1 = (ncs1[nq:] - ncs1[:-nq]).argmin()
-    
-    x_bounds = np.interp([ncs0[is0], ncs0[is0+nq]], np.arange(nx), np.linspace(*xe, nx))
-    y_bounds = np.interp([ncs1[is1], ncs1[is1+nq]], np.arange(ny), np.linspace(*ye, ny))
-    
-    # find the coordinates of the maximum with interpolation
-    x_peak = us_x[sp.interpolate.interp1d(np.linspace(*xe, nx), _image.sum(axis=0), kind='quadratic')(us_x).argmax()]
-    y_peak = us_y[sp.interpolate.interp1d(np.linspace(*ye, ny), _image.sum(axis=1), kind='quadratic')(us_y).argmax()]
-    
-    x_width  = np.diff(x_bounds)[0]
-    y_width  = np.diff(y_bounds)[0]
-
-    return x_peak, y_peak, x_width, y_width, x_bounds, y_bounds, _imsum
+    return x_min, x_max, y_min, y_max, flux, separability
 
 def process_beam(image, separable_threshold=0.1):
     
