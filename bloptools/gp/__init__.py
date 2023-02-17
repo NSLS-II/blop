@@ -278,11 +278,9 @@ class Optimizer():
             self.background = 0
 
         # for actual prediction and optimization
-        self.evaluator = GPR(length_scale_bounds=(1e-2, 1e0), max_noise_fraction=1e-2) # at most 1% of the RMS is due to noise
+        self.evaluator = GPR(length_scale_bounds=(5e-2, 1e0), max_noise_fraction=1e-2) # at most 1% of the RMS is due to noise
         self.timer     = GPR(length_scale_bounds=(5e-1, 2e0), max_noise_fraction=1e0) # can be noisy, why not
-        self.validator = GPC(length_scale_bounds=(1e-2, 1e0))
-
-
+        self.validator = GPC(length_scale_bounds=(5e-2, 1e0))
 
         self.params = np.zeros((0, self.n_dof))
         self.data   = pd.DataFrame()
