@@ -14,7 +14,7 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         off_diag=True,
         **kwargs,
     ):
-        super(LatentMaternKernel, self).__init__(**kwargs)
+        super(LatentMaternKernel, self).__init__()
         
         self.n_dof      = n_dof
         self.n_off_diag = int(n_dof * (n_dof - 1) / 2)

@@ -465,6 +465,80 @@ class Optimizer():
                 #self.plot_readback()
                 print(f'# {i+1:>03} : {params_to_sample.round(4)} -> {self.fitness[-1]:.04e}')
 
+    
+    def plot_state(self):
+
+        import matplotlib as mpl
+        from matplotlib.patches import Patch
+
+        cm = mpl.cm.get_cmap('coolwarm')
+
+        fig, axes = mpl.pyplot.subplots(2, 4, figsize=(12,8), dpi=128, sharex=True, sharey=True)
+
+        max_improvement_params = self.recommend(strategy='exploit', n=1)
+        max_information_params = self.recommend(strategy='explore', n=1)
+
+        # evaluated over test_params
+        current_info = -self._posterior_entropy(params=None)
+        potential_info = -self._posterior_entropy(params=self.test_params[:,None,:])
+
+        p_valid = self.validate(self.test_params)
+
+        norm = mpl.colors.LogNorm(*np.nanpercentile(self.fitness, q=[1,99]))
+
+        s = 32
+
+        # plot values of data points
+        ax = axes[0,0]
+        ax.set_title('fitness')
+        ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=norm)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        #axes[0,0].scatter(*max_prior_entropy_params[:2], marker='o', color='k', s=s, label='max_prior_entropy')
+        axes[0,0].scatter(*max_information_params.T[:2], marker='s', color='k', s=s, label='max_information')
+        axes[0,0].scatter(*max_improvement_params.T[:2], marker='*', color='k', s=s, label='max_improvement')
+        axes[0,0].legend(fontsize=6)
+
+
+        # plot the estimate of test points
+        ax = axes[0,1]
+        ax.set_title('fitness estimate')
+        ref = ax.scatter(*self.test_params.T[:2], s=s, c=self.fitness_estimate(self.test_params), norm=norm)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+
+        # plot the entropy rate of test points
+        ax = axes[0,2]
+        ax.set_title('fitness entropy')
+        ref = ax.scatter(*self.test_params.T[:2], s=s, c=self.fitness_entropy(self.test_params), norm=mpl.colors.LogNorm())
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+
+        # plot the estimate of test points
+        ax = axes[0,3]
+        ax.set_title('delay estimate')
+        ref = ax.scatter(*self.test_params.T[:2], s=s, c=self.delay_estimate(self.test_params))
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+
+
+        # plot classification of data points
+        ax = axes[1,0]
+        ax.set_title('validity')
+        ref = ax.scatter(*self.params.T[:2], s=s, c=self.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+
+        ax = axes[1,1]
+        ax.set_title('validity estimate')
+        ref = ax.scatter(*self.test_params.T[:2], s=s, c=p_valid, vmin=0, vmax=1)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+
+        ax = axes[1,2]
+        ax.set_title('greedy improvement')
+        ref = ax.scatter(*self.test_params.T[:2], s=s, c=-self._negative_expected_improvement(self.test_params)/self.delay_estimate(self.test_params))
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+
+        ax = axes[1,3]
+        ax.set_title('greedy information')
+        ref = ax.scatter(*self.test_params.T[:2], s=s, c=-self._negative_expected_information_gain(self.test_params[:,None,:])/self.delay_estimate(self.test_params))
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+
     def plot_readback(self):
 
         import matplotlib as mpl
