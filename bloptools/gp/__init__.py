@@ -17,6 +17,10 @@ from scipy.stats import qmc
 
 import matplotlib as mpl
 
+from matplotlib import pyplot as plt
+
+import h5py
+
 
 from . import kernels, utils, plans
 
@@ -137,7 +141,7 @@ class GPC():
     '''
 
     def __init__(self, length_scale_bounds=(1e-3, 1e0), **kwargs):
-        
+
         self.state_dict = None
         self.length_scale_bounds = length_scale_bounds
 
@@ -219,8 +223,11 @@ class GPC():
 
         return res
 
-
-
+def load(filepath, **kwargs):
+    with h5py.File(filepath, 'r') as f:
+        params = f['params'][:]
+    data = pd.read_hdf(filepath, key='data')
+    return Optimizer(init_params=params, init_data=data, **kwargs)
 
 class Optimizer():
 
@@ -237,7 +244,7 @@ class Optimizer():
                  init_data=None,
                  init_scheme=None,
                  n_init=None,
-                 training_iter=1000,
+                 training_iter=256,
                  verbose=True,
                  artificial_noise_level=1e-3,
                  **kwargs):
@@ -251,9 +258,12 @@ class Optimizer():
 
         self.run_engine = run_engine
         self.detector = detector
-        
+
         self.db = db
         self.training_iter = training_iter
+
+        self.gp_lp_fig = None
+        self.fit_lp_fig = None
 
         # convert params to x
         self.params_trans_fun = lambda params : 2 * (params - self.dof_bounds.min(axis=1)) / self.dof_bounds.ptp(axis=1) - 1
@@ -278,9 +288,9 @@ class Optimizer():
             self.background = 0
 
         # for actual prediction and optimization
-        self.evaluator = GPR(length_scale_bounds=(5e-2, 1e0), max_noise_fraction=1e-2) # at most 1% of the RMS is due to noise
+        self.evaluator = GPR(length_scale_bounds=(1e-1, 1e0), max_noise_fraction=1e-2) # at most 1% of the RMS is due to noise
         self.timer     = GPR(length_scale_bounds=(5e-1, 2e0), max_noise_fraction=1e0) # can be noisy, why not
-        self.validator = GPC(length_scale_bounds=(5e-2, 1e0))
+        self.validator = GPC(length_scale_bounds=(1e-1, 1e0))
 
         self.params = np.zeros((0, self.n_dof))
         self.data   = pd.DataFrame()
@@ -292,23 +302,46 @@ class Optimizer():
             n_init = n_init if n_init is not None else 3 ** self.n_dof
             init_params, init_data = self.autoinitialize(n=n_init, scheme='quasi-random', verbose=verbose)
 
-        else: 
+        else:
             raise Exception("Could not initialize model! Either pass initial params and data, or specify one of ['quasi-random'].")
 
         self.append(new_params=init_params, new_data=init_data)
         self.update(reuse_hypers=True, verbose=verbose) # update our model
 
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-        self.test_params = sampler.random(n=1024) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
+        self.test_params = sampler.random(n=2048) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
         self.test_params = self.test_params[self.test_params[:,0].argsort()]
 
     @property
     def current_params(self):
-        return np.array([dof.get() for dof in self.dofs])
+        return np.array([dof.user_readback.get() for dof in self.dofs])
 
     @property
     def optimum(self):
         return self.inv_params_trans_fun(self.evaluator.x[np.nanargmax(self.evaluator.y)])
+
+
+    def go_to_optimum(self):
+        self.run_engine(bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items]))
+
+    def inspect_beam(self, index, masked=True):
+
+        im = self.masked_images[index] if masked else self.images[index]
+        plt.figure()
+        plt.imshow(im)
+
+        bbx = self.parsed_image_data.loc[index, ['x_min', 'x_max']].values[[0,0,1,1,0]]
+        bby = self.parsed_image_data.loc[index, ['y_min', 'y_max']].values[[0,1,1,0,0]]
+
+        plt.plot(bbx, bby, lw=1e0, c='r')
+
+
+    def save(self, filepath='./model.gpo'):
+
+        with h5py.File(filepath, 'w') as f:
+            f.create_dataset('params', data=self.params)
+        self.data.to_hdf(filepath, key='data')
+
 
     def compute_fitness(self):
 
@@ -323,7 +356,12 @@ class Optimizer():
                 extents = None
 
             self.images = np.r_[[image for image in self.data[f'{self.detector.name}_image'].values]] - self.background
-            self.parsed_image_data = utils.parse_images(self.images, extents, remove_background=False)
+
+            mask = (self.images > 0.05 * self.images.max(axis=(-1,-2))[:,None,None]).astype(int)
+
+            self.masked_images = mask * self.images
+
+            self.parsed_image_data = utils.parse_images(self.masked_images, extents, remove_background=False)
 
             self.fitness = self.parsed_image_data.fitness.values
 
@@ -336,7 +374,80 @@ class Optimizer():
 
         #if self.detector_type == 'scalar':
 
-        #    self.fitness = 
+        #    self.fitness =
+
+    def draw_fitness_liveplot(self):
+
+        if self.fit_lp_fig is None:
+            self.fit_lp_fig, self.fit_lp_axes = plt.subplots(1,2,figsize=(8,4),dpi=128,sharex=True,sharey=True,constrained_layout=True)
+
+        self.fit_lp_axes[0].clear()
+
+        times = self.data.time.astype(int).values / 1e9
+        times -= times[0]
+
+        cum_max_fitness = [np.nanmax(self.fitness[:i+1]) for i in range(len(self.fitness))]
+
+        self.fit_lp_axes[0].scatter(times, self.fitness, c='k')
+        self.fit_lp_axes[0].plot(times, cum_max_fitness, c='r')
+        self.fit_lp_axes[0].set_yscale('log')
+
+        self.fit_lp_fig.canvas.draw_idle()
+        self.fit_lp_fig.show()
+
+    def draw_gp_liveplot(self):
+
+        if self.gp_lp_fig is None:
+            self.gp_lp_fig, self.gp_lp_axes = plt.subplots(2,3,figsize=(12,8),dpi=128,sharex=True,sharey=True,constrained_layout=True)
+
+
+        size = 64
+        norm = mpl.colors.LogNorm(*np.nanpercentile(self.fitness, q=[1,99]))
+
+        from matplotlib.patches import Patch
+
+        exploit_params = self.recommend(strategy='exploit', n=1)
+        explore_params = self.recommend(strategy='explore', n=1)
+
+        p_valid = self.validate(self.test_params)
+
+        self.gp_lp_axes[0,0].clear()
+        self.gp_lp_axes[0,0].scatter(*self.params.T[:2], s=size, c=self.fitness, norm=norm, cmap='coolwarm')
+        self.gp_lp_axes[0,0].set_title('sampled fitness')
+
+        self.gp_lp_axes[1,0].clear()
+        self.gp_lp_axes[1,0].scatter(*self.params.T[:2], s=size, c=self.c, vmin=0, vmax=1, cmap='viridis')
+        self.gp_lp_axes[1,0].set_title('sampled goodness')
+        handles = [Patch(label='good', color=plt.cm.viridis.colors[-1]), Patch(label='bad', color=plt.cm.viridis.colors[0])]
+        self.gp_lp_axes[1,0].legend(handles=handles)
+
+        self.gp_lp_axes[0,1].clear()
+        self.gp_lp_axes[0,1].scatter(*self.test_params.T[:2], s=size, c=self.fitness_estimate(self.test_params), norm=norm, cmap='coolwarm')
+        self.gp_lp_axes[0,1].scatter(*exploit_params.T[:2], marker='*', facecolor='w', edgecolor='k', s=4*size, label='max_improvement')
+        self.gp_lp_axes[0,1].set_title('fitness estimate')
+
+        self.gp_lp_axes[1,1].clear()
+        self.gp_lp_axes[1,1].scatter(*self.test_params.T[:2], s=size, c=p_valid, vmin=0, vmax=1, cmap='viridis')
+        self.gp_lp_axes[1,1].set_title('goodness estimate')
+
+        self.gp_lp_axes[0,2].clear()
+        self.gp_lp_axes[0,2].scatter(*self.test_params.T[:2], s=size, c=self.fitness_entropy(self.test_params), cmap='coolwarm')
+        self.gp_lp_axes[0,2].scatter(*explore_params.T[:2], marker='s', facecolor='w', edgecolor='k', s=4*size, label='max_information')
+        self.gp_lp_axes[0,2].set_title('fitness entropy')
+
+        self.gp_lp_axes[1,2].clear()
+        self.gp_lp_axes[1,2].scatter(*self.test_params.T[:2], s=size, c=np.log((1-p_valid)*p_valid), cmap='viridis')
+        self.gp_lp_axes[1,2].set_title('goodness entropy')
+
+
+
+        for ax in self.gp_lp_axes.ravel():
+
+            ax.set_xlim(*self.dof_bounds[0])
+            ax.set_ylim(*self.dof_bounds[1])
+
+        self.gp_lp_fig.canvas.draw_idle()
+        self.gp_lp_fig.show()
 
 
     def autoinitialize(self, n, verbose, scheme='quasi-random'):
@@ -349,10 +460,12 @@ class Optimizer():
 
         return sampled_params, res_table
 
+
     def append(self, new_params, new_data):
 
         self.params = np.r_[self.params, new_params]
         self.data   = pd.concat([self.data, new_data])
+
 
     def update(self, reuse_hypers=True, verbose=False):
 
@@ -388,15 +501,15 @@ class Optimizer():
         for _params in ordered_params:
 
             if verbose: print(f'sampling {_params}')
-            
+
             start_params = self.current_params
             rel_d_params = (_params - start_params) / self.dof_bounds.ptp(axis=1)
 
-            acq_delay = utils.get_movement_time(rel_d_params, v_max=0.25, a=0.5).max()
+            #acq_delay = utils.get_movement_time(rel_d_params, v_max=0.25, a=0.5).max()
             #print(f'delay: {acq_delay}')
 
             start_time = ttime.monotonic()
-            ttime.sleep(acq_delay)
+            #ttime.sleep(acq_delay)
 
             try:
                 (uid,) = self.run_engine(bp.list_scan([self.detector], *[_ for items in zip(self.dofs, np.atleast_2d(_params).T) for _ in items]))
@@ -409,10 +522,10 @@ class Optimizer():
             except Exception as err:
                 warnings.warn(err.args[0])
                 columns = ['acq_time', 'acq_duration', 'acq_log', 'uid', f'{self.detector.name}_image']
-                _table = pd.DataFrame([(ttime.monotonic(),ttime.monotonic() - start_time, err.args[0], '', np.zeros(self.detector.shape.get()))], columns=columns)
+                _table = pd.DataFrame([(ttime.monotonic(), ttime.monotonic() - start_time, err.args[0], '', np.zeros(self.detector.shape.get()))], columns=columns)
 
             for start_param, dof in zip(start_params, self.dofs):
-                _table.loc[:, f'delta_{dof.name}'] = dof.get() - start_param
+                _table.loc[:, f'delta_{dof.name}'] = dof.user_readback.get() - start_param
 
             table = pd.concat([table, _table])
 
@@ -428,7 +541,7 @@ class Optimizer():
         # recommend some parameters that we might want to sample, with shape (., n, n_dof)
         TEST_PARAMS = (sampler.random(n=n*n_test) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)).reshape(n_test, n, self.n_dof)
 
-        # how much will we have to change our parameters to sample these guys? 
+        # how much will we have to change our parameters to sample these guys?
         DELTA_TEST_PARAMS = np.diff(np.concatenate([np.repeat(self.current_params[None, None], n_test, axis=0), TEST_PARAMS], axis=1), axis=1)
 
         # how long will that take?
@@ -448,7 +561,7 @@ class Optimizer():
         return TEST_PARAMS[np.argmax(objective)]
 
 
-    def learn(self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, verbose=True, **kwargs):
+    def learn(self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs):
 
         #ip.display.clear_output(wait=True)
         print(f'learning with strategy "{strategy}" ...')
@@ -456,16 +569,26 @@ class Optimizer():
         for i in range(n_iter):
 
             params_to_sample = np.atleast_2d(self.recommend(n=n_per_iter, strategy=strategy, **kwargs)) # get point(s) to sample from the strategizer
-            
-            sampled_params, res_table = self.acquire_with_bluesky(params_to_sample) # sample the point(s)
+
+            n_original = len(params_to_sample)
+            n_upsample = upsample * (n_original - 1) + 1
+
+            upsampled_params_to_sample = sp.interpolate.interp1d(np.arange(n_original), params_to_sample.T)(np.linspace(0,n_original-1,n_upsample)).T
+
+            sampled_params, res_table = self.acquire_with_bluesky(upsampled_params_to_sample) # sample the point(s)
             self.append(new_params=sampled_params, new_data=res_table)
             self.update(reuse_hypers=reuse_hypers) # update our model
+
+            if 'gp' in plots:
+                self.draw_gp_liveplot()
+            if 'fitness' in plots:
+                self.draw_fitness_liveplot()
 
             if verbose:
                 #self.plot_readback()
                 print(f'# {i+1:>03} : {params_to_sample.round(4)} -> {self.fitness[-1]:.04e}')
 
-    
+
     def plot_state(self):
 
         import matplotlib as mpl
@@ -475,8 +598,7 @@ class Optimizer():
 
         fig, axes = mpl.pyplot.subplots(2, 4, figsize=(12,8), dpi=128, sharex=True, sharey=True)
 
-        max_improvement_params = self.recommend(strategy='exploit', n=1)
-        max_information_params = self.recommend(strategy='explore', n=1)
+
 
         # evaluated over test_params
         current_info = -self._posterior_entropy(params=None)
@@ -494,6 +616,8 @@ class Optimizer():
         ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=norm)
         clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
         #axes[0,0].scatter(*max_prior_entropy_params[:2], marker='o', color='k', s=s, label='max_prior_entropy')
+        max_improvement_params = self.recommend(strategy='exploit', n=1)
+        max_information_params = self.recommend(strategy='explore', n=1)
         axes[0,0].scatter(*max_information_params.T[:2], marker='s', color='k', s=s, label='max_information')
         axes[0,0].scatter(*max_improvement_params.T[:2], marker='*', color='k', s=s, label='max_improvement')
         axes[0,0].legend(fontsize=6)
@@ -602,7 +726,7 @@ class Optimizer():
 
 
 
-    
+
 
     # talk to the model
 
@@ -702,9 +826,9 @@ class Optimizer():
         prior_variance = self.evaluator.model.covar_module.output_scale.item() ** 2 + noise ** 2
 
 
-        # normally we would compute A * B" * A', but that would be inefficient as we only care about the diagonal. 
+        # normally we would compute A * B" * A', but that would be inefficient as we only care about the diagonal.
         # instead, compute this as:
-        # 
+        #
         # diag(A * B" * A') = sum(A * B" . A', -1)
         #
         # which is much faster.

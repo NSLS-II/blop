@@ -74,7 +74,7 @@ def parse_images(images, extents=None, index_to_parse=None, n_max_median=1024, r
         if extent is None: 
             extent = np.array([0, n_y, 0, n_x])
 
-        beam_stats.loc[i, ['rel_x_min', 'rel_x_max', 'rel_y_min', 'rel_y_max', 'flux', 'maximum', 'separability']] = _get_beam_stats(image - background, beam_prop=0.8)
+        beam_stats.loc[i, ['rel_x_min', 'rel_x_max', 'rel_y_min', 'rel_y_max', 'flux', 'maximum', 'separability']] = _get_beam_stats(image - background, beam_prop=0.95)
         beam_stats.loc[i, ['x_min', 'x_max']] = np.interp(beam_stats.loc[i, ['rel_x_min', 'rel_x_max']].values, [0, 1], extent[2:])
         beam_stats.loc[i, ['y_min', 'y_max']] = np.interp(beam_stats.loc[i, ['rel_y_min', 'rel_y_max']].values, [0, 1], extent[:-2])
         #if verbose: print(i); ip.display.clear_output(wait=True)
@@ -84,7 +84,7 @@ def parse_images(images, extents=None, index_to_parse=None, n_max_median=1024, r
 
     beam_stats['pixel_area'] = (images > 0.05 * images.max(axis=(1,2))[:,None,None]).sum(axis=(1,2))
 
-    beam_stats['fitness'] = beam_stats.flux * beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2)
+    beam_stats['fitness'] = beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2)
 
     #beam_stats['fitness'] = beam_stats['flux'] / beam_stats['pixel_area']
 
