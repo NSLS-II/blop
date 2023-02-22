@@ -3,8 +3,6 @@ import numpy as np
 import bluesky.plans as bp
 import bluesky.plan_stubs as bps
 
-import sirepo_bluesky.sirepo_flyer as sf
-
 from .hardware_flyer import HardwareFlyer
 
 
@@ -212,6 +210,8 @@ def generate_hardware_flyers(motors, detector, population, max_velocity, min_vel
 
 def generate_sim_flyers(population, num_between_vals, sim_id, server_name,
                         root_dir, watch_name, run_parallel):
+    import sirepo_bluesky.sirepo_flyer as sf
+
     flyers = []
     params_to_change = []
     for i in range(len(population) - 1):
