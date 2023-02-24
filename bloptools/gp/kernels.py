@@ -85,8 +85,11 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         T = torch.matmul(torch.diag(self.trans_diagonal), T)
         return T
     
-    def forward(
-        self, x1, x2, diag=False, last_dim_is_batch=False, **params):
+    def forward(self, x1, x2, diag=False, last_dim_is_batch=False, **params):
+
+        # returns the homoskedastic diagonal
+        if diag: 
+            return torch.square(self.output_scale[0]) * torch.ones((*self.batch_shape, *x1.shape[:-1]))
         
         # x1 and x2 are arrays of shape (..., n_1, n_dof) and (..., n_2, n_dof)
         _x1, _x2 = torch.as_tensor(x1).float(), torch.as_tensor(x2).float()
@@ -98,11 +101,17 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         trans_dx = torch.matmul(self.trans_matrix, dx.unsqueeze(-1))
         
         # total transformed distance. D has shape (..., n_1, n_2)
-        D = torch.sqrt(torch.matmul(trans_dx.transpose(-1,-2), trans_dx).sum((-1,-2)) + 1e-12)
+        d_eff = torch.sqrt(torch.matmul(trans_dx.transpose(-1,-2), trans_dx).sum((-1,-2)) + 1e-12)
 
         # Matern covariance of effective order nu=3/2. 
         # nu=3/2 is a special case and has a concise closed-form expression
         # In general, this is something between an exponential (n=1/2) and a Gaussian (n=infinity) 
         # https://en.wikipedia.org/wiki/Matern_covariance_function
-        return torch.square(self.output_scale[0]) * (1 + D) * torch.exp(-D) 
+        C = torch.square(self.output_scale[0]) * (1 + d_eff) * torch.exp(-d_eff) 
+
+        #print(f'{diag = } {C.shape = }')
+
+        return C
+
+
     

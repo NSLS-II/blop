@@ -396,7 +396,7 @@ class Optimizer():
             #print(f'delay: {acq_delay}')
 
             start_time = ttime.monotonic()
-            ttime.sleep(acq_delay)
+            #ttime.sleep(acq_delay)
 
             try:
                 (uid,) = self.run_engine(bp.list_scan([self.detector], *[_ for items in zip(self.dofs, np.atleast_2d(_params).T) for _ in items]))
