@@ -84,7 +84,7 @@ def parse_images(images, extents=None, index_to_parse=None, n_max_median=1024, r
 
     beam_stats['pixel_area'] = (images > 0.05 * images.max(axis=(1,2))[:,None,None]).sum(axis=(1,2))
 
-    beam_stats['fitness'] = beam_stats.flux * beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2)
+    beam_stats['fitness'] = beam_stats['fitness'] = beam_stats.flux / ((1 - beam_stats.separability) ** 2 * (beam_stats.w_x**2 + beam_stats.w_y**2))
 
     #beam_stats['fitness'] = beam_stats['flux'] / beam_stats['pixel_area']
 
