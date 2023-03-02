@@ -1,0 +1,11 @@
+default_context:
+  full_name: "Brookhaven National Laboratory"
+  email: "mrakitin@bnl.gov"
+  github_username: "NSLS-II"
+  project_name: "bloptools"
+  package_dist_name: "bloptools"
+  package_dir_name: "bloptools"
+  repo_name: "bloptools"
+  project_short_description: "Beamline Optimization Tools"
+  minimum_supported_python_version: "3.8"
+replay_dir: "~/tmp/new-repo"
