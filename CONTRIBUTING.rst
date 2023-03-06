@@ -35,8 +35,8 @@ is open to whoever wants to implement it.
 Write Documentation
 ~~~~~~~~~~~~~~~~~~~
 
-Bloptools could always use more documentation, whether
-as part of the official Bloptools docs, in docstrings,
+bloptools could always use more documentation, whether
+as part of the official bloptools docs, in docstrings,
 or even on the web in blog posts, articles, and such.
 
 Submit Feedback
@@ -101,4 +101,3 @@ Before you submit a pull request, check that it meets these guidelines:
 3. The pull request should work for Python 2.7, 3.3, 3.4, 3.5 and for PyPy. Check
    https://travis-ci.org/NSLS-II/bloptools/pull_requests
    and make sure that the tests pass for all supported Python versions.
-

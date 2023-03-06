@@ -5,7 +5,7 @@ Credits
 Maintainer
 ----------
 
-* Brookhaven National Lab <Dama@bnl.gov>
+* Brookhaven National Laboratory <mrakitin@bnl.gov>
 
 Contributors
 ------------
