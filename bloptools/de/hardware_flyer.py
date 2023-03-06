@@ -1,7 +1,6 @@
 # Bluesky hardware flyer for DE optimization
 
 import time as ttime
-
 from collections import deque
 
 from ophyd.sim import NullStatus
@@ -9,7 +8,7 @@ from ophyd.sim import NullStatus
 
 class BlueskyFlyer:
     def __init__(self):
-        self.name = 'bluesky_flyer'
+        self.name = "bluesky_flyer"
         self._asset_docs_cache = deque()
         self._resource_uids = []
         self._datum_counter = None
@@ -27,10 +26,12 @@ class BlueskyFlyer:
     def collect(self):
         now = ttime.time()
         data = {}
-        yield {'data': data,
-               'timestamps': {key: now for key in data},
-               'time': now,
-               'filled': {key: False for key in data}}
+        yield {
+            "data": data,
+            "timestamps": {key: now for key in data},
+            "time": now,
+            "filled": {key: False for key in data},
+        }
 
     def collect_asset_docs(self):
         items = list(self._asset_docs_cache)
@@ -40,18 +41,27 @@ class BlueskyFlyer:
 
 
 class HardwareFlyer(BlueskyFlyer):
-    def __init__(self, params_to_change, velocities, time_to_travel,
-                 detector, motors, start_det, read_det, stop_det,
-                 watch_func):
+    def __init__(
+        self,
+        params_to_change,
+        velocities,
+        time_to_travel,
+        detector,
+        motors,
+        start_det,
+        read_det,
+        stop_det,
+        watch_func,
+    ):
         super().__init__()
-        self.name = 'hardware_flyer'
+        self.name = "hardware_flyer"
         # TODO: These 3 lists to be merged later
         self.params_to_change = params_to_change  # dict of dicts; {motor_name: {'position':...}}
         self.velocities = velocities  # dictionary with motor names as keys
         self.time_to_travel = time_to_travel  # dictionary with motor names as keys
         self.detector = detector
         self.motors = motors
-        self.watch_positions = {name: {'position': []} for name in self.motors}
+        self.watch_positions = {name: {"position": []} for name in self.motors}
         self.watch_intensities = []
         self.watch_timestamps = []
         self.motor_move_status = None
@@ -61,9 +71,7 @@ class HardwareFlyer(BlueskyFlyer):
         self.watch_func = watch_func
 
     def kickoff(self):
-        slowest_motor = sorted(self.time_to_travel,
-                               key=lambda x: self.time_to_travel[x],
-                               reverse=True)[0]
+        slowest_motor = sorted(self.time_to_travel, key=lambda x: self.time_to_travel[x], reverse=True)[0]
         self.start_det(self.detector)
         ttime.sleep(1.0)
         for motor_name, field in self.motors.items():
@@ -84,19 +92,23 @@ class HardwareFlyer(BlueskyFlyer):
         return self.motor_move_status
 
     def describe_collect(self):
-        return_dict = {self.name:
-                       {f'{self.name}_intensity':
-                        {'source': f'{self.name}_intensity',
-                         'dtype': 'number',
-                         'shape': []},
-                        }
-                       }
+        return_dict = {
+            self.name: {
+                f"{self.name}_intensity": {"source": f"{self.name}_intensity", "dtype": "number", "shape": []},
+            }
+        }
         motor_dict = {}
         for motor_name in self.motors.keys():
-            motor_dict[f'{self.name}_{motor_name}_velocity'] = {'source': f'{self.name}_{motor_name}_velocity',
-                                                                'dtype': 'number', 'shape': []}
-            motor_dict[f'{self.name}_{motor_name}_position'] = {'source': f'{self.name}_{motor_name}_position',
-                                                                'dtype': 'number', 'shape': []}
+            motor_dict[f"{self.name}_{motor_name}_velocity"] = {
+                "source": f"{self.name}_{motor_name}_velocity",
+                "dtype": "number",
+                "shape": [],
+            }
+            motor_dict[f"{self.name}_{motor_name}_position"] = {
+                "source": f"{self.name}_{motor_name}_position",
+                "dtype": "number",
+                "shape": [],
+            }
         return_dict[self.name].update(motor_dict)
         return return_dict
 
@@ -107,15 +119,21 @@ class HardwareFlyer(BlueskyFlyer):
             for motor_name, field in self.motors.items():
                 for field_name, motor_obj in field.items():
                     motor_dict.update(
-                        {f'{self.name}_{motor_name}_velocity': self.velocities[motor_name],
-                         f'{self.name}_{motor_name}_position': self.watch_positions[motor_name][field_name][ind]}
+                        {
+                            f"{self.name}_{motor_name}_velocity": self.velocities[motor_name],
+                            f"{self.name}_{motor_name}_position": self.watch_positions[motor_name][field_name][
+                                ind
+                            ],
+                        }
                     )
-            data = {f'{self.name}_intensity': self.watch_intensities[ind]}
+            data = {f"{self.name}_intensity": self.watch_intensities[ind]}
             data.update(motor_dict)
-            yield {'data': data,
-                   'timestamps': {key: self.watch_timestamps[ind] for key in data},
-                   'time': self.watch_timestamps[ind],
-                   'filled': {key: False for key in data}}
+            yield {
+                "data": data,
+                "timestamps": {key: self.watch_timestamps[ind] for key in data},
+                "time": self.watch_timestamps[ind],
+                "filled": {key: False for key in data},
+            }
 
         # # This will produce one event with dictionaries in the <...>_parameters field.
         # motor_params_dict = {}
