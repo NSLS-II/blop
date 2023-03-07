@@ -55,7 +55,7 @@ def get_movement_time(x, v_max, a):
     """
     return 2 * np.sqrt(np.abs(x) / a) * (np.abs(x) < v_max**2 / a) + (np.abs(x) / v_max + v_max / a) * (
         np.abs(x) > v_max**2 / a
-    ) 
+    )
 
 
 def parse_images(

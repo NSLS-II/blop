@@ -2,6 +2,7 @@ import gpytorch
 import numpy as np
 import torch
 
+
 class LatentMaternKernel(gpytorch.kernels.Kernel):
     def __init__(
         self,

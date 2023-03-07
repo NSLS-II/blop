@@ -624,7 +624,6 @@ class Optimizer:
                 print(f"# {i+1:>03} : {params_to_sample.round(4)} -> {self.fitness[-1]:.04e}")
 
     def plot_state(self):
-
         # cm = mpl.cm.get_cmap("coolwarm")
 
         fig, axes = mpl.pyplot.subplots(2, 4, figsize=(12, 8), dpi=128, sharex=True, sharey=True)
@@ -702,7 +701,6 @@ class Optimizer:
         fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
 
     def plot_readback(self):
-
         # cm = mpl.cm.get_cmap("coolwarm")
 
         p_valid = self.validate(self.test_params)
