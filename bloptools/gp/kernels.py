@@ -2,9 +2,6 @@ import gpytorch
 import numpy as np
 import torch
 
-# gpytorch.linear_operator.operators import LinearOperator, MatmulLinearOperator, RootLinearOperator
-
-
 class LatentMaternKernel(gpytorch.kernels.Kernel):
     def __init__(
         self,
