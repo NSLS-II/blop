@@ -2,7 +2,7 @@
 Usage
 =====
 
-Start by importing Bloptools.
+Start by importing bloptools.
 
 .. code-block:: python
 
