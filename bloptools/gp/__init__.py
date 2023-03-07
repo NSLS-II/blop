@@ -234,7 +234,6 @@ class Optimizer:
         n_init=None,
         training_iter=256,
         verbose=True,
-        artificial_noise_level=1e-3,
         **kwargs,
     ):
         self.dofs, self.dof_bounds = dofs, dof_bounds
@@ -528,7 +527,7 @@ class Optimizer:
                     )
                 )
                 _table = self.db[uid].table(fill=True)
-                _table.insert(0, "acq_time", ttime.monotonic())
+                _table.insert(0, "acq_time", ttime.time())
                 _table.insert(1, "acq_duration", ttime.monotonic() - start_time)
                 _table.insert(2, "acq_log", "ok")
                 _table.insert(3, "uid", uid)
@@ -539,7 +538,7 @@ class Optimizer:
                 _table = pd.DataFrame(
                     [
                         (
-                            ttime.monotonic(),
+                            ttime.time(),
                             ttime.monotonic() - start_time,
                             err.args[0],
                             "",
@@ -625,7 +624,6 @@ class Optimizer:
                 print(f"# {i+1:>03} : {params_to_sample.round(4)} -> {self.fitness[-1]:.04e}")
 
     def plot_state(self):
-        import matplotlib as mpl
 
         # cm = mpl.cm.get_cmap("coolwarm")
 
@@ -704,7 +702,6 @@ class Optimizer:
         fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
 
     def plot_readback(self):
-        import matplotlib as mpl
 
         # cm = mpl.cm.get_cmap("coolwarm")
 
