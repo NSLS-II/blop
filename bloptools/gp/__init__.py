@@ -249,8 +249,27 @@ class Optimizer:
         self.db = db
         self.training_iter = training_iter
 
+
+        self.gridded_plots = True if self.n_dof == 2 else False
+
         self.gp_lp_fig = None
         self.fit_lp_fig = None
+
+        self.dof_names = np.array([dof.name for dof in self.dofs])
+
+
+        MAX_TEST_POINTS = 2 ** 11
+
+        n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
+        self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.dof_bounds]
+        self.dim_mids = [0.5 * (bins[1:] + bins[:-1]) for bins in self.dim_bins]
+        self.test_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing="ij")], 0, -1)
+
+        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
+        self.test_params = sampler.random(n=MAX_TEST_POINTS) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(
+            axis=1
+        )
+
 
         # convert params to x
         self.params_trans_fun = (
@@ -263,7 +282,6 @@ class Optimizer:
         )
 
         self.shutter = shutter
-
         self.fig, self.axes = None, None
 
         if self.shutter is not None:
@@ -287,34 +305,24 @@ class Optimizer:
         self.data = pd.DataFrame()
 
         if (init_params is not None) and (init_data is not None):
-            pass
+
+            self.append(new_params=init_params, new_data=init_data)
+            self.update(reuse_hypers=True, verbose=verbose)  # update our model
+
 
         elif init_scheme == "quasi-random":
-            n_init = n_init if n_init is not None else 3**self.n_dof
-            init_params, init_data = self.autoinitialize(n=n_init, scheme="quasi-random", verbose=verbose)
+
+
+            self.learn(n_iter=1, n_per_iter=n_init, strategy='quasi-random', greedy=True, reuse_hypers=False)
+
+            #n_init = n_init if n_init is not None else 3**self.n_dof
+            #init_params, init_data = self.autoinitialize(n=n_init, scheme="quasi-random", verbose=verbose)
 
         else:
             raise Exception(
                 "Could not initialize model! Either pass initial params and data, or specify one of:"
                 "['quasi-random']."
             )
-
-        self.append(new_params=init_params, new_data=init_data)
-        self.update(reuse_hypers=True, verbose=verbose)  # update our model
-
-
-
-        MAX_TEST_POINTS = 1024
-
-        n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
-        self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.dof_bounds]
-        self.dim_mids = [0.5*(bins[1:]+bins[:-1]) for bins in self.dim_bins]
-        self.test_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing='ij')], 0, -1)
-
-        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-        self.test_params = sampler.random(n=MAX_TEST_POINTS) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
-        self.test_params = self.test_params[self.test_params[:,0].argsort()]
-
 
 
     @property
@@ -387,108 +395,14 @@ class Optimizer:
             # convert y to fitness
             self.inv_fitness_trans_fun = lambda y: np.exp(y)
 
-        # if self.detector_type == 'scalar':
 
-        #    self.fitness =
+    
 
-    def draw_fitness_liveplot(self):
-        if self.fit_lp_fig is None:
-            self.fit_lp_fig, self.fit_lp_axes = plt.subplots(
-                1, 2, figsize=(8, 4), dpi=128, sharex=True, sharey=True, constrained_layout=True
-            )
-
-        self.fit_lp_axes[0].clear()
-
-        times = self.data.time.astype(int).values / 1e9
-        times -= times[0]
-
-        cum_max_fitness = [np.nanmax(self.fitness[: i + 1]) for i in range(len(self.fitness))]
-
-        self.fit_lp_axes[0].scatter(times, self.fitness, c="k")
-        self.fit_lp_axes[0].plot(times, cum_max_fitness, c="r")
-        self.fit_lp_axes[0].set_yscale("log")
-
-        self.fit_lp_fig.canvas.draw_idle()
-        self.fit_lp_fig.show()
-
-    def draw_gp_liveplot(self):
-        if self.gp_lp_fig is None:
-            self.gp_lp_fig, self.gp_lp_axes = plt.subplots(
-                2, 3, figsize=(12, 8), dpi=128, sharex=True, sharey=True, constrained_layout=True
-            )
-
-        size = 64
-        norm = mpl.colors.LogNorm(*np.nanpercentile(self.fitness, q=[1, 99]))
-
-        from matplotlib.patches import Patch
-
-        exploit_params = self.recommend(strategy="exploit", n=1)
-        explore_params = self.recommend(strategy="explore", n=1)
-
-        p_valid = self.validate(self.test_params)
-
-        self.gp_lp_axes[0, 0].clear()
-        self.gp_lp_axes[0, 0].scatter(*self.params.T[:2], s=size, c=self.fitness, norm=norm, cmap="coolwarm")
-        self.gp_lp_axes[0, 0].set_title("sampled fitness")
-
-        self.gp_lp_axes[1, 0].clear()
-        self.gp_lp_axes[1, 0].scatter(*self.params.T[:2], s=size, c=self.c, vmin=0, vmax=1, cmap="viridis")
-        self.gp_lp_axes[1, 0].set_title("sampled goodness")
-        handles = [
-            Patch(label="good", color=plt.cm.viridis.colors[-1]),
-            Patch(label="bad", color=plt.cm.viridis.colors[0]),
-        ]
-        self.gp_lp_axes[1, 0].legend(handles=handles)
-
-        self.gp_lp_axes[0, 1].clear()
-        self.gp_lp_axes[0, 1].scatter(
-            *self.test_params.T[:2], s=size, c=self.fitness_estimate(self.test_params), norm=norm, cmap="coolwarm"
-        )
-        self.gp_lp_axes[0, 1].scatter(
-            *exploit_params.T[:2], marker="*", facecolor="w", edgecolor="k", s=4 * size, label="max_improvement"
-        )
-        self.gp_lp_axes[0, 1].set_title("fitness estimate")
-
-        self.gp_lp_axes[1, 1].clear()
-        self.gp_lp_axes[1, 1].scatter(*self.test_params.T[:2], s=size, c=p_valid, vmin=0, vmax=1, cmap="viridis")
-        self.gp_lp_axes[1, 1].set_title("goodness estimate")
-
-        self.gp_lp_axes[0, 2].clear()
-        self.gp_lp_axes[0, 2].scatter(
-            *self.test_params.T[:2], s=size, c=self.fitness_entropy(self.test_params), cmap="coolwarm"
-        )
-        self.gp_lp_axes[0, 2].scatter(
-            *explore_params.T[:2], marker="s", facecolor="w", edgecolor="k", s=4 * size, label="max_information"
-        )
-        self.gp_lp_axes[0, 2].set_title("fitness entropy")
-
-        self.gp_lp_axes[1, 2].clear()
-        self.gp_lp_axes[1, 2].scatter(
-            *self.test_params.T[:2], s=size, c=np.log((1 - p_valid) * p_valid), cmap="viridis"
-        )
-        self.gp_lp_axes[1, 2].set_title("goodness entropy")
-
-        for ax in self.gp_lp_axes.ravel():
-            ax.set_xlim(*self.dof_bounds[0])
-            ax.set_ylim(*self.dof_bounds[1])
-
-        self.gp_lp_fig.canvas.draw_idle()
-        self.gp_lp_fig.show()
-
-    def autoinitialize(self, n, verbose, scheme="quasi-random"):
-        halton_sampler = qmc.Halton(d=self.n_dof, scramble=True)
-
-        params_to_sample = halton_sampler.random(n=2 ** int(np.log(n) / np.log(2) + 1))[:n] * self.dof_bounds.ptp(
-            axis=1
-        ) + self.dof_bounds.min(axis=1)
-        # self.params = np.r_[self.dof_bounds.mean(axis=0)[None], self.params]
-        sampled_params, res_table = self.acquire_with_bluesky(params_to_sample, verbose=verbose)
-
-        return sampled_params, res_table
 
     def append(self, new_params, new_data):
         self.params = np.r_[self.params, new_params]
         self.data = pd.concat([self.data, new_data])
+
 
     def update(self, reuse_hypers=True, verbose=False):
         self.compute_fitness()
@@ -505,8 +419,6 @@ class Optimizer:
         self.evaluator.train(training_iter=self.training_iter, reuse_hypers=reuse_hypers, verbose=verbose)
         self.validator.train(training_iter=self.training_iter, reuse_hypers=reuse_hypers, verbose=verbose)
 
-    def acquire(self, params):
-        pass
 
     def acquire_with_bluesky(self, params, routing=True, verbose=False):
         if routing:
@@ -525,8 +437,8 @@ class Optimizer:
             start_params = self.current_params
             # rel_d_params = (_params - start_params) / self.dof_bounds.ptp(axis=1)
 
-            #acq_delay = utils.get_movement_time(rel_d_params, v_max=0.25, a=0.5).max()
-            #print(f'delay: {acq_delay}')
+            # acq_delay = utils.get_movement_time(rel_d_params, v_max=0.25, a=0.5).max()
+            # print(f'delay: {acq_delay}')
 
             start_time = ttime.monotonic()
             # ttime.sleep(acq_delay)
@@ -560,7 +472,7 @@ class Optimizer:
                 )
 
             for start_param, dof in zip(start_params, self.dofs):
-                _table.loc[:, f'delta_{dof.name}'] = dof.get() - start_param
+                _table.loc[:, f"delta_{dof.name}"] = dof.get() - start_param
 
             table = pd.concat([table, _table])
 
@@ -573,10 +485,16 @@ class Optimizer:
 
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
 
+        # this one is easy
+        if strategy.lower() == "quasi-random":
+            return sampler.random(n=n) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
+
         # recommend some parameters that we might want to sample, with shape (., n, n_dof)
         TEST_PARAMS = (
             sampler.random(n=n * n_test) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
         ).reshape(n_test, n, self.n_dof)
+
+        
 
         # how much will we have to change our parameters to sample these guys?
         DELTA_TEST_PARAMS = np.diff(
@@ -613,11 +531,11 @@ class Optimizer:
             )  # get point(s) to sample from the strategizer
 
             n_original = len(params_to_sample)
-            n_upsample = upsample * (n_original - 1) + 1
+            n_upsample = upsample * n_original + 1
 
-            upsampled_params_to_sample = sp.interpolate.interp1d(np.arange(n_original), params_to_sample.T)(
-                np.linspace(0, n_original - 1, n_upsample)
-            ).T
+            upsampled_params_to_sample = sp.interpolate.interp1d(np.arange(n_original + 1),
+                                                                  np.r_[self.current_params[None], params_to_sample], 
+                                                                  axis=0)(np.linspace(0, n_original, n_upsample)[1:])
 
             sampled_params, res_table = self.acquire_with_bluesky(
                 upsampled_params_to_sample
@@ -625,134 +543,226 @@ class Optimizer:
             self.append(new_params=sampled_params, new_data=res_table)
             self.update(reuse_hypers=reuse_hypers)  # update our model
 
-            if "gp" in plots:
-                self.draw_gp_liveplot()
+            if "state" in plots:
+                self.plot_state(remake=False, gridded=self.gridded_plots)
             if "fitness" in plots:
-                self.draw_fitness_liveplot()
+                self.plot_fitness(remake=False)
 
             if verbose:
-                # self.plot_readback()
-                print(f"# {i+1:>03} : {params_to_sample.round(4)} -> {self.fitness[-1]:.04e}")
 
-    def plot_state(self):
-        # cm = mpl.cm.get_cmap("coolwarm")
+                n_params = len(sampled_params)
+                df_to_print = pd.DataFrame(np.c_[self.params, self.fitness], columns=[*self.dof_names, 'fitness']).iloc[-n_params:]
+                print(df_to_print)
 
-        fig, axes = mpl.pyplot.subplots(2, 4, figsize=(12, 8), dpi=128, sharex=True, sharey=True)
 
-        # evaluated over test_params
-        # current_info = -self._posterior_entropy(params=None)
-        # potential_info = -self._posterior_entropy(params=self.test_params[:, None, :])
+    def plot_fitness(self, remake=True, **kwargs):
+
+        if (not hasattr(self, 'fitness_fig')) or remake:
+            self.make_fitness_plots()
+
+        self.draw_fitness_plots(**kwargs)
+
+
+    def make_fitness_plots(self):
+        '''
+        Create the axes onto which we plot/update the cumulative fitness
+        '''
+
+        self.fitness_fig, self.fitness_axes = plt.subplots(
+                1, 1, figsize=(4, 4), dpi=256, sharex=True, sharey=True, constrained_layout=True
+            )  
+        self.fitness_axes = np.atleast_2d(self.fitness_axes)
+
+    def draw_fitness_plots(self):
+
+        self.fitness_axes[0, 0].clear()
+
+        times = self.data.time.astype(int).values / 1e9
+        times -= times[0]
+
+        cum_max_fitness = [np.nanmax(self.fitness[:i+1]) if not all(np.isnan(self.fitness[:i+1])) else np.nan for i in range(len(self.fitness))]
+
+        ax = self.fitness_axes[0, 0]
+        ax.scatter(times, self.fitness, c="k", label='fitness samples')
+        ax.plot(times, cum_max_fitness, c="r", label='cumulative best solution')
+        ax.set_xlabel('time (s)')
+        ax.set_ylabel('fitness')
+        ax.legend()
+
+        self.fitness_fig.canvas.draw_idle()
+        self.fitness_fig.show()
+
+    def plot_state(self, remake=True, **kwargs):
+
+        if (not hasattr(self, 'state_fig')) or remake:
+            self.make_state_plots()
+
+        self.draw_state_plots(**kwargs)
+
+
+    def make_state_plots(self):
+        '''
+        Create the axes onto which we plot/update the state of the GPO
+        '''
+
+        self.state_fig, self.state_axes = plt.subplots(
+                2, 4, figsize=(12, 6), dpi=256, sharex=True, sharey=True, constrained_layout=True
+            )
+        
+    def draw_state_plots(self, gridded=False, save_as=None):
+        '''
+        Create the axes onto which we plot/update the state of the GPO
+        '''
+
+        s = 16
 
         if gridded:
             P = self.validate(self.test_grid)
         else:
             P = self.validate(self.test_params)
 
-        PE = 0.5 * np.log(2*np.pi*np.e*P*(1-P))
+        PE = 0.5 * np.log(2 * np.pi * np.e * P * (1 - P))
 
-        norm = mpl.colors.LogNorm(*np.nanpercentile(np.log(self.fitness), q=[1,99]))
+        # so that the points and estimates have the same nice norm
+        fitness_norm = mpl.colors.Normalize(*np.nanpercentile(self.fitness, q=[1, 99]))
 
-        s = 16
-
-        # plot values of data points
-        ax = axes[0,0]
-        ax.set_title('fitness')
-        ref = ax.scatter(*self.params.T[:2], s=s, c=np.log(self.fitness), norm=norm)
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        #axes[0,0].scatter(*max_prior_entropy_params[:2], marker='o', color='k', s=s, label='max_prior_entropy')
-        max_improvement_params = self.recommend(strategy='exploit', n=1)
-        max_information_params = self.recommend(strategy='explore', n=1)
-        axes[0,0].scatter(*max_information_params.T[:2], marker='s', color='k', s=s, label='max_information')
-        axes[0,0].scatter(*max_improvement_params.T[:2], marker='*', color='k', s=s, label='max_improvement')
-        axes[0,0].legend(fontsize=6)
+        # scatter plot of the fitness for points sampled so far
+        ax = self.state_axes[0, 0]
+        ax.clear()
+        ax.set_title("sampled fitness")
+        ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=fitness_norm)
         
-        clb.set_label('arbitrary units')
-        clb.set_ticks([])
+        self.greedy_max_improvement_params = self.recommend(strategy="exploit", n=1)
+        self.greedy_max_information_params = self.recommend(strategy="explore", n=1)
+
+        ax.scatter(*self.greedy_max_information_params.T[:2], marker="s", color="k", s=s, label="max_information")
+        ax.scatter(*self.greedy_max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
+        ax.legend(fontsize=6)
+
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb.set_label("fitness units")
+
 
         # plot the estimate of test points
-        ax = axes[0,1]
-        ax.set_title('fitness estimate')
+        ax = self.state_axes[0, 1]
+        ax.clear()
+        ax.set_title("fitness estimate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], np.log(self.fitness_estimate(self.test_grid)), norm=norm)
+            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm)
         else:
-            ref = ax.scatter(*self.test_params.T[:2], s=s, c=np.log(self.fitness_estimate(self.test_params)), norm=norm)
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        
-        clb.set_label('arbitrary units')
-        clb.set_ticks([])
+            ref = ax.scatter(
+                *self.test_params.T[:2], s=s, c=self.fitness_estimate(self.test_params), norm=fitness_norm
+            )
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb.set_label("fitness units")
+
 
         # plot the entropy rate of test points
-        ax = axes[0,2]
-        ax.set_title('fitness entropy rate')
+        ax = self.state_axes[0, 2]
+        ax.clear()
+        ax.set_title("fitness entropy rate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], np.log(self.fitness_entropy(self.test_grid)), norm=mpl.colors.LogNorm())
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2], np.log(self.fitness_entropy(self.test_grid)), norm=mpl.colors.LogNorm()
+            )
         else:
-            ref = ax.scatter(*self.test_params.T[:2], s=s, c=np.log(self.fitness_entropy(self.test_params)), norm=mpl.colors.LogNorm())
-        
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        clb.set_label('nepits per volume')
+            ref = ax.scatter(
+                *self.test_params.T[:2],
+                s=s,
+                c=np.log(self.fitness_entropy(self.test_params)),
+                norm=mpl.colors.LogNorm(),
+            )
+
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb.set_label("nepits per volume")
+
 
         # plot the estimate of test points
-        ax = axes[0,3]
-        ax.set_title('greedy improvement')
+        ax = self.state_axes[0, 3]
+        ax.clear()
+        ax.set_title("greedy improvement")
 
         if gridded:
             I = -self._negative_expected_improvement(self.test_grid)
-            I[~(I>0)] = np.nan
+            I[~(I > 0)] = np.nan
             ref = ax.pcolormesh(*self.dim_mids[:2], I, norm=mpl.colors.Normalize(vmin=0))
         else:
             I = -self._negative_expected_improvement(self.test_params)
-            I[~(I>0)] = np.nan
-            ref = ax.scatter(*self.test_params.T[:2], s=s, c=-self._negative_expected_improvement(self.test_params), norm=mpl.colors.Normalize(vmin=0))
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        clb.set_label('standard deviations')
+            I[~(I > 0)] = np.nan
+            ref = ax.scatter(
+                *self.test_params.T[:2],
+                s=s,
+                c=-self._negative_expected_improvement(self.test_params),
+                norm=mpl.colors.Normalize(vmin=0),
+            )
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb.set_label("standard deviations")
+
 
         # plot classification of data points
-        ax = axes[1, 0]
-        ax.set_title("validity")
+        ax = self.state_axes[1, 0]
+        ax.clear()
+        ax.set_title("sampled validity")
         ref = ax.scatter(*self.params.T[:2], s=s, c=self.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        handles = [Patch(label='good', color=plt.cm.coolwarm(256)), Patch(label='bad', color=plt.cm.coolwarm(0))]
-        ax.legend(handles=handles)
-        clb.set_ticks([])
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        handles = [mpl.patches.Patch(label="good", color=plt.cm.coolwarm(256)), 
+                   mpl.patches.Patch(label="bad", color=plt.cm.coolwarm(0))]
+        #ax.legend(handles=handles)
+        clb.set_ticks([0,1])
+        clb.set_ticklabels(['invalid', 'valid'])
 
 
-        ax = axes[1,1]
-        ax.set_title('validity estimate')
+        ax = self.state_axes[1, 1]
+        ax.clear()
+        ax.set_title("validity estimate")
         if gridded:
             ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1)
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=P, vmin=0, vmax=1)
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        clb.set_label('$P_{valid}$')
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb.set_label("validity probability")
 
-        ax = axes[1,2]
-        ax.set_title('validity entropy rate')
+        ax = self.state_axes[1, 2]
+        ax.set_title("validity entropy rate")
         if gridded:
             ref = ax.pcolormesh(*self.dim_mids[:2], PE)
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=PE)
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        clb.set_label('nepits per volume')
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb.set_label("nepits per volume")
 
-        
 
-        ax = axes[1,3]
-        ax.set_title('greedy information')
+        ax = self.state_axes[1, 3]
+        ax.clear()
+        ax.set_title("greedy information")
         if gridded:
-            I = -self._negative_expected_information_gain(self.test_grid.reshape(-1, 1, self.n_dof)).reshape(self.test_grid.shape[:2])
-            I[~(I>0)] = np.nan
-            ref = ax.pcolormesh(*self.dim_mids[:2], I / self.evaluator.model.covar_module.output_scale.item(), norm=mpl.colors.Normalize(vmin=0))
+            I = -self._negative_expected_information_gain(self.test_grid.reshape(-1, 1, self.n_dof)).reshape(
+                self.test_grid.shape[:2]
+            )
+            I[~(I > 0)] = np.nan
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2],
+                I / self.evaluator.model.covar_module.output_scale.item(),
+                norm=mpl.colors.Normalize(vmin=0),
+            )
         else:
-            I = self._negative_expected_information_gain(self.test_params[:,None,:])
-            I[~(I>0)] = np.nan
-            ref = ax.scatter(*self.test_params.T[:2], s=s, c=I / self.evaluator.model.covar_module.output_scale.item(), norm=mpl.colors.Normalize(vmin=0))
-        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
-        clb.set_label('total nepits')
+            I = self._negative_expected_information_gain(self.test_params[:, None, :])
+            I[~(I > 0)] = np.nan
+            ref = ax.scatter(
+                *self.test_params.T[:2],
+                s=s,
+                c=I / self.evaluator.model.covar_module.output_scale.item(),
+                norm=mpl.colors.Normalize(vmin=0),
+            )
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb.set_label("total nepits")
 
-        for ax in axes.ravel():
+        for ax in self.state_axes.ravel():
             ax.set_xlim(*self.dof_bounds[0])
             ax.set_ylim(*self.dof_bounds[1])
+
+        self.state_fig.canvas.draw_idle()
+        self.state_fig.show()
 
         if save_as is not None:
             plt.savefig(save_as)
@@ -870,9 +880,9 @@ class Optimizer:
         if not n_bad == 0:  # the posterior variance should always be positive
             warnings.warn(f"{n_bad}/{n_tot} information estimates are non-positive.")
             if n_bad / n_tot > 0.5:
-                raise ValueError('More than half of the information estimates are non-positive.')
+                raise ValueError("More than half of the information estimates are non-positive.")
 
-        return - np.product(p_valid, axis=-1) * (potential_info - current_info)
+        return -np.product(p_valid, axis=-1) * (potential_info - current_info)
 
     def _posterior_entropy(self, params=None):
         """
@@ -933,9 +943,7 @@ class Optimizer:
 
         return marginal_entropy_rate.sum(axis=-1)
 
-
     def _contingent_fisher_information_matrix(self, params):
-        
         x = self.params_trans_fun(params).reshape(-1, self.n_dof)
 
         X_pot = np.r_[[np.r_[self.evaluator.x, _x[None]] for _x in x]]
@@ -951,30 +959,28 @@ class Optimizer:
 
         delta = 1e-4
 
-        for hyper_label in ['output_scale', 'trans_diagonal', 'trans_off_diag']:
-
-            constraint = getattr(dummy_kernel, f'raw_{hyper_label}_constraint')
-            hyper_value = getattr(dummy_kernel, f'raw_{hyper_label}').detach().numpy()
+        for hyper_label in ["output_scale", "trans_diagonal", "trans_off_diag"]:
+            constraint = getattr(dummy_kernel, f"raw_{hyper_label}_constraint")
+            hyper_value = getattr(dummy_kernel, f"raw_{hyper_label}").detach().numpy()
 
             for i_hyper, hyper_val in enumerate(hyper_value):
-
                 d_hyper = np.array([delta if i == i_hyper else 0 for i in range(len(hyper_value))])
 
-                getattr(dummy_kernel, f'raw_{hyper_label}').data = torch.as_tensor(hyper_value + d_hyper).float()
-                #print(getattr(dummy_kernel, f'raw_{hyper_label}'))
+                getattr(dummy_kernel, f"raw_{hyper_label}").data = torch.as_tensor(hyper_value + d_hyper).float()
+                # print(getattr(dummy_kernel, f'raw_{hyper_label}'))
 
                 _C = dummy_kernel.forward(X_pot, X_pot).detach().numpy()
-                _C += 1e-6 * np.square(dummy_kernel.output_scale.detach().numpy()) * np.eye(n_per_set)[None,:,:]
+                _C += 1e-6 * np.square(dummy_kernel.output_scale.detach().numpy()) * np.eye(n_per_set)[None, :, :]
 
-                #m = np.matmul()
-                #C = np.r_[C, _C[None]]
+                # m = np.matmul()
+                # C = np.r_[C, _C[None]]
                 dC_dtheta = np.r_[dC_dtheta, (_C - C0)[None] / delta]
 
-                getattr(dummy_kernel, f'raw_{hyper_label}').data = torch.as_tensor(hyper_value).float()
-                #print(getattr(dummy_kernel, f'raw_{hyper_label}'))
+                getattr(dummy_kernel, f"raw_{hyper_label}").data = torch.as_tensor(hyper_value).float()
+                # print(getattr(dummy_kernel, f'raw_{hyper_label}'))
 
-                    #getattr(dummy_kernel, hyper_label)[i_hyper] = hyper_value + 1e-12
-                    
+                # getattr(dummy_kernel, hyper_label)[i_hyper] = hyper_value + 1e-12
+
         n_hypers = len(dC_dtheta)
         invC0 = np.linalg.inv(C0)
 
@@ -982,24 +988,24 @@ class Optimizer:
 
         for i in range(n_hypers):
             for j in range(n_hypers):
+                fisher_information[:, i, j] = np.trace(
+                    mprod(invC0, dC_dtheta[i], invC0, dC_dtheta[j]), axis1=-1, axis2=-2
+                )
 
-                fisher_information[:, i, j] = np.trace(mprod(invC0, dC_dtheta[i], invC0, dC_dtheta[j]), axis1=-1, axis2=-2)
-        
         return fisher_information
 
     def _negative_A_optimality(self, params):
-        '''
-        Returns the negative trace of the inverse of the Fisher information matrix, contingent on sampling the passed params. 
-        '''
+        """
+        Returns the negative trace of the inverse of the Fisher information matrix, contingent on sampling the passed params.
+        """
 
         invFIM = np.linalg.inv(_contingent_fisher_information_matrix(self, params))
         return np.array(list(map(np.trace, invFIM)))
 
-
     def _negative_D_optimality(self, params):
-        '''
-        Returns the negative determinant of the inverse of the Fisher information matrix, contingent on sampling the passed params. 
-        '''
+        """
+        Returns the negative determinant of the inverse of the Fisher information matrix, contingent on sampling the passed params.
+        """
 
         invFIM = np.linalg.inv(_contingent_fisher_information_matrix(self, params))
         return np.array(list(map(np.linalg.det, invFIM)))
