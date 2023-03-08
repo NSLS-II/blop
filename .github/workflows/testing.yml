@@ -44,10 +44,10 @@ jobs:
           set -vxeuo pipefail
           # Sleeping to allow sirepo time to start up
           sleep 10
-          $docker images
-          $docker ps -a
-          container=$($docker ps -q -f id=${SIREPO_DOCKER_CONTAINER_ID})
-          $docker logs ${SIREPO_DOCKER_CONTAINER_ID}
+          docker images
+          docker ps -a
+          container=$(docker ps -q -f id=${SIREPO_DOCKER_CONTAINER_ID})
+          docker logs ${SIREPO_DOCKER_CONTAINER_ID}
           if [ -z "${container}" ]; then
               echo "Container ID ${SIREPO_DOCKER_CONTAINER_ID} is not running. Exiting."
               exit 1
