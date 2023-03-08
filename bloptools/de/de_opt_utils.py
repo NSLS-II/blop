@@ -1,7 +1,6 @@
-import numpy as np
-
-import bluesky.plans as bp
 import bluesky.plan_stubs as bps
+import bluesky.plans as bp
+import numpy as np
 
 from .hardware_flyer import HardwareFlyer
 
@@ -34,18 +33,19 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
     """
     ret_vels = []
     # check that max_velocity is not None if at least 1 motor doesn't have upper velocity limit
-    if any([lim['high'] == 0 for lim in velocity_limits]) and max_velocity is None:
+    if any([lim["high"] == 0 for lim in velocity_limits]) and max_velocity is None:
         vel_max_lim_0 = []
         for lim in velocity_limits:
-            if lim['high'] == 0:
-                vel_max_lim_0.append(lim['motor'])
-        raise ValueError(f'The following motors have unset max velocity limits: {vel_max_lim_0}. '
-                         f'max_velocity must be set')
+            if lim["high"] == 0:
+                vel_max_lim_0.append(lim["motor"])
+        raise ValueError(
+            f"The following motors have unset max velocity limits: {vel_max_lim_0}. " f"max_velocity must be set"
+        )
     if all([d == 0 for d in dists]):
         # TODO: fix this to handle when motors don't need to move
         # if dists are all 0, set all motors to min velocity
         for i in range(len(velocity_limits)):
-            ret_vels.append(velocity_limits[i]['low'])
+            ret_vels.append(velocity_limits[i]["low"])
         return ret_vels
     else:
         # check for negative distances
@@ -54,7 +54,7 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
         # create list of upper velocity limits for convenience
         upper_velocity_bounds = []
         for j in range(len(velocity_limits)):
-            upper_velocity_bounds.append(velocity_limits[j]['high'])
+            upper_velocity_bounds.append(velocity_limits[j]["high"])
         # find max distances to move and pick the slowest motor of those with max dists
         max_dist_lowest_vel = np.where(dists == np.max(dists))[0]
         max_dist_to_move = -1
@@ -72,9 +72,9 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
                 try_vel = np.round(dists[i] / time_needed, 5)
                 if try_vel < min_velocity:
                     try_vel = min_velocity
-                if try_vel < velocity_limits[i]['low']:
-                    try_vel = velocity_limits[i]['low']
-                elif try_vel > velocity_limits[i]['high']:
+                if try_vel < velocity_limits[i]["low"]:
+                    try_vel = velocity_limits[i]["low"]
+                elif try_vel > velocity_limits[i]["high"]:
                     if upper_velocity_bounds[i] == 0:
                         pass
                     else:
@@ -88,8 +88,7 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
         else:
             # use slowest motor that moves the most
             ret_vels.clear()
-            lowest_velocity_motors = np.where(upper_velocity_bounds ==
-                                              np.min(upper_velocity_bounds))[0]
+            lowest_velocity_motors = np.where(upper_velocity_bounds == np.min(upper_velocity_bounds))[0]
             max_dist_to_move = -1
             for k in lowest_velocity_motors:
                 if dists[k] >= max_dist_to_move:
@@ -105,9 +104,9 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
                     try_vel = np.round(dists[k] / time_needed, 5)
                     if try_vel < min_velocity:
                         try_vel = min_velocity
-                    if try_vel < velocity_limits[k]['low']:
-                        try_vel = velocity_limits[k]['low']
-                    elif try_vel > velocity_limits[k]['high']:
+                    if try_vel < velocity_limits[k]["low"]:
+                        try_vel = velocity_limits[k]["low"]
+                    elif try_vel > velocity_limits[k]["high"]:
                         if upper_velocity_bounds[k] == 0:
                             pass
                         else:
@@ -122,33 +121,49 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
 def _run_flyers(flyers):
     uid_list = []
     for flyer in flyers:
-        uid = (yield from bp.fly(flyer))
+        uid = yield from bp.fly(flyer)
         uid_list.append(uid)
     return uid_list
 
 
-def run_hardware_fly(motors, detector, population, max_velocity, min_velocity,
-                     start_det, read_det, stop_det, watch_func):
-    flyers = generate_hardware_flyers(motors=motors, detector=detector, population=population,
-                                      max_velocity=max_velocity, min_velocity=min_velocity,
-                                      start_det=start_det, read_det=read_det, stop_det=stop_det,
-                                      watch_func=watch_func)
+def run_hardware_fly(
+    motors, detector, population, max_velocity, min_velocity, start_det, read_det, stop_det, watch_func
+):
+    flyers = generate_hardware_flyers(
+        motors=motors,
+        detector=detector,
+        population=population,
+        max_velocity=max_velocity,
+        min_velocity=min_velocity,
+        start_det=start_det,
+        read_det=read_det,
+        stop_det=stop_det,
+        watch_func=watch_func,
+    )
     return _run_flyers(flyers)
 
 
-def run_fly_sim(population, num_interm_vals, num_scans_at_once,
-                sim_id, server_name, root_dir, watch_name, run_parallel):
-    flyers = generate_sim_flyers(population=population, num_between_vals=num_interm_vals,
-                                 sim_id=sim_id, server_name=server_name, root_dir=root_dir,
-                                 watch_name=watch_name, run_parallel=run_parallel)
+def run_fly_sim(
+    population, num_interm_vals, num_scans_at_once, sim_id, server_name, root_dir, watch_name, run_parallel
+):
+    flyers = generate_sim_flyers(
+        population=population,
+        num_between_vals=num_interm_vals,
+        sim_id=sim_id,
+        server_name=server_name,
+        root_dir=root_dir,
+        watch_name=watch_name,
+        run_parallel=run_parallel,
+    )
     # make list of flyers into list of list of flyers
     # pass 1 sublist of flyers at a time
-    flyers = [flyers[i:i+num_scans_at_once] for i in range(0, len(flyers), num_scans_at_once)]
+    flyers = [flyers[i : i + num_scans_at_once] for i in range(0, len(flyers), num_scans_at_once)]
     return _run_flyers(flyers)
 
 
-def generate_hardware_flyers(motors, detector, population, max_velocity, min_velocity,
-                             start_det, read_det, stop_det, watch_func):
+def generate_hardware_flyers(
+    motors, detector, population, max_velocity, min_velocity, start_det, read_det, stop_det, watch_func
+):
     hf_flyers = []
     velocities_list = []
     distances_list = []
@@ -160,21 +175,30 @@ def generate_hardware_flyers(motors, detector, population, max_velocity, min_vel
         if i == 0:
             for elem, param in motors.items():
                 for param_name, elem_obj in param.items():
-                    velocity_limit_dict = {'motor': elem,
-                                           'low': elem_obj.velocity.low_limit,
-                                           'high': elem_obj.velocity.high_limit}
+                    velocity_limit_dict = {
+                        "motor": elem,
+                        "low": elem_obj.velocity.low_limit,
+                        "high": elem_obj.velocity.high_limit,
+                    }
                     velocity_limits.append(velocity_limit_dict)
                     dists.append(0)
         else:
             for elem, param in motors.items():
                 for param_name, elem_obj in param.items():
-                    velocity_limit_dict = {'motor': elem,
-                                           'low': elem_obj.velocity.low_limit,
-                                           'high': elem_obj.velocity.high_limit}
+                    velocity_limit_dict = {
+                        "motor": elem,
+                        "low": elem_obj.velocity.low_limit,
+                        "high": elem_obj.velocity.high_limit,
+                    }
                     velocity_limits.append(velocity_limit_dict)
                     dists.append(abs(pparam[elem][param_name] - population[i - 1][elem][param_name]))
-        velocities = calc_velocity(motors=motors.keys(), dists=dists, velocity_limits=velocity_limits,
-                                   max_velocity=max_velocity, min_velocity=min_velocity)
+        velocities = calc_velocity(
+            motors=motors.keys(),
+            dists=dists,
+            velocity_limits=velocity_limits,
+            max_velocity=max_velocity,
+            min_velocity=min_velocity,
+        )
         for motor_name, vel, dist in zip(motors, velocities, dists):
             velocities_dict[motor_name] = vel
             distances_dict[motor_name] = dist
@@ -194,22 +218,22 @@ def generate_hardware_flyers(motors, detector, population, max_velocity, min_vel
         times_list.append(times_dict)
 
     for param, vel, time_ in zip(population, velocities_list, times_list):
-        hf = HardwareFlyer(params_to_change=param,
-                           velocities=vel,
-                           time_to_travel=time_,
-                           detector=detector,
-                           motors=motors,
-                           start_det=start_det,
-                           read_det=read_det,
-                           stop_det=stop_det,
-                           watch_func=watch_func
-                           )
+        hf = HardwareFlyer(
+            params_to_change=param,
+            velocities=vel,
+            time_to_travel=time_,
+            detector=detector,
+            motors=motors,
+            start_det=start_det,
+            read_det=read_det,
+            stop_det=stop_det,
+            watch_func=watch_func,
+        )
         hf_flyers.append([hf])
     return hf_flyers
 
 
-def generate_sim_flyers(population, num_between_vals, sim_id, server_name,
-                        root_dir, watch_name, run_parallel):
+def generate_sim_flyers(population, num_between_vals, sim_id, server_name, root_dir, watch_name, run_parallel):
     import sirepo_bluesky.sirepo_flyer as sf
 
     flyers = []
@@ -220,8 +244,9 @@ def generate_sim_flyers(population, num_between_vals, sim_id, server_name,
             params_to_change.append(population[i])
         for elem, param in population[i].items():
             for param_name, pos in param.items():
-                between_param_linspaces.append(np.linspace(pos, population[i + 1][elem][param_name],
-                                                           (num_between_vals + 2))[1:-1])
+                between_param_linspaces.append(
+                    np.linspace(pos, population[i + 1][elem][param_name], (num_between_vals + 2))[1:-1]
+                )
 
         for j in range(len(between_param_linspaces[0])):
             ctr = 0
@@ -234,9 +259,14 @@ def generate_sim_flyers(population, num_between_vals, sim_id, server_name,
             params_to_change.append(indv)
         params_to_change.append(population[i + 1])
     for param in params_to_change:
-        sim_flyer = sf.SirepoFlyer(sim_id=sim_id, server_name=server_name,
-                                   root_dir=root_dir, params_to_change=[param],
-                                   watch_name=watch_name, run_parallel=run_parallel)
+        sim_flyer = sf.SirepoFlyer(
+            sim_id=sim_id,
+            server_name=server_name,
+            root_dir=root_dir,
+            params_to_change=[param],
+            watch_name=watch_name,
+            run_parallel=run_parallel,
+        )
         flyers.append(sim_flyer)
     return flyers
 
@@ -245,14 +275,17 @@ def check_opt_bounds(motors, bounds):
     for elem, param in bounds.items():
         for param_name, bound in param.items():
             if bound[0] > bound[1]:
-                raise ValueError(f"Invalid bounds for {elem}. Current bounds are set to "
-                                 f"{bound[0], bound[1]}, but lower bound is greater than "
-                                 f"upper bound")
-            if bound[0] < motors[elem][param_name].low_limit or bound[1] >\
-                    motors[elem][param_name].high_limit:
-                raise ValueError(f"Invalid bounds for {elem}. Current bounds are set to "
-                                 f"{bound[0], bound[1]}, but {elem} has bounds of "
-                                 f"{motors[elem][param_name].limits}")
+                raise ValueError(
+                    f"Invalid bounds for {elem}. Current bounds are set to "
+                    f"{bound[0], bound[1]}, but lower bound is greater than "
+                    f"upper bound"
+                )
+            if bound[0] < motors[elem][param_name].low_limit or bound[1] > motors[elem][param_name].high_limit:
+                raise ValueError(
+                    f"Invalid bounds for {elem}. Current bounds are set to "
+                    f"{bound[0], bound[1]}, but {elem} has bounds of "
+                    f"{motors[elem][param_name].limits}"
+                )
 
 
 def move_to_optimized_positions(motors, opt_pos):
