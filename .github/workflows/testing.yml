@@ -37,14 +37,16 @@ jobs:
       - name: Install dependencies
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
-          set -vxeuo pipefail
+          set -vxeo pipefail
+          conda env list
+          mamba install -c conda-forge shadow3 srwpy
 
           # These packages are installed in the base environment but may be older
           # versions. Explicitly upgrade them because they often create
           # installation problems if out of date.
-          python -m pip install --upgrade pip setuptools numpy
+          python -m pip install --upgrade pip setuptools numpy wheel
 
-          pip install .
+          pip install -v .
           pip install -r requirements-dev.txt
           pip list
 
