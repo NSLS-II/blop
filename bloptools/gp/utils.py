@@ -116,7 +116,7 @@ def parse_images(
 
     beam_stats["pixel_area"] = (images > 0.05 * images.max(axis=(1, 2))[:, None, None]).sum(axis=(1, 2))
 
-    beam_stats["fitness"] = beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2)
+    beam_stats["fitness"] = np.log(beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2))
 
     # beam_stats['fitness'] = beam_stats['flux'] / beam_stats['pixel_area']
 
