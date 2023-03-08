@@ -302,13 +302,24 @@ class Optimizer:
         self.append(new_params=init_params, new_data=init_data)
         self.update(reuse_hypers=True, verbose=verbose)  # update our model
 
+
+
+        MAX_TEST_POINTS = 1024
+
+        n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
+        self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.dof_bounds]
+        self.dim_mids = [0.5*(bins[1:]+bins[:-1]) for bins in self.dim_bins]
+        self.test_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing='ij')], 0, -1)
+
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-        self.test_params = sampler.random(n=2048) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
-        self.test_params = self.test_params[self.test_params[:, 0].argsort()]
+        self.test_params = sampler.random(n=MAX_TEST_POINTS) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
+        self.test_params = self.test_params[self.test_params[:,0].argsort()]
+
+
 
     @property
     def current_params(self):
-        return np.array([dof.user_readback.get() for dof in self.dofs])
+        return np.array([dof.get() for dof in self.dofs])
 
     @property
     def optimum(self):
@@ -514,8 +525,8 @@ class Optimizer:
             start_params = self.current_params
             # rel_d_params = (_params - start_params) / self.dof_bounds.ptp(axis=1)
 
-            # acq_delay = utils.get_movement_time(rel_d_params, v_max=0.25, a=0.5).max()
-            # print(f'delay: {acq_delay}')
+            #acq_delay = utils.get_movement_time(rel_d_params, v_max=0.25, a=0.5).max()
+            #print(f'delay: {acq_delay}')
 
             start_time = ttime.monotonic()
             # ttime.sleep(acq_delay)
@@ -549,7 +560,7 @@ class Optimizer:
                 )
 
             for start_param, dof in zip(start_params, self.dofs):
-                _table.loc[:, f"delta_{dof.name}"] = dof.user_readback.get() - start_param
+                _table.loc[:, f'delta_{dof.name}'] = dof.get() - start_param
 
             table = pd.concat([table, _table])
 
@@ -632,73 +643,119 @@ class Optimizer:
         # current_info = -self._posterior_entropy(params=None)
         # potential_info = -self._posterior_entropy(params=self.test_params[:, None, :])
 
-        p_valid = self.validate(self.test_params)
+        if gridded:
+            P = self.validate(self.test_grid)
+        else:
+            P = self.validate(self.test_params)
 
-        norm = mpl.colors.LogNorm(*np.nanpercentile(self.fitness, q=[1, 99]))
+        PE = 0.5 * np.log(2*np.pi*np.e*P*(1-P))
 
-        s = 32
+        norm = mpl.colors.LogNorm(*np.nanpercentile(np.log(self.fitness), q=[1,99]))
+
+        s = 16
 
         # plot values of data points
-        ax = axes[0, 0]
-        ax.set_title("fitness")
-        ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=norm)
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
-        # axes[0,0].scatter(*max_prior_entropy_params[:2], marker='o', color='k', s=s, label='max_prior_entropy')
-        max_improvement_params = self.recommend(strategy="exploit", n=1)
-        max_information_params = self.recommend(strategy="explore", n=1)
-        axes[0, 0].scatter(*max_information_params.T[:2], marker="s", color="k", s=s, label="max_information")
-        axes[0, 0].scatter(*max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
-        axes[0, 0].legend(fontsize=6)
+        ax = axes[0,0]
+        ax.set_title('fitness')
+        ref = ax.scatter(*self.params.T[:2], s=s, c=np.log(self.fitness), norm=norm)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        #axes[0,0].scatter(*max_prior_entropy_params[:2], marker='o', color='k', s=s, label='max_prior_entropy')
+        max_improvement_params = self.recommend(strategy='exploit', n=1)
+        max_information_params = self.recommend(strategy='explore', n=1)
+        axes[0,0].scatter(*max_information_params.T[:2], marker='s', color='k', s=s, label='max_information')
+        axes[0,0].scatter(*max_improvement_params.T[:2], marker='*', color='k', s=s, label='max_improvement')
+        axes[0,0].legend(fontsize=6)
+        
+        clb.set_label('arbitrary units')
+        clb.set_ticks([])
 
         # plot the estimate of test points
-        ax = axes[0, 1]
-        ax.set_title("fitness estimate")
-        ref = ax.scatter(*self.test_params.T[:2], s=s, c=self.fitness_estimate(self.test_params), norm=norm)
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        ax = axes[0,1]
+        ax.set_title('fitness estimate')
+        if gridded:
+            ref = ax.pcolormesh(*self.dim_mids[:2], np.log(self.fitness_estimate(self.test_grid)), norm=norm)
+        else:
+            ref = ax.scatter(*self.test_params.T[:2], s=s, c=np.log(self.fitness_estimate(self.test_params)), norm=norm)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        
+        clb.set_label('arbitrary units')
+        clb.set_ticks([])
 
         # plot the entropy rate of test points
-        ax = axes[0, 2]
-        ax.set_title("fitness entropy")
-        ref = ax.scatter(
-            *self.test_params.T[:2], s=s, c=self.fitness_entropy(self.test_params), norm=mpl.colors.LogNorm()
-        )
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        ax = axes[0,2]
+        ax.set_title('fitness entropy rate')
+        if gridded:
+            ref = ax.pcolormesh(*self.dim_mids[:2], np.log(self.fitness_entropy(self.test_grid)), norm=mpl.colors.LogNorm())
+        else:
+            ref = ax.scatter(*self.test_params.T[:2], s=s, c=np.log(self.fitness_entropy(self.test_params)), norm=mpl.colors.LogNorm())
+        
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        clb.set_label('nepits per volume')
 
         # plot the estimate of test points
-        ax = axes[0, 3]
-        ax.set_title("delay estimate")
-        ref = ax.scatter(*self.test_params.T[:2], s=s, c=self.delay_estimate(self.test_params))
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        ax = axes[0,3]
+        ax.set_title('greedy improvement')
+
+        if gridded:
+            I = -self._negative_expected_improvement(self.test_grid)
+            I[~(I>0)] = np.nan
+            ref = ax.pcolormesh(*self.dim_mids[:2], I, norm=mpl.colors.Normalize(vmin=0))
+        else:
+            I = -self._negative_expected_improvement(self.test_params)
+            I[~(I>0)] = np.nan
+            ref = ax.scatter(*self.test_params.T[:2], s=s, c=-self._negative_expected_improvement(self.test_params), norm=mpl.colors.Normalize(vmin=0))
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        clb.set_label('standard deviations')
 
         # plot classification of data points
         ax = axes[1, 0]
         ax.set_title("validity")
         ref = ax.scatter(*self.params.T[:2], s=s, c=self.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        handles = [Patch(label='good', color=plt.cm.coolwarm(256)), Patch(label='bad', color=plt.cm.coolwarm(0))]
+        ax.legend(handles=handles)
+        clb.set_ticks([])
 
-        ax = axes[1, 1]
-        ax.set_title("validity estimate")
-        ref = ax.scatter(*self.test_params.T[:2], s=s, c=p_valid, vmin=0, vmax=1)
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
 
-        ax = axes[1, 2]
-        ax.set_title("greedy improvement")
-        ref = ax.scatter(
-            *self.test_params.T[:2],
-            s=s,
-            c=-self._negative_expected_improvement(self.test_params) / self.delay_estimate(self.test_params),
-        )
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        ax = axes[1,1]
+        ax.set_title('validity estimate')
+        if gridded:
+            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1)
+        else:
+            ref = ax.scatter(*self.test_params.T[:2], s=s, c=P, vmin=0, vmax=1)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        clb.set_label('$P_{valid}$')
 
-        ax = axes[1, 3]
-        ax.set_title("greedy information")
-        ref = ax.scatter(
-            *self.test_params.T[:2],
-            s=s,
-            c=-self._negative_expected_information_gain(self.test_params[:, None, :])
-            / self.delay_estimate(self.test_params),
-        )
-        fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        ax = axes[1,2]
+        ax.set_title('validity entropy rate')
+        if gridded:
+            ref = ax.pcolormesh(*self.dim_mids[:2], PE)
+        else:
+            ref = ax.scatter(*self.test_params.T[:2], s=s, c=PE)
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        clb.set_label('nepits per volume')
+
+        
+
+        ax = axes[1,3]
+        ax.set_title('greedy information')
+        if gridded:
+            I = -self._negative_expected_information_gain(self.test_grid.reshape(-1, 1, self.n_dof)).reshape(self.test_grid.shape[:2])
+            I[~(I>0)] = np.nan
+            ref = ax.pcolormesh(*self.dim_mids[:2], I / self.evaluator.model.covar_module.output_scale.item(), norm=mpl.colors.Normalize(vmin=0))
+        else:
+            I = self._negative_expected_information_gain(self.test_params[:,None,:])
+            I[~(I>0)] = np.nan
+            ref = ax.scatter(*self.test_params.T[:2], s=s, c=I / self.evaluator.model.covar_module.output_scale.item(), norm=mpl.colors.Normalize(vmin=0))
+        clb = fig.colorbar(ref, ax=ax, location='bottom', aspect=32)
+        clb.set_label('total nepits')
+
+        for ax in axes.ravel():
+            ax.set_xlim(*self.dof_bounds[0])
+            ax.set_ylim(*self.dof_bounds[1])
+
+        if save_as is not None:
+            plt.savefig(save_as)
 
     def plot_readback(self):
         # cm = mpl.cm.get_cmap("coolwarm")
@@ -813,9 +870,9 @@ class Optimizer:
         if not n_bad == 0:  # the posterior variance should always be positive
             warnings.warn(f"{n_bad}/{n_tot} information estimates are non-positive.")
             if n_bad / n_tot > 0.5:
-                raise ValueError("More than half of the information estimates are non-positive.")
+                raise ValueError('More than half of the information estimates are non-positive.')
 
-        return -np.product(p_valid, axis=-1) * (potential_info - current_info)
+        return - np.product(p_valid, axis=-1) * (potential_info - current_info)
 
     def _posterior_entropy(self, params=None):
         """
@@ -875,3 +932,74 @@ class Optimizer:
         marginal_entropy_rate = 0.5 * np.log(2 * np.pi * np.e * posterior_variance)
 
         return marginal_entropy_rate.sum(axis=-1)
+
+
+    def _contingent_fisher_information_matrix(self, params):
+        
+        x = self.params_trans_fun(params).reshape(-1, self.n_dof)
+
+        X_pot = np.r_[[np.r_[self.evaluator.x, _x[None]] for _x in x]]
+        (n_sets, n_per_set, n_dof) = X_pot.shape
+
+        # both of these have shape (n_hypers, n_sets, n_per_set, n_per_set)
+        dC_dtheta = np.zeros((0, n_sets, n_per_set, n_per_set))
+
+        dummy_kernel = gp.kernels.LatentMaternKernel(n_dof=self.n_dof, length_scale_bounds=(1e-3, 1e3))
+        dummy_kernel.load_state_dict(self.evaluator.model.covar_module.state_dict())
+
+        C0 = dummy_kernel.forward(X_pot, X_pot).detach().numpy()
+
+        delta = 1e-4
+
+        for hyper_label in ['output_scale', 'trans_diagonal', 'trans_off_diag']:
+
+            constraint = getattr(dummy_kernel, f'raw_{hyper_label}_constraint')
+            hyper_value = getattr(dummy_kernel, f'raw_{hyper_label}').detach().numpy()
+
+            for i_hyper, hyper_val in enumerate(hyper_value):
+
+                d_hyper = np.array([delta if i == i_hyper else 0 for i in range(len(hyper_value))])
+
+                getattr(dummy_kernel, f'raw_{hyper_label}').data = torch.as_tensor(hyper_value + d_hyper).float()
+                #print(getattr(dummy_kernel, f'raw_{hyper_label}'))
+
+                _C = dummy_kernel.forward(X_pot, X_pot).detach().numpy()
+                _C += 1e-6 * np.square(dummy_kernel.output_scale.detach().numpy()) * np.eye(n_per_set)[None,:,:]
+
+                #m = np.matmul()
+                #C = np.r_[C, _C[None]]
+                dC_dtheta = np.r_[dC_dtheta, (_C - C0)[None] / delta]
+
+                getattr(dummy_kernel, f'raw_{hyper_label}').data = torch.as_tensor(hyper_value).float()
+                #print(getattr(dummy_kernel, f'raw_{hyper_label}'))
+
+                    #getattr(dummy_kernel, hyper_label)[i_hyper] = hyper_value + 1e-12
+                    
+        n_hypers = len(dC_dtheta)
+        invC0 = np.linalg.inv(C0)
+
+        fisher_information = np.zeros((n_sets, n_hypers, n_hypers))
+
+        for i in range(n_hypers):
+            for j in range(n_hypers):
+
+                fisher_information[:, i, j] = np.trace(mprod(invC0, dC_dtheta[i], invC0, dC_dtheta[j]), axis1=-1, axis2=-2)
+        
+        return fisher_information
+
+    def _negative_A_optimality(self, params):
+        '''
+        Returns the negative trace of the inverse of the Fisher information matrix, contingent on sampling the passed params. 
+        '''
+
+        invFIM = np.linalg.inv(_contingent_fisher_information_matrix(self, params))
+        return np.array(list(map(np.trace, invFIM)))
+
+
+    def _negative_D_optimality(self, params):
+        '''
+        Returns the negative determinant of the inverse of the Fisher information matrix, contingent on sampling the passed params. 
+        '''
+
+        invFIM = np.linalg.inv(_contingent_fisher_information_matrix(self, params))
+        return np.array(list(map(np.linalg.det, invFIM)))
