@@ -26,13 +26,52 @@ jobs:
           export REPOSITORY_NAME=${GITHUB_REPOSITORY#*/}  # just the repo, as opposed to org/repo
           echo "REPOSITORY_NAME=${REPOSITORY_NAME}" >> $GITHUB_ENV
 
+          export DOCKER_BINARY=${{ matrix.docker-binary }}
+          echo "DOCKER_BINARY=${DOCKER_BINARY}" >> $GITHUB_ENV
+
       - name: Checkout the code
         uses: actions/checkout@v3
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.6.0
+
+      - name: Install Podman
+        if: matrix.docker-binary == 'podman'
+        run: |
+          # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
+          set -vxeuo pipefail
+          sudo apt-get -y update
+          sudo apt-get -y install podman
+
+      - name: Start Sirepo Docker container
+        run: |
+          set -vxeuo pipefail
+          . scripts/start_sirepo.sh -d
+          export SIREPO_DOCKER_CONTAINER_ID
+          echo "SIREPO_DOCKER_CONTAINER_ID=${SIREPO_DOCKER_CONTAINER_ID}" >> $GITHUB_ENV
+
+      - name: Check Sirepo state
+        run: |
+          set -vxeuo pipefail
+          # Sleeping to allow sirepo time to start up
+          sleep 10
+          ${DOCKER_BINARY} images
+          ${DOCKER_BINARY} ps -a
+          container=$(${DOCKER_BINARY} ps -q -f id=${SIREPO_DOCKER_CONTAINER_ID})
+          ${DOCKER_BINARY} logs ${SIREPO_DOCKER_CONTAINER_ID}
+          if [ -z "${container}" ]; then
+              echo "Container ID ${SIREPO_DOCKER_CONTAINER_ID} is not running. Exiting."
+              exit 1
+          fi
+      - name: Set up Python ${{ matrix.python-version }} with conda
+        uses: conda-incubator/setup-miniconda@v2
         with:
+          activate-environment: ${{ env.REPOSITORY_NAME }}-py${{ matrix.python-version }}
+          auto-update-conda: true
+          miniconda-version: "latest"
           python-version: ${{ matrix.python-version }}
+          mamba-version: "*"
+          channels: conda-forge
 
       - name: Install dependencies
         run: |
