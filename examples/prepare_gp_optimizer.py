@@ -1,0 +1,69 @@
+import datetime
+import json  # noqa F401
+
+import bluesky.plan_stubs as bps  # noqa F401
+import bluesky.plans as bp  # noqa F401
+import databroker
+import matplotlib.pyplot as plt
+import numpy as np  # noqa F401
+from bluesky.callbacks import best_effort
+from bluesky.run_engine import RunEngine
+from databroker import Broker
+from ophyd.utils import make_dir_tree
+from sirepo_bluesky.shadow_handler import ShadowFileHandler
+from sirepo_bluesky.srw_handler import SRWFileHandler
+
+RE = RunEngine({})
+bec = best_effort.BestEffortCallback()
+RE.subscribe(bec)
+
+# MongoDB backend:
+db = Broker.named("local")  # mongodb backend
+try:
+    databroker.assets.utils.install_sentinels(db.reg.config, version=1)
+except Exception:
+    pass
+
+RE.subscribe(db.insert)
+db.reg.register_handler("srw", SRWFileHandler, overwrite=True)
+db.reg.register_handler("shadow", ShadowFileHandler, overwrite=True)
+db.reg.register_handler("SIREPO_FLYER", SRWFileHandler, overwrite=True)
+
+plt.ion()
+
+root_dir = "/tmp/sirepo-bluesky-data"
+_ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
+
+import pandas as pd
+from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
+from sirepo_bluesky.sirepo_ophyd import BeamStatisticsReport, create_classes
+
+connection = SirepoBluesky("http://localhost:8000")
+
+data, schema = connection.auth("shadow", "00000002")
+classes, objects = create_classes(connection.data, connection=connection)
+globals().update(**objects)
+
+data["models"]["simulation"]["npoint"] = 100000
+data["models"]["watchpointReport12"]["histogramBins"] = 32
+# w9.duration.kind = "hinted"
+
+bec.disable_baseline()
+bec.disable_heading()
+bec.disable_table()
+
+import sys
+
+sys.path.insert(0, "../")
+
+import bloptools
+from bloptools.gp import Optimizer
+
+mi = np.array([0, 1])
+
+dofs = [[kbv.x_rot, kbv.offz, kbh.x_rot, kbh.offz][i] for i in mi]
+
+hard_bounds = np.array([[-0.20, +0.20], [-1.00, +1.00], [-0.20, +0.20], [-1.00, +1.00]])[mi] * 5e-1
+
+for dof in dofs:
+    dof.kind = "hinted"
