@@ -29,9 +29,19 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v3
 
-      - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@1.6.0
+            - name: Install Podman
+        if: matrix.docker-binary == 'podman'
+        run: |
+          # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
+          set -vxeuo pipefail
+          sudo apt-get -y update
+          sudo apt-get -y install podman
 
+      - name: Clone Sirepo-Bluesky
+        run: |
+          git clone https://github.com/NSLS-II/sirepo-bluesky
+          cd sirepo-bluesky
+          
       - name: Start Sirepo Docker container
         run: |
           set -vxeuo pipefail
@@ -52,29 +62,27 @@ jobs:
               echo "Container ID ${SIREPO_DOCKER_CONTAINER_ID} is not running. Exiting."
               exit 1
           fi
-      - name: Set up Python ${{ matrix.python-version }} with conda
-        uses: conda-incubator/setup-miniconda@v2
+
+      - name: Change back to bloptools directory
+        run: |
+          cd ..
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
         with:
-          activate-environment: ${{ env.REPOSITORY_NAME }}-py${{ matrix.python-version }}
-          auto-update-conda: true
-          miniconda-version: "latest"
           python-version: ${{ matrix.python-version }}
-          mamba-version: "*"
-          channels: conda-forge
 
       - name: Install dependencies
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
-          set -vxeo pipefail
-          conda env list
-          mamba install -c conda-forge shadow3 srwpy
+          set -vxeuo pipefail
 
           # These packages are installed in the base environment but may be older
           # versions. Explicitly upgrade them because they often create
           # installation problems if out of date.
-          python -m pip install --upgrade pip setuptools numpy wheel
+          python -m pip install --upgrade pip setuptools numpy
 
-          pip install -v .
+          pip install .
           pip install -r requirements-dev.txt
           pip list
 
