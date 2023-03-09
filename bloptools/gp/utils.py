@@ -3,6 +3,13 @@ import pandas as pd
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 
+def mprod(*M):
+    res = M[0]
+    for m in M[1:]:
+        res = np.matmul(res, m)
+    return res
+
+
 def get_routing(origin, points):
     """
     Finds an efficient routing between $n$ points, after normalizing each dimension.
