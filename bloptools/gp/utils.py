@@ -3,6 +3,13 @@ import pandas as pd
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 
+def mprod(*M):
+    res = M[0]
+    for m in M[1:]:
+        res = np.matmul(res, m)
+    return res
+
+
 def get_routing(origin, points):
     """
     Finds an efficient routing between $n$ points, after normalizing each dimension.
@@ -116,7 +123,7 @@ def parse_images(
 
     beam_stats["pixel_area"] = (images > 0.05 * images.max(axis=(1, 2))[:, None, None]).sum(axis=(1, 2))
 
-    beam_stats["fitness"] = beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2)
+    beam_stats["fitness"] = np.log(beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2))
 
     # beam_stats['fitness'] = beam_stats['flux'] / beam_stats['pixel_area']
 

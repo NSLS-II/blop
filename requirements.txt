@@ -1,6 +1,10 @@
 bluesky>=1.6.1
 databroker
+gpytorch
 matplotlib
 numpy
 ophyd
-sirepo_bluesky
+ortools
+scipy
+sirepo-bluesky
+torch
