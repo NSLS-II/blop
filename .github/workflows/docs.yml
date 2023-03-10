@@ -27,24 +27,60 @@ jobs:
         with:
           fetch-depth: 1000  # should be enough to reach the most recent tag
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.6.0
 
-      - name: Install documentation-building requirements
+      - name: Start Sirepo
+        run: |
+          set -vxeuo pipefail
+          git clone https://github.com/NSLS-II/sirepo-bluesky ~/sirepo-bluesky
+          cd ~/sirepo-bluesky
+          . scripts/start_sirepo.sh -d
+          export SIREPO_DOCKER_CONTAINER_ID
+          echo "SIREPO_DOCKER_CONTAINER_ID=${SIREPO_DOCKER_CONTAINER_ID}" >> $GITHUB_ENV
+
+      - name: Check Sirepo state
+        run: |
+          set -vxeuo pipefail
+          # Sleeping to allow sirepo time to start up
+          sleep 10
+          docker images
+          docker ps -a
+          container=$(docker ps -q -f id=${SIREPO_DOCKER_CONTAINER_ID})
+          docker logs ${SIREPO_DOCKER_CONTAINER_ID}
+          if [ -z "${container}" ]; then
+              echo "Container ID ${SIREPO_DOCKER_CONTAINER_ID} is not running. Exiting."
+              exit 1
+          fi
+
+      - name: Copy databroker config file
+        run: |
+          set -vxeuo pipefail
+          mkdir -v -p ~/.config/databroker/
+          cp -v ~/sirepo-bluesky/examples/local.yml ~/.config/databroker/
+
+      - name: Set up Python ${{ matrix.python-version }} with conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: ${{ env.REPOSITORY_NAME }}-py${{ matrix.python-version }}
+          auto-update-conda: true
+          miniconda-version: "latest"
+          python-version: ${{ matrix.python-version }}
+          mamba-version: "*"
+          channels: conda-forge
+
+      - name: Install dependencies
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
-          set -vxeuo pipefail
+          set -vxeo pipefail
 
-          # These packages are installed in the base environment but may be older
-          # versions. Explicitly upgrade them because they often create
-          # installation problems if out of date.
-          python -m pip install --upgrade pip setuptools numpy
-
-          pip install .
+          conda env list
+          mamba install -c conda-forge shadow3 srwpy
+          pip install --upgrade pip wheel
+          pip install -v .
           pip install -r requirements-dev.txt
           pip list
+          conda list
 
       - name: Build Docs
         run: make -C docs/ html
