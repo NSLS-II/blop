@@ -6,12 +6,17 @@ import bluesky.plans as bp  # noqa F401
 import databroker
 import matplotlib.pyplot as plt
 import numpy as np  # noqa F401
+import pandas as pd  # noqa F401
 from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
 from sirepo_bluesky.shadow_handler import ShadowFileHandler
+from sirepo_bluesky.sirepo_bluesky import SirepoBluesky  # noqa F401
+from sirepo_bluesky.sirepo_ophyd import create_classes
 from sirepo_bluesky.srw_handler import SRWFileHandler
+
+from bloptools.gp import Optimizer  # noqa F401
 
 RE = RunEngine({})
 bec = best_effort.BestEffortCallback()
@@ -34,9 +39,6 @@ plt.ion()
 root_dir = "/tmp/sirepo-bluesky-data"
 _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 
-import pandas as pd
-from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
-from sirepo_bluesky.sirepo_ophyd import BeamStatisticsReport, create_classes
 
 connection = SirepoBluesky("http://localhost:8000")
 
@@ -52,16 +54,13 @@ bec.disable_baseline()
 bec.disable_heading()
 bec.disable_table()
 
-import sys
-
-sys.path.insert(0, "../")
-
-import bloptools
-from bloptools.gp import Optimizer
+# This should be done by installing the package with `pip install -e .` or something similar.
+# import sys
+# sys.path.insert(0, "../")
 
 mi = np.array([0, 1])
 
-dofs = [[kbv.x_rot, kbv.offz, kbh.x_rot, kbh.offz][i] for i in mi]
+dofs = [[kbv.x_rot, kbv.offz, kbh.x_rot, kbh.offz][i] for i in mi]  # noqa F821
 
 hard_bounds = np.array([[-0.20, +0.20], [-1.00, +1.00], [-0.20, +0.20], [-1.00, +1.00]])[mi] * 5e-1
 

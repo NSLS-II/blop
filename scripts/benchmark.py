@@ -1,3 +1,12 @@
+"""
+This script should be run inside of the IPython environment with pre-defined
+objects RE, db, etc.
+
+% run -i benchmark.py
+"""
+
+import time as ttime
+
 import numpy as np
 
 from bloptools import gp
