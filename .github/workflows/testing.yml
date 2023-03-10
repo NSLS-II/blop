@@ -52,9 +52,11 @@ jobs:
               exit 1
           fi
 
-      # - name: Change back to bloptools directory
-      #   run: |
-      #     cd ${GITHUB_WORKSPACE}
+      - name: Copy databroker config file
+        run: |
+          set -vxeuo pipefail
+          mkdir -v -p ~/.config/databroker/
+          cp -v ~/sirepo-bluesky/examples/local.yml ~/.config/databroker/
 
       - name: Set up Python ${{ matrix.python-version }} with conda
         uses: conda-incubator/setup-miniconda@v2
