@@ -2,12 +2,12 @@
 exclude =
     .git,
     __pycache__,
+    bloptools/_version.py,
     build,
     dist,
-    versioneer.py,
-    bloptools/_version.py,
-    bloptools/gp/scripts/benchmark.py,
     docs/source/conf.py
+    examples/benchmark.py,
+    versioneer.py,
 max-line-length = 115
 # Ignore some style 'errors' produced while formatting by 'black'
 ignore = E203, W503
