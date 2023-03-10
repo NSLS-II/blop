@@ -14,6 +14,7 @@ twine
 # These are dependencies of various sphinx extensions for documentation.
 ipython
 matplotlib
+nbsphinx
 numpydoc
 sphinx-copybutton
 sphinx_rtd_theme
