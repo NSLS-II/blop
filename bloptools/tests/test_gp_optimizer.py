@@ -1,9 +1,4 @@
-import json
-import time as ttime
-
-import bluesky.plans as bp
 import numpy as np
-import pytest
 from sirepo_bluesky.sirepo_ophyd import create_classes
 
 from bloptools.gp import Optimizer
@@ -17,7 +12,7 @@ def test_shadow_gp_optimizer(RE, db, shadow_tes_simulation):
     data["models"]["simulation"]["npoint"] = 100000
     data["models"]["watchpointReport12"]["histogramBins"] = 32
 
-    dofs = [kbv.x_rot, kbv.offz]
+    dofs = [kbv.x_rot, kbv.offz]  # noqa F821
 
     hard_bounds = np.array([[-0.10, +0.10], [-0.50, +0.50]])
 
@@ -29,7 +24,7 @@ def test_shadow_gp_optimizer(RE, db, shadow_tes_simulation):
         n_init=4,
         run_engine=RE,
         db=db,
-        detector=w9,
+        detector=w9,  # noqa F821
         detector_type="image",
         dofs=dofs,
         dof_bounds=hard_bounds,
