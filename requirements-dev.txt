@@ -13,6 +13,7 @@ sphinx
 twine
 # These are dependencies of various sphinx extensions for documentation.
 ipython
+jupyter
 matplotlib
 nbsphinx
 numpydoc
