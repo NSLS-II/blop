@@ -17,5 +17,6 @@ jupyter
 matplotlib
 nbsphinx
 numpydoc
+pandoc
 sphinx-copybutton
 sphinx_rtd_theme
