@@ -32,7 +32,6 @@ jobs:
       - name: Start Sirepo
         run: |
           set -vxeuo pipefail
-          pwd
           git clone https://github.com/NSLS-II/sirepo-bluesky ~/sirepo-bluesky
           cd ~/sirepo-bluesky
           . scripts/start_sirepo.sh -d
@@ -71,8 +70,6 @@ jobs:
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
           set -vxeo pipefail
-
-          pwd
 
           conda env list
           mamba install -c conda-forge shadow3 srwpy
