@@ -1,5 +1,6 @@
 bluesky>=1.6.1
 databroker
+gpytorch
 matplotlib
 numpy
 ophyd
