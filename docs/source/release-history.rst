@@ -12,7 +12,7 @@ v0.1.0 (2023-03-10)
 - Added tests to the CI.
 
 
-v0.0.2 (2021-04-14)
+v0.0.2 (2021-05-14)
 -------------------
 
 Fixed ``_run_flyers()`` for sirepo optimization.
