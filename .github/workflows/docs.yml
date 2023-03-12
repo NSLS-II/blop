@@ -30,34 +30,16 @@ jobs:
       - name: Start MongoDB
         uses: supercharge/mongodb-github-action@1.6.0
 
-      - name: Start Sirepo
-        run: |
-          set -vxeuo pipefail
-          git clone https://github.com/NSLS-II/sirepo-bluesky ~/sirepo-bluesky
-          cd ~/sirepo-bluesky
-          . scripts/start_sirepo.sh -d
-          export SIREPO_DOCKER_CONTAINER_ID
-          echo "SIREPO_DOCKER_CONTAINER_ID=${SIREPO_DOCKER_CONTAINER_ID}" >> $GITHUB_ENV
-
-      - name: Check Sirepo state
-        run: |
-          set -vxeuo pipefail
-          # Sleeping to allow sirepo time to start up
-          sleep 10
-          docker images
-          docker ps -a
-          container=$(docker ps -q -f id=${SIREPO_DOCKER_CONTAINER_ID})
-          docker logs ${SIREPO_DOCKER_CONTAINER_ID}
-          if [ -z "${container}" ]; then
-              echo "Container ID ${SIREPO_DOCKER_CONTAINER_ID} is not running. Exiting."
-              exit 1
-          fi
+      - name: Start Sirepo Docker container
+        uses: mrakitin/start-sirepo-action@v1
+        with:
+          docker-binary: docker
 
       - name: Copy databroker config file
         run: |
           set -vxeuo pipefail
           mkdir -v -p ~/.config/databroker/
-          cp -v ~/sirepo-bluesky/examples/local.yml ~/.config/databroker/
+          wget https://raw.githubusercontent.com/NSLS-II/sirepo-bluesky/main/examples/local.yml -O ~/.config/databroker/local.yml
 
       - name: Set up Python ${{ matrix.python-version }} with conda
         uses: conda-incubator/setup-miniconda@v2
