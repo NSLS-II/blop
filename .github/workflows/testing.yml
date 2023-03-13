@@ -33,7 +33,7 @@ jobs:
         uses: supercharge/mongodb-github-action@1.6.0
 
       - name: Start Sirepo Docker container
-        uses: mrakitin/start-sirepo-action@v1
+        uses: NSLS-II/start-sirepo-action@v1
         with:
           docker-binary: docker
 
