@@ -1,0 +1,108 @@
+name: Publish documentation
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  publish_docs:
+    name: Build and publish documentation
+    if: github.repository_owner == 'NSLS-II'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9"]
+      fail-fast: false
+
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - name: Set env vars
+        run: |
+          export REPOSITORY_NAME=${GITHUB_REPOSITORY#*/}  # just the repo, as opposed to org/repo
+          echo "REPOSITORY_NAME=${REPOSITORY_NAME}" >> $GITHUB_ENV
+
+          export DOCKER_BINARY="docker"
+          echo "DOCKER_BINARY=${DOCKER_BINARY}" >> $GITHUB_ENV
+
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Start MongoDB
+        uses: supercharge/mongodb-github-action@1.6.0
+
+      - name: Start Sirepo Docker container
+        run: |
+          set -vxeuo pipefail
+          . scripts/start_sirepo.sh -d
+          export SIREPO_DOCKER_CONTAINER_ID
+          echo "SIREPO_DOCKER_CONTAINER_ID=${SIREPO_DOCKER_CONTAINER_ID}" >> $GITHUB_ENV
+
+      - name: Check Sirepo state
+        run: |
+          set -vxeuo pipefail
+          # Sleeping to allow sirepo time to start up
+          sleep 10
+          ${DOCKER_BINARY} images
+          ${DOCKER_BINARY} ps -a
+          container=$(${DOCKER_BINARY} ps -q -f id=${SIREPO_DOCKER_CONTAINER_ID})
+          ${DOCKER_BINARY} logs ${SIREPO_DOCKER_CONTAINER_ID}
+          if [ -z "${container}" ]; then
+              echo "Container ID ${SIREPO_DOCKER_CONTAINER_ID} is not running. Exiting."
+              exit 1
+          fi
+
+      - name: Set up Python ${{ matrix.python-version }} with conda
+        uses: conda-incubator/setup-miniconda@v2
+        with:
+          activate-environment: ${{ env.REPOSITORY_NAME }}-py${{ matrix.python-version }}
+          auto-update-conda: true
+          miniconda-version: "latest"
+          python-version: ${{ matrix.python-version }}
+          mamba-version: "*"
+          channels: conda-forge
+
+      - name: Install documentation-building requirements
+        run: |
+          set -vxeo pipefail
+          sudo apt-get update && sudo apt-get install pandoc
+          conda env list
+          mamba install -c conda-forge shadow3 srwpy
+          pip install --upgrade pip wheel
+          pip install -v .
+          pip install -r requirements-dev.txt
+          pip list
+          conda list
+
+      - name: Build Docs
+        run: |
+          set -vxeuo pipefail
+          make -C docs/ html
+          status=$?
+          echo "Sirepo ${DOCKER_BINARY} container id: ${SIREPO_DOCKER_CONTAINER_ID}"
+          ${DOCKER_BINARY} logs ${SIREPO_DOCKER_CONTAINER_ID}
+          if [ $status -gt 0 ]; then
+              exit $status
+          fi
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.REPOSITORY_NAME }}-docs
+          path: docs/build/html/
+
+      - name: Deploy documentation to nsls-ii.github.io
+        # We pin to the SHA, not the tag, for security reasons.
+        # https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/security-hardening-for-github-actions#using-third-party-actions
+        uses: peaceiris/actions-gh-pages@bbdfb200618d235585ad98e965f4aafc39b4c501  # v3.7.3
+        with:
+          deploy_key: ${{ secrets.ACTIONS_DOCUMENTATION_DEPLOY_KEY }}
+          publish_branch: master
+          publish_dir: ./docs/build/html
+          external_repository: NSLS-II/NSLS-II.github.io
+          destination_dir: ${{ env.REPOSITORY_NAME }}  # just the repo name, without the "NSLS-II/"
+          keep_files: true  # Keep old files.
+          force_orphan: false  # Keep git history.
