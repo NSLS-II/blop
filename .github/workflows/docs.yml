@@ -6,6 +6,9 @@ on:
 
 jobs:
   build_docs:
+    # pull requests are a duplicate of a branch push if they are from within
+    # the same repo. Skip these
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -71,3 +74,17 @@ jobs:
         with:
           name: ${{ env.REPOSITORY_NAME }}-docs
           path: docs/build/html/
+
+      - name: Deploy documentation to nsls-ii.github.io
+        if: github.repository_owner == 'NSLS-II' && github.ref_name == 'main'
+        # We pin to the SHA, not the tag, for security reasons.
+        # https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/security-hardening-for-github-actions#using-third-party-actions
+        uses: peaceiris/actions-gh-pages@bbdfb200618d235585ad98e965f4aafc39b4c501  # v3.7.3
+        with:
+          deploy_key: ${{ secrets.ACTIONS_DOCUMENTATION_DEPLOY_KEY }}
+          publish_branch: master
+          publish_dir: ./docs/build/html
+          external_repository: NSLS-II/NSLS-II.github.io
+          destination_dir: ${{ env.REPOSITORY_NAME }}
+          keep_files: true  # Keep old files.
+          force_orphan: false  # Keep git history.
