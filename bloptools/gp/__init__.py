@@ -421,6 +421,7 @@ class Optimizer:
         self.validator.train(training_iter=self.training_iter, reuse_hypers=reuse_hypers, verbose=verbose)
 
     def acquire_with_bluesky(self, params, routing=True, verbose=False):
+        
         if routing:
             routing_index, _ = utils.get_routing(self.current_params, params)
             ordered_params = params[routing_index]
