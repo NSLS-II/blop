@@ -13,9 +13,4 @@ bloptools
 Beamline Optimization Tools
 
 * Free software: 3-clause BSD license
-* Documentation: (COMING SOON!) https://NSLS-II.github.io/bloptools.
-
-Features
---------
-
-* TODO
+* Documentation: https://NSLS-II.github.io/bloptools.
