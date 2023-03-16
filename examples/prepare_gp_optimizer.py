@@ -16,6 +16,7 @@ from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
 from sirepo_bluesky.sirepo_ophyd import create_classes
 from sirepo_bluesky.srw_handler import SRWFileHandler
 
+import bloptools
 from bloptools.gp import Optimizer  # noqa F401
 
 RE = RunEngine({})
@@ -64,5 +65,5 @@ dofs = [[kbv.x_rot, kbv.offz, kbh.x_rot, kbh.offz][i] for i in mi]  # noqa F821
 
 hard_bounds = np.array([[-0.20, +0.20], [-1.00, +1.00], [-0.20, +0.20], [-1.00, +1.00]])[mi] * 5e-1
 
-for dof in dofs:
-    dof.kind = "hinted"
+# for dof in dofs:
+#    dof.kind = "hinted"
