@@ -4,6 +4,7 @@ import json  # noqa F401
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
 import databroker
+import matplotlib as mpl  # noqa F401
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd  # noqa F401
@@ -16,6 +17,7 @@ from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
 from sirepo_bluesky.sirepo_ophyd import create_classes
 from sirepo_bluesky.srw_handler import SRWFileHandler
 
+import bloptools  # noqa F401
 from bloptools.gp import Optimizer  # noqa F401
 
 RE = RunEngine({})
@@ -64,5 +66,5 @@ dofs = [[kbv.x_rot, kbv.offz, kbh.x_rot, kbh.offz][i] for i in mi]  # noqa F821
 
 hard_bounds = np.array([[-0.20, +0.20], [-1.00, +1.00], [-0.20, +0.20], [-1.00, +1.00]])[mi] * 5e-1
 
-for dof in dofs:
-    dof.kind = "hinted"
+# for dof in dofs:
+#    dof.kind = "hinted"
