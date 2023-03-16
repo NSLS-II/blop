@@ -17,7 +17,7 @@ from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
 from sirepo_bluesky.sirepo_ophyd import create_classes
 from sirepo_bluesky.srw_handler import SRWFileHandler
 
-import bloptools
+import bloptools  # noqa F401
 from bloptools.gp import Optimizer  # noqa F401
 
 RE = RunEngine({})
