@@ -116,6 +116,8 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         # https://en.wikipedia.org/wiki/Matern_covariance_function
         C = torch.square(self.output_scale[0]) * (1 + d_eff) * torch.exp(-d_eff)
 
+        # C = torch.square(self.output_scale[0]) * torch.exp(-torch.square(d_eff))
+
         # print(f'{diag = } {C.shape = }')
 
         return C
