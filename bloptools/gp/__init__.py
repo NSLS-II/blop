@@ -333,7 +333,7 @@ class Optimizer:
 
     @property
     def current_params(self):
-        return np.array([dof.get() for dof in self.dofs])
+        return np.array([dof.read()[dof.name]["value"] for dof in self.dofs])
 
     @property
     def optimum(self):
@@ -435,13 +435,7 @@ class Optimizer:
                 print(f"sampling {_params}")
 
             start_params = self.current_params
-            # rel_d_params = (_params - start_params) / self.dof_bounds.ptp(axis=1)
-
-            # acq_delay = utils.get_movement_time(rel_d_params, v_max=0.25, a=0.5).max()
-            # print(f'delay: {acq_delay}')
-
             start_time = ttime.monotonic()
-            # ttime.sleep(acq_delay)
 
             try:
                 (uid,) = self.run_engine(
@@ -472,7 +466,7 @@ class Optimizer:
                 )
 
             for start_param, dof in zip(start_params, self.dofs):
-                _table.loc[:, f"delta_{dof.name}"] = dof.get() - start_param
+                _table.loc[:, f"delta_{dof.name}"] = dof.read()[dof.name]["value"] - start_param
 
             table = pd.concat([table, _table])
 
@@ -521,6 +515,7 @@ class Optimizer:
 
         if rate:
             objective /= expected_total_delay
+
         return TEST_PARAMS[np.argmax(objective)]
 
     def learn(
