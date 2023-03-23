@@ -13,6 +13,8 @@ from matplotlib import pyplot as plt
 
 from . import kernels, models, plans, utils
 
+mpl.rc("image", cmap="coolwarm")
+
 
 def load(filepath, **kwargs):
     with h5py.File(filepath, "r") as f:
@@ -373,7 +375,7 @@ class Optimizer:
 
         # this one is easy
         if strategy.lower() == "quasi-random":
-            return sampler.random(n=n) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
+            return sampler.random(n=n) * 2 - 1
 
         if greedy or (n == 1):
             # recommend some parameters that we might want to sample, with shape (., n, n_dof)
@@ -424,6 +426,9 @@ class Optimizer:
                     dummy_evaluator.tell(_X, _y)
 
             return X_to_sample
+
+    def ask(self, **kwargs):
+        return self.inv_params_trans_fun(self.recommend(**kwargs))
 
     def learn(
         self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs
@@ -533,13 +538,20 @@ class Optimizer:
         ax = self.state_axes[0, 0]
         ax.clear()
         ax.set_title("sampled fitness")
+
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+
         ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=fitness_norm)
 
-        max_improvement_params = self.inv_params_trans_fun(self.recommend(strategy="exploit", greedy=False, n=4))
-        max_information_params = self.inv_params_trans_fun(self.recommend(strategy="explore", greedy=False, n=4))
+        max_improvement_params = self.inv_params_trans_fun(self.recommend(strategy="exploit", greedy=False, n=16))
+        max_information_params = self.inv_params_trans_fun(self.recommend(strategy="explore", greedy=False, n=16))
 
-        ax.scatter(*max_information_params.T[:2], marker="s", color="k", s=s, label="max_information")
-        ax.scatter(*max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
+        max_improvement_routing_index, _ = utils.get_routing(self.current_params, max_improvement_params)
+        ordered_max_improvement_params = max_improvement_params[max_improvement_routing_index]
+
+        max_information_routing_index, _ = utils.get_routing(self.current_params, max_information_params)
+        ordered_max_information_params = max_information_params[max_information_routing_index]
+
         ax.legend(fontsize=6)
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
@@ -550,44 +562,49 @@ class Optimizer:
         ax.clear()
         ax.set_title("fitness estimate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm)
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm, shading="flat"
+            )
         else:
             ref = ax.scatter(
                 *self.test_params.T[:2], s=s, c=self.fitness_estimate(self.test_params), norm=fitness_norm
             )
+
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("fitness units")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the entropy rate of test points
         ax = self.state_axes[0, 2]
         ax.clear()
         ax.set_title("fitness entropy rate")
         if gridded:
-            ref = ax.pcolormesh(
-                *self.dim_mids[:2], np.log(self.fitness_entropy(self.test_grid)), norm=mpl.colors.LogNorm()
-            )
+            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_entropy(self.test_grid), shading="flat")
         else:
             ref = ax.scatter(
                 *self.test_params.T[:2],
                 s=s,
-                c=np.log(self.fitness_entropy(self.test_params)),
+                c=self.fitness_entropy(self.test_params),
                 norm=mpl.colors.LogNorm(),
             )
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("nepits per volume")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the estimate of test points
         ax = self.state_axes[0, 3]
         ax.clear()
-        ax.set_title("greedy improvement")
+        ax.set_title("expected improvement")
 
         if gridded:
             expected_improvement = -self._negative_expected_improvement(
                 self.evaluator, self.validator, self.test_grid
             )
             expected_improvement[~(expected_improvement > 0)] = np.nan
-            ref = ax.pcolormesh(*self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(vmin=0))
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(vmin=0), shading="flat"
+            )
         else:
             expected_improvement = -self._negative_expected_improvement(
                 self.evaluator, self.validator, self.test_params
@@ -599,13 +616,20 @@ class Optimizer:
                 c=-self._negative_expected_improvement(self.evaluator, self.validator, self.test_params),
                 norm=mpl.colors.Normalize(vmin=0),
             )
+
+        ax.plot(*ordered_max_improvement_params.T[:2], lw=1, color="k")
+        ax.scatter(*ordered_max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
+
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("standard deviations")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot classification of data points
         ax = self.state_axes[1, 0]
         ax.clear()
         ax.set_title("sampled validity")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+
         ref = ax.scatter(*self.params.T[:2], s=s, c=self.validator.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_ticks([0, 1])
@@ -615,25 +639,27 @@ class Optimizer:
         ax.clear()
         ax.set_title("validity estimate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1)
+            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1, shading="flat")
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=P, vmin=0, vmax=1)
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_ticks([0, 1])
         clb.set_ticklabels(["invalid", "valid"])
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 2]
         ax.set_title("validity entropy rate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], PE)
+            ref = ax.pcolormesh(*self.dim_mids[:2], PE, shading="flat")
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=PE)
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("nepits per volume")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 3]
         ax.clear()
-        ax.set_title("greedy information")
+        ax.set_title("information gain")
         if gridded:
             expected_information = -_negative_expected_information_gain(
                 self.evaluator,
@@ -646,6 +672,7 @@ class Optimizer:
                 *self.dim_mids[:2],
                 expected_information / self.evaluator.model.covar_module.output_scale.item(),
                 norm=mpl.colors.Normalize(vmin=0),
+                shading="flat",
             )
         else:
             expected_information = _negative_expected_information_gain(
@@ -661,8 +688,14 @@ class Optimizer:
                 c=expected_information / self.evaluator.model.covar_module.output_scale.item(),
                 norm=mpl.colors.Normalize(vmin=0),
             )
+
+        ax.plot(*ordered_max_information_params.T[:2], lw=1, color="k")
+        ax.scatter(*ordered_max_information_params.T[:2], marker="s", color="k", s=s, label="max_information")
+
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("total nepits")
+
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         for ax in self.state_axes.ravel():
             ax.set_xlim(*self.dof_bounds[0])
