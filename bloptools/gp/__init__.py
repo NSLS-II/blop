@@ -24,8 +24,10 @@ def load(filepath, **kwargs):
 
 
 def _negative_expected_information_gain(evaluator, validator, prior_X, experimental_X):
-    current_info = -_posterior_entropy(evaluator, prior_X, None)
-    potential_info = -_posterior_entropy(evaluator, prior_X, experimental_X)
+    qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=256) * 2 - 1
+
+    current_info = -_posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=qmc_X)
+    potential_info = -_posterior_entropy(evaluator, prior_X, experimental_X, qmc_X=qmc_X)
     PV = validator.classify(experimental_X.reshape(-1, evaluator.n_dof)).reshape(experimental_X.shape[:-1])
 
     n_bad, n_tot = (potential_info - current_info <= 0).sum(), len(potential_info.ravel())
@@ -40,7 +42,7 @@ def _negative_expected_information_gain(evaluator, validator, prior_X, experimen
     return -np.product(PV, axis=-1) * (potential_info - current_info)
 
 
-def _posterior_entropy(evaluator, prior_X, experimental_X=None, N_QMC=1024):
+def _posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=None):
     """
     Returns the change in integrated entropy of the process contingent on some experiment using a Quasi-
     Monte Carlo integration over a dummy Gaussian processes.
@@ -52,7 +54,8 @@ def _posterior_entropy(evaluator, prior_X, experimental_X=None, N_QMC=1024):
     If None is passed, we return the posterior entropy of the real process.
     """
 
-    QMC_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=N_QMC) * 2 - 1
+    if qmc_X is None:
+        qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
 
     if experimental_X is None:
         experimental_X = np.empty((1, 0, prior_X.shape[-1]))  # one set of zero observations
@@ -61,25 +64,24 @@ def _posterior_entropy(evaluator, prior_X, experimental_X=None, N_QMC=1024):
         raise ValueError("Passed params must have shape (n_sets, n_params_per_set, n_dof).")
 
     # get the noise from the evaluator likelihood
-    raw_noise = evaluator.model.state_dict()["likelihood.noise_covar.raw_noise"]
-    noise = evaluator.model.likelihood.noise_covar.raw_noise_constraint.transform(raw_noise).item()
+    noise = evaluator.model.likelihood.noise.item()
 
     # n_data is the number of points in each observation we consider (n_data = n_process + n_params_per_set)
     # x_data is an array of shape (n_sets, n_data, n_dof) that describes potential obervation states
     # x_star is an array of points at which to evaluate the entropy rate, to sum together for the QMCI
     x_data = torch.as_tensor(np.r_[[np.r_[prior_X, x] for x in np.atleast_3d(experimental_X)]])
-    x_star = torch.as_tensor(QMC_X)
+    x_star = torch.as_tensor(qmc_X)
 
     # for each potential observation state, compute the prior-prior and prior-posterior covariance matrices
     # $C_data_data$ is the covariance of the potential data with itself, for each set of obervations
     # $C_star_data$ is the covariance of the QMCI points with the potential data (n_sets, n_qmci, n_data)
     # we don't care about K_star_star for our purposes, only its diagonal which is a constant prior_variance
-    C_data_data = evaluator.model.covar_module(x_data, x_data).detach().numpy().astype(
-        float
-    ) + noise**2 * np.eye(x_data.shape[1])
+    C_data_data = evaluator.model.covar_module(x_data, x_data).detach().numpy().astype(float) + noise * np.eye(
+        x_data.shape[1]
+    )
     C_star_data = evaluator.model.covar_module(x_star, x_data).detach().numpy().astype(float)
 
-    prior_variance = evaluator.model.covar_module.output_scale.item() ** 2 + noise**2
+    prior_variance = evaluator.model.covar_module.output_scale.item() ** 2 + noise
 
     # normally we would compute A * B" * A', but that would be inefficient as we only care about the diagonal.
     # instead, compute this as:
@@ -91,12 +93,9 @@ def _posterior_entropy(evaluator, prior_X, experimental_X=None, N_QMC=1024):
     explained_variance = (np.matmul(C_star_data, np.linalg.inv(C_data_data)) * C_star_data).sum(axis=-1)
     posterior_variance = prior_variance - explained_variance
 
-    n_bad, n_tot = (posterior_variance <= 0).sum(), len(posterior_variance.ravel())
-
+    n_bad, n_tot = (posterior_variance < 0).sum(), posterior_variance.size
     if not n_bad == 0:  # the posterior variance should always be positive
-        warnings.warn(f"{n_bad}/{n_tot} variance estimates are non-positive.")
-        if n_bad / n_tot > 0.5:
-            raise ValueError("More than half of the variance estimates are non-positive.")
+        raise ValueError(f"Some of the posterior variance estimates ({int(1e2*n_bad/n_tot)}%) are non-positive.")
 
     marginal_entropy_rate = 0.5 * np.log(2 * np.pi * np.e * posterior_variance)
 
@@ -282,12 +281,6 @@ class Optimizer:
 
             self.fitness = self.parsed_image_data.fitness.values
 
-            # convert fitness to y
-            self.fitness_trans_fun = lambda fitness: np.log(fitness)
-
-            # convert y to fitness
-            self.inv_fitness_trans_fun = lambda y: np.exp(y)
-
     def tell(self, new_params, new_data, reuse_hypers=True, verbose=False):
         self.params = np.r_[self.params, new_params]
         self.data = pd.concat([self.data, new_data])
@@ -295,7 +288,7 @@ class Optimizer:
         self.compute_fitness()
 
         X = self.params_trans_fun(self.params)
-        y = self.fitness_trans_fun(self.fitness)
+        y = self.fitness
         c = (~np.isnan(y)).astype(int)
 
         self.evaluator.set_data(X[c == 1], y[c == 1])
@@ -552,7 +545,7 @@ class Optimizer:
         max_information_routing_index, _ = utils.get_routing(self.current_params, max_information_params)
         ordered_max_information_params = max_information_params[max_information_routing_index]
 
-        ax.legend(fontsize=6)
+        # ax.legend(fontsize=6)
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("fitness units")
@@ -563,7 +556,7 @@ class Optimizer:
         ax.set_title("fitness estimate")
         if gridded:
             ref = ax.pcolormesh(
-                *self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm, shading="flat"
+                *self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm, shading="nearest"
             )
         else:
             ref = ax.scatter(
@@ -579,7 +572,7 @@ class Optimizer:
         ax.clear()
         ax.set_title("fitness entropy rate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_entropy(self.test_grid), shading="flat")
+            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_entropy(self.test_grid), shading="nearest")
         else:
             ref = ax.scatter(
                 *self.test_params.T[:2],
@@ -603,7 +596,7 @@ class Optimizer:
             )
             expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.pcolormesh(
-                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(vmin=0), shading="flat"
+                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(vmin=0), shading="nearest"
             )
         else:
             expected_improvement = -self._negative_expected_improvement(
@@ -639,7 +632,7 @@ class Optimizer:
         ax.clear()
         ax.set_title("validity estimate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1, shading="flat")
+            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1, shading="nearest")
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=P, vmin=0, vmax=1)
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
@@ -650,7 +643,7 @@ class Optimizer:
         ax = self.state_axes[1, 2]
         ax.set_title("validity entropy rate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], PE, shading="flat")
+            ref = ax.pcolormesh(*self.dim_mids[:2], PE, shading="nearest")
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=PE)
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
@@ -672,7 +665,7 @@ class Optimizer:
                 *self.dim_mids[:2],
                 expected_information / self.evaluator.model.covar_module.output_scale.item(),
                 norm=mpl.colors.Normalize(vmin=0),
-                shading="flat",
+                shading="nearest",
             )
         else:
             expected_information = _negative_expected_information_gain(
@@ -729,14 +722,14 @@ class Optimizer:
     # talk to the model
 
     def fitness_estimate(self, params):
-        return self.inv_fitness_trans_fun(
-            self.evaluator.mean(self.params_trans_fun(params).reshape(-1, self.n_dof))
-        ).reshape(params.shape[:-1])
+        return self.evaluator.mean(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(
+            params.shape[:-1]
+        )
 
     def fitness_sigma(self, params):
-        return self.inv_fitness_trans_fun(
-            self.evaluator.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof))
-        ).reshape(params.shape[:-1])
+        return self.evaluator.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(
+            params.shape[:-1]
+        )
 
     def fitness_entropy(self, params):
         return np.log(np.sqrt(2 * np.pi * np.e) * self.fitness_sigma(params) + 1e-12)
