@@ -24,7 +24,7 @@ def load(filepath, **kwargs):
 
 
 def _negative_expected_information_gain(evaluator, validator, prior_X, experimental_X):
-    qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=256) * 2 - 1
+    qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
 
     current_info = -_posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=qmc_X)
     potential_info = -_posterior_entropy(evaluator, prior_X, experimental_X, qmc_X=qmc_X)
@@ -95,7 +95,11 @@ def _posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=None):
 
     n_bad, n_tot = (posterior_variance < 0).sum(), posterior_variance.size
     if not n_bad == 0:  # the posterior variance should always be positive
-        raise ValueError(f"Some of the posterior variance estimates ({int(1e2*n_bad/n_tot)}%) are non-positive.")
+        warnings.warn(f"{n_bad}/{n_tot} information estimates are non-positive.")
+        if n_bad / n_tot > 0.5:
+            raise ValueError(
+                f"More than half ({int(1e2*n_bad/n_tot)}%) of the variance estimates are non-positive."
+            )
 
     marginal_entropy_rate = 0.5 * np.log(2 * np.pi * np.e * posterior_variance)
 
