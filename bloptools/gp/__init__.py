@@ -3,7 +3,6 @@ import warnings
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp  # noqa F401
-import gpytorch
 import h5py
 import matplotlib as mpl
 import numpy as np
@@ -12,201 +11,9 @@ import scipy as sp
 import torch
 from matplotlib import pyplot as plt
 
-from . import kernels, plans, utils
+from . import kernels, models, plans, utils
 
-
-class GaussianProcessModel(gpytorch.models.ExactGP):
-    def __init__(self, x, y, likelihood, n_dof, length_scale_bounds, batch_shape=1):
-        super().__init__(x, y, likelihood)
-
-        self.mean_module = gpytorch.means.ConstantMean(batch_shape=batch_shape)
-        self.covar_module = kernels.LatentMaternKernel(
-            n_dof=n_dof, length_scale_bounds=length_scale_bounds, off_diag=True
-        )
-
-    def forward(self, x):
-        return gpytorch.distributions.MultivariateNormal(self.mean_module(x), self.covar_module(x))
-
-
-class GPR:
-    """
-    A Gaussian process regressor, with learning methods.
-    """
-
-    def __init__(self, length_scale_bounds=(1e-3, 1e0), max_noise_fraction=1e-2):
-        self.max_noise_fraction = max_noise_fraction
-        self.state_dict = None
-        self.length_scale_bounds = length_scale_bounds
-
-    def set_data(self, x, y):
-        """
-        Set the data with parameters and values.
-
-        x: parameters
-        y: function values at those parameters
-        """
-
-        if np.isnan(y).any():
-            raise ValueError("One of the passed values is NaN.")
-
-        self.x, self.y = np.atleast_2d(x), np.atleast_1d(y)
-        self.n, self.n_dof = self.x.shape
-
-        # prepare Gaussian process ingredients for the regressor and classifier
-        # use only regressable points for the regressor
-        self.inputs = torch.as_tensor(self.x).float()
-        self.targets = torch.as_tensor(self.y).float()
-
-        self.noise_upper_bound = 1e-1 * self.max_noise_fraction if len(self.y) > 1 else self.max_noise_fraction
-        self.likelihood = gpytorch.likelihoods.GaussianLikelihood(
-            noise_constraint=gpytorch.constraints.Interval(0, self.noise_upper_bound)
-        )
-
-        self.model = GaussianProcessModel(
-            self.inputs,
-            self.targets,
-            self.likelihood,
-            self.n_dof,
-            self.length_scale_bounds,
-        )
-
-        self.init_state_dict = self.model.state_dict()
-        if self.state_dict is not None:
-            self.model.load_state_dict(self.state_dict)
-
-    def train(self, training_iter=100, reuse_hypers=True, verbose=True):
-        if not reuse_hypers:
-            self.model.load_state_dict(self.init_state_dict)
-
-        self.likelihood.train()
-        self.model.train()
-
-        # Use the adam optimizer
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-1)
-
-        # "Loss" for GPs - the marginal log likelihood
-        self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
-
-        for i in range(training_iter):
-            self.optimizer.zero_grad()
-            loss = -self.mll(self.model(self.inputs), self.targets)
-            loss.backward()
-            self.optimizer.step()
-
-            if verbose and ((i + 1) % 100 == 0):
-                print(f"{i+1}/{training_iter} inverse_length_scales: {self.model.covar_module.trans_diagonal}")
-
-        self.state_dict = self.model.state_dict()
-
-    def regress(self, x):
-        x = torch.as_tensor(np.atleast_2d(x)).float()
-
-        # set to evaluation mode
-        self.likelihood.eval()
-        self.model.eval()
-
-        with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            prediction = self.likelihood(self.model(x))
-
-        return prediction
-
-    def mean(self, x):
-        return self.regress(x).mean.detach().numpy().ravel()
-
-    def sigma(self, x):
-        return self.regress(x).stddev.detach().numpy().ravel()
-
-    @property
-    def nu(self):
-        return self.y.max()
-
-
-class GPC:
-    """
-    A Gaussian process classifier, with learning methods.
-    """
-
-    def __init__(self, length_scale_bounds=(1e-3, 1e0), **kwargs):
-        self.state_dict = None
-        self.length_scale_bounds = length_scale_bounds
-
-    def set_data(self, x, y):
-        """
-        Set the data with parameters and values.
-
-        x: parameters
-        y: function values at those parameters
-
-        Passed parameters must be between [-1, 1] in every dimension. Passed values must be integer labels.
-        """
-
-        # if (x.min(axis=0) <= -1).any() or (x.max(axis=0) >= +1).any():
-        #    raise ValueError('Parameters must be between -1 and +1 in each dimension.')
-
-        self.x, self.y = np.atleast_2d(x), np.atleast_1d(y).astype(int)
-        self.n, self.n_dof = self.x.shape
-
-        self.inputs = torch.as_tensor(self.x).float()
-        self.targets = torch.as_tensor(self.y)
-
-        self.likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            self.targets, learn_additional_noise=True
-        )
-
-        self.model = GaussianProcessModel(
-            self.inputs,
-            self.likelihood.transformed_targets,
-            self.likelihood,
-            self.n_dof,
-            self.length_scale_bounds,
-            batch_shape=2,
-        )
-
-        self.init_state_dict = self.model.state_dict()
-        if self.state_dict is not None:
-            self.model.load_state_dict(self.state_dict)
-
-    def train(self, training_iter=100, reuse_hypers=True, verbose=True):
-        if not reuse_hypers:
-            self.model.load_state_dict(self.init_state_dict)
-
-        self.likelihood.train()
-        self.model.train()
-
-        self.optimizer = torch.optim.Adam(
-            self.model.parameters(), lr=1e-1
-        )  # Includes GaussianLikelihood parameters
-        self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
-
-        for i in range(training_iter):
-            self.optimizer.zero_grad()
-            loss = -self.mll(self.model(self.inputs), self.likelihood.transformed_targets).sum()
-            loss.backward()
-            self.optimizer.step()
-
-            if verbose and ((i + 1) % 100 == 0):
-                print(f"{i+1}/{training_iter} inverse_length_scales: {self.model.covar_module.trans_diagonal}")
-
-        self.state_dict = self.model.state_dict()
-
-    def classify(self, x, return_variance=False):
-        x = torch.as_tensor(np.atleast_2d(x)).float()
-
-        # set to evaluation mode
-        self.likelihood.eval()
-        self.model.eval()
-
-        with gpytorch.settings.fast_pred_var(), torch.no_grad():
-            dist = self.model(x)
-            samples = dist.sample(torch.Size((256,))).exp()
-            probabilities = (samples / samples.sum(-2, keepdim=True)).mean(0)
-
-        if return_variance:
-            res = probabilities[1].detach().numpy(), dist.variance.detach().numpy()
-        else:
-            res = probabilities[1].detach().numpy()
-
-        return res
+mpl.rc("image", cmap="coolwarm")
 
 
 def load(filepath, **kwargs):
@@ -214,6 +21,89 @@ def load(filepath, **kwargs):
         params = f["params"][:]
     data = pd.read_hdf(filepath, key="data")
     return Optimizer(init_params=params, init_data=data, **kwargs)
+
+
+def _negative_expected_information_gain(evaluator, validator, prior_X, experimental_X):
+    qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
+
+    current_info = -_posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=qmc_X)
+    potential_info = -_posterior_entropy(evaluator, prior_X, experimental_X, qmc_X=qmc_X)
+    PV = validator.classify(experimental_X.reshape(-1, evaluator.n_dof)).reshape(experimental_X.shape[:-1])
+
+    n_bad, n_tot = (potential_info - current_info <= 0).sum(), len(potential_info.ravel())
+
+    if not n_bad == 0:  # the posterior variance should always be positive
+        warnings.warn(f"{n_bad}/{n_tot} information estimates are non-positive.")
+        if n_bad / n_tot > 0.5:
+            raise ValueError(
+                f"More than half ({int(1e2*n_bad/n_tot)}%) of the information estimates are non-positive."
+            )
+
+    return -np.product(PV, axis=-1) * (potential_info - current_info)
+
+
+def _posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=None):
+    """
+    Returns the change in integrated entropy of the process contingent on some experiment using a Quasi-
+    Monte Carlo integration over a dummy Gaussian processes.
+
+    prior_params: numpy array with shape (n_params, n_dof)
+
+    experimental_X: numpy array with shape (n_sets, n_params_per_set, n_dof)
+
+    If None is passed, we return the posterior entropy of the real process.
+    """
+
+    if qmc_X is None:
+        qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
+
+    if experimental_X is None:
+        experimental_X = np.empty((1, 0, prior_X.shape[-1]))  # one set of zero observations
+
+    if not experimental_X.ndim == 3:
+        raise ValueError("Passed params must have shape (n_sets, n_params_per_set, n_dof).")
+
+    # get the noise from the evaluator likelihood
+    noise = evaluator.model.likelihood.noise.item()
+
+    # n_data is the number of points in each observation we consider (n_data = n_process + n_params_per_set)
+    # x_data is an array of shape (n_sets, n_data, n_dof) that describes potential obervation states
+    # x_star is an array of points at which to evaluate the entropy rate, to sum together for the QMCI
+    x_data = torch.as_tensor(np.r_[[np.r_[prior_X, x] for x in np.atleast_3d(experimental_X)]])
+    x_star = torch.as_tensor(qmc_X)
+
+    # for each potential observation state, compute the prior-prior and prior-posterior covariance matrices
+    # $C_data_data$ is the covariance of the potential data with itself, for each set of obervations
+    # $C_star_data$ is the covariance of the QMCI points with the potential data (n_sets, n_qmci, n_data)
+    # we don't care about K_star_star for our purposes, only its diagonal which is a constant prior_variance
+    C_data_data = evaluator.model.covar_module(x_data, x_data).detach().numpy().astype(float) + noise * np.eye(
+        x_data.shape[1]
+    )
+    C_star_data = evaluator.model.covar_module(x_star, x_data).detach().numpy().astype(float)
+
+    prior_variance = evaluator.model.covar_module.output_scale.item() ** 2 + noise
+
+    # normally we would compute A * B" * A', but that would be inefficient as we only care about the diagonal.
+    # instead, compute this as:
+    #
+    # diag(A * B" * A') = sum(A * B" . A', -1)
+    #
+    # which is much faster.
+
+    explained_variance = (np.matmul(C_star_data, np.linalg.inv(C_data_data)) * C_star_data).sum(axis=-1)
+    posterior_variance = prior_variance - explained_variance
+
+    n_bad, n_tot = (posterior_variance < 0).sum(), posterior_variance.size
+    if not n_bad == 0:  # the posterior variance should always be positive
+        warnings.warn(f"{n_bad}/{n_tot} information estimates are non-positive.")
+        if n_bad / n_tot > 0.5:
+            raise ValueError(
+                f"More than half ({int(1e2*n_bad/n_tot)}%) of the variance estimates are non-positive."
+            )
+
+    marginal_entropy_rate = 0.5 * np.log(2 * np.pi * np.e * posterior_variance)
+
+    return marginal_entropy_rate.sum(axis=-1)
 
 
 class Optimizer:
@@ -306,24 +196,20 @@ class Optimizer:
             self.background = 0
 
         # for actual prediction and optimization
-        self.evaluator = GPR(
+        self.evaluator = models.GPR(
             length_scale_bounds=(1e-1, 1e0), max_noise_fraction=1e-2
         )  # at most 1% of the RMS is due to noise
-        self.timer = GPR(length_scale_bounds=(5e-1, 2e0), max_noise_fraction=1e0)  # can be noisy, why not
-        self.validator = GPC(length_scale_bounds=(1e-1, 1e0))
+        self.timer = models.GPR(length_scale_bounds=(5e-1, 2e0), max_noise_fraction=1e0)  # can be noisy, why not
+        self.validator = models.GPC(length_scale_bounds=(1e-1, 1e0))
 
         self.params = np.zeros((0, self.n_dof))
         self.data = pd.DataFrame()
 
         if (init_params is not None) and (init_data is not None):
-            self.append(new_params=init_params, new_data=init_data)
-            self.update(reuse_hypers=True, verbose=verbose)  # update our model
+            self.tell(new_params=init_params, new_data=init_data, reuse_hypers=True, verbose=verbose)
 
         elif init_scheme == "quasi-random":
             self.learn(n_iter=1, n_per_iter=n_init, strategy="quasi-random", greedy=True, reuse_hypers=False)
-
-            # n_init = n_init if n_init is not None else 3**self.n_dof
-            # init_params, init_data = self.autoinitialize(n=n_init, scheme="quasi-random", verbose=verbose)
 
         else:
             raise Exception(
@@ -336,8 +222,12 @@ class Optimizer:
         return np.array([dof.read()[dof.name]["value"] for dof in self.dofs])
 
     @property
+    def current_X(self):
+        return self.inv_params_trans_fun(self.current_params)
+
+    @property
     def optimum(self):
-        return self.inv_params_trans_fun(self.evaluator.x[np.nanargmax(self.evaluator.y)])
+        return self.inv_params_trans_fun(self.evaluator.X[np.nanargmax(self.evaluator.y)])
 
     def go_to_optimum(self):
         self.run_engine(bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items]))
@@ -395,26 +285,19 @@ class Optimizer:
 
             self.fitness = self.parsed_image_data.fitness.values
 
-            # convert fitness to y
-            self.fitness_trans_fun = lambda fitness: np.log(fitness)
-
-            # convert y to fitness
-            self.inv_fitness_trans_fun = lambda y: np.exp(y)
-
-    def append(self, new_params, new_data):
+    def tell(self, new_params, new_data, reuse_hypers=True, verbose=False):
         self.params = np.r_[self.params, new_params]
         self.data = pd.concat([self.data, new_data])
 
-    def update(self, reuse_hypers=True, verbose=False):
         self.compute_fitness()
 
-        self.x = self.params_trans_fun(self.params)
-        self.y = self.fitness_trans_fun(self.fitness)
-        self.c = (~np.isnan(self.y)).astype(int)
+        X = self.params_trans_fun(self.params)
+        y = self.fitness
+        c = (~np.isnan(y)).astype(int)
 
-        self.evaluator.set_data(self.x[self.c == 1], self.y[self.c == 1])
-        self.validator.set_data(self.x, self.c)
-        self.timer.set_data(np.abs(np.diff(self.x, axis=0)), self.data.acq_duration.values[1:])
+        self.evaluator.set_data(X[c == 1], y[c == 1])
+        self.validator.set_data(X, c)
+        self.timer.set_data(np.abs(np.diff(X, axis=0)), self.data.acq_duration.values[1:])
 
         self.timer.train(training_iter=self.training_iter, reuse_hypers=reuse_hypers, verbose=verbose)
         self.evaluator.train(training_iter=self.training_iter, reuse_hypers=reuse_hypers, verbose=verbose)
@@ -472,51 +355,77 @@ class Optimizer:
 
         return ordered_params, table
 
-    def recommend(self, strategy=None, greedy=True, rate=False, n=1, n_test=256):
+    def recommend(
+        self, evaluator=None, validator=None, strategy=None, greedy=True, cost_model=None, n=1, n_test=1024
+    ):
         """
         Recommends the next $n$ points to sample, according to the given strategy.
         """
+
+        if evaluator is None:
+            evaluator = self.evaluator
+
+        if validator is None:
+            validator = self.validator
 
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
 
         # this one is easy
         if strategy.lower() == "quasi-random":
-            return sampler.random(n=n) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
+            return sampler.random(n=n) * 2 - 1
 
-        # recommend some parameters that we might want to sample, with shape (., n, n_dof)
-        TEST_PARAMS = (
-            sampler.random(n=n * n_test) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
-        ).reshape(n_test, n, self.n_dof)
+        if greedy or (n == 1):
+            # recommend some parameters that we might want to sample, with shape (., n, n_dof)
+            TEST_X = (sampler.random(n=n * n_test) * 2 - 1).reshape(n_test, n, self.n_dof)
 
-        # how much will we have to change our parameters to sample these guys?
-        DELTA_TEST_PARAMS = np.diff(
-            np.concatenate([np.repeat(self.current_params[None, None], n_test, axis=0), TEST_PARAMS], axis=1),
-            axis=1,
-        )
+            # how much will we have to change our parameters to sample these guys?
+            DELTA_TEST_X = np.diff(
+                np.concatenate([np.repeat(self.current_X[None, None], n_test, axis=0), TEST_X], axis=1),
+                axis=1,
+            )
 
-        # how long will that take?
-        if rate:
-            expected_total_delay = self.delay_estimate(DELTA_TEST_PARAMS).sum(axis=1)
-            if not np.all(expected_total_delay > 0):
-                raise ValueError("Some estimated acquisition times are non-positive.")
+            if cost_model is None:
+                cost = np.ones(n_test)
 
-        if greedy:
+            # how long will that take?
+            if cost_model == "delay":
+                cost = self.delay_estimate(DELTA_TEST_X).sum(axis=1)
+                if not all(cost > 0):
+                    raise ValueError("Some estimated acquisition times are non-positive.")
+
             if strategy.lower() == "exploit":  # greedy expected reward maximization
-                objective = -self._negative_expected_improvement(TEST_PARAMS).sum(axis=1)
+                objective = -self._negative_expected_improvement(evaluator, validator, TEST_X).sum(axis=1)
 
-        if strategy.lower() == "explore":
-            objective = -self._negative_expected_information_gain(TEST_PARAMS)
+            if strategy.lower() == "explore":
+                objective = -_negative_expected_information_gain(evaluator, validator, evaluator.X, TEST_X)
 
-        if strategy.lower() == "a-optimal":
-            objective = -self._negative_A_optimality(TEST_PARAMS)
+            if strategy.lower() == "a-optimal":
+                objective = -self._negative_A_optimality(TEST_X)
 
-        if strategy.lower() == "d-optimal":
-            objective = -self._negative_D_optimality(TEST_PARAMS)
+            if strategy.lower() == "d-optimal":
+                objective = -self._negative_D_optimality(TEST_X)
 
-        if rate:
-            objective /= expected_total_delay
+            return TEST_X[np.argmax(objective / cost)]
 
-        return TEST_PARAMS[np.argmax(objective)]
+        else:
+            dummy_evaluator = self.evaluator.copy()
+            X_to_sample = np.zeros((0, self.n_dof))
+
+            for i in range(n):
+                _X = self.recommend(
+                    strategy=strategy, evaluator=dummy_evaluator, validator=validator, greedy=True, n=1
+                )
+                _y = self.evaluator.mean(_X)
+
+                X_to_sample = np.r_[X_to_sample, _X]
+
+                if not (i + 1 == n):
+                    dummy_evaluator.tell(_X, _y)
+
+            return X_to_sample
+
+    def ask(self, **kwargs):
+        return self.inv_params_trans_fun(self.recommend(**kwargs))
 
     def learn(
         self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs
@@ -526,7 +435,7 @@ class Optimizer:
 
         for i in range(n_iter):
             params_to_sample = np.atleast_2d(
-                self.recommend(n=n_per_iter, strategy=strategy, **kwargs)
+                self.ask(n=n_per_iter, strategy=strategy, **kwargs)
             )  # get point(s) to sample from the strategizer
 
             n_original = len(params_to_sample)
@@ -539,8 +448,7 @@ class Optimizer:
             sampled_params, res_table = self.acquire_with_bluesky(
                 upsampled_params_to_sample
             )  # sample the point(s)
-            self.append(new_params=sampled_params, new_data=res_table)
-            self.update(reuse_hypers=reuse_hypers)  # update our model
+            self.tell(new_params=sampled_params, new_data=res_table, reuse_hypers=reuse_hypers)
 
             if "state" in plots:
                 self.plot_state(remake=False, gridded=self.gridded_plots)
@@ -627,14 +535,21 @@ class Optimizer:
         ax = self.state_axes[0, 0]
         ax.clear()
         ax.set_title("sampled fitness")
+
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+
         ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=fitness_norm)
 
-        self.greedy_max_improvement_params = self.recommend(strategy="exploit", n=1)
-        self.greedy_max_information_params = self.recommend(strategy="explore", n=1)
+        max_improvement_params = self.inv_params_trans_fun(self.recommend(strategy="exploit", greedy=False, n=16))
+        max_information_params = self.inv_params_trans_fun(self.recommend(strategy="explore", greedy=False, n=16))
 
-        ax.scatter(*self.greedy_max_information_params.T[:2], marker="s", color="k", s=s, label="max_information")
-        ax.scatter(*self.greedy_max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
-        ax.legend(fontsize=6)
+        max_improvement_routing_index, _ = utils.get_routing(self.current_params, max_improvement_params)
+        ordered_max_improvement_params = max_improvement_params[max_improvement_routing_index]
+
+        max_information_routing_index, _ = utils.get_routing(self.current_params, max_information_params)
+        ordered_max_information_params = max_information_params[max_information_routing_index]
+
+        # ax.legend(fontsize=6)
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("fitness units")
@@ -644,59 +559,75 @@ class Optimizer:
         ax.clear()
         ax.set_title("fitness estimate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm)
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm, shading="nearest"
+            )
         else:
             ref = ax.scatter(
                 *self.test_params.T[:2], s=s, c=self.fitness_estimate(self.test_params), norm=fitness_norm
             )
+
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("fitness units")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the entropy rate of test points
         ax = self.state_axes[0, 2]
         ax.clear()
         ax.set_title("fitness entropy rate")
         if gridded:
-            ref = ax.pcolormesh(
-                *self.dim_mids[:2], np.log(self.fitness_entropy(self.test_grid)), norm=mpl.colors.LogNorm()
-            )
+            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_entropy(self.test_grid), shading="nearest")
         else:
             ref = ax.scatter(
                 *self.test_params.T[:2],
                 s=s,
-                c=np.log(self.fitness_entropy(self.test_params)),
+                c=self.fitness_entropy(self.test_params),
                 norm=mpl.colors.LogNorm(),
             )
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("nepits per volume")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the estimate of test points
         ax = self.state_axes[0, 3]
         ax.clear()
-        ax.set_title("greedy improvement")
+        ax.set_title("expected improvement")
 
         if gridded:
-            expected_improvement = -self._negative_expected_improvement(self.test_grid)
+            expected_improvement = -self._negative_expected_improvement(
+                self.evaluator, self.validator, self.test_grid
+            )
             expected_improvement[~(expected_improvement > 0)] = np.nan
-            ref = ax.pcolormesh(*self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(vmin=0))
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(vmin=0), shading="nearest"
+            )
         else:
-            expected_improvement = -self._negative_expected_improvement(self.test_params)
+            expected_improvement = -self._negative_expected_improvement(
+                self.evaluator, self.validator, self.test_params
+            )
             expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.scatter(
                 *self.test_params.T[:2],
                 s=s,
-                c=-self._negative_expected_improvement(self.test_params),
+                c=-self._negative_expected_improvement(self.evaluator, self.validator, self.test_params),
                 norm=mpl.colors.Normalize(vmin=0),
             )
+
+        ax.plot(*ordered_max_improvement_params.T[:2], lw=1, color="k")
+        ax.scatter(*ordered_max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
+
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("standard deviations")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot classification of data points
         ax = self.state_axes[1, 0]
         ax.clear()
         ax.set_title("sampled validity")
-        ref = ax.scatter(*self.params.T[:2], s=s, c=self.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+
+        ref = ax.scatter(*self.params.T[:2], s=s, c=self.validator.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_ticks([0, 1])
         clb.set_ticklabels(["invalid", "valid"])
@@ -705,37 +636,48 @@ class Optimizer:
         ax.clear()
         ax.set_title("validity estimate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1)
+            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1, shading="nearest")
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=P, vmin=0, vmax=1)
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_ticks([0, 1])
         clb.set_ticklabels(["invalid", "valid"])
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 2]
         ax.set_title("validity entropy rate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], PE)
+            ref = ax.pcolormesh(*self.dim_mids[:2], PE, shading="nearest")
         else:
             ref = ax.scatter(*self.test_params.T[:2], s=s, c=PE)
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("nepits per volume")
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 3]
         ax.clear()
-        ax.set_title("greedy information")
+        ax.set_title("information gain")
         if gridded:
-            expected_information = -self._negative_expected_information_gain(
-                self.test_grid.reshape(-1, 1, self.n_dof)
+            expected_information = -_negative_expected_information_gain(
+                self.evaluator,
+                self.validator,
+                self.evaluator.X,
+                self.params_trans_fun(self.test_grid).reshape(-1, 1, self.n_dof),
             ).reshape(self.test_grid.shape[:2])
             expected_information[~(expected_information > 0)] = np.nan
             ref = ax.pcolormesh(
                 *self.dim_mids[:2],
                 expected_information / self.evaluator.model.covar_module.output_scale.item(),
                 norm=mpl.colors.Normalize(vmin=0),
+                shading="nearest",
             )
         else:
-            expected_information = self._negative_expected_information_gain(self.test_params[:, None, :])
+            expected_information = _negative_expected_information_gain(
+                self.evaluator,
+                self.validator,
+                self.evaluator.X,
+                self.params_trans_fun(self.test_params[:, None, :]),
+            )
             expected_information[~(expected_information > 0)] = np.nan
             ref = ax.scatter(
                 *self.test_params.T[:2],
@@ -743,8 +685,14 @@ class Optimizer:
                 c=expected_information / self.evaluator.model.covar_module.output_scale.item(),
                 norm=mpl.colors.Normalize(vmin=0),
             )
+
+        ax.plot(*ordered_max_information_params.T[:2], lw=1, color="k")
+        ax.scatter(*ordered_max_information_params.T[:2], marker="s", color="k", s=s, label="max_information")
+
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
         clb.set_label("total nepits")
+
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         for ax in self.state_axes.ravel():
             ax.set_xlim(*self.dof_bounds[0])
@@ -755,43 +703,6 @@ class Optimizer:
 
         if save_as is not None:
             plt.savefig(save_as)
-
-    def plot_readback(self):
-        # cm = mpl.cm.get_cmap("coolwarm")
-
-        p_valid = self.validate(self.test_params)
-        norm = mpl.colors.LogNorm(*np.nanpercentile(self.fitness, q=[1, 99]))
-        s = 32
-
-        if self.fig is None:
-            self.fig, self.axes = mpl.pyplot.subplots(2, 2, figsize=(12, 8), dpi=128, sharex=True, sharey=True)
-
-        # plot values of data points
-        ax = self.fig.axes[0]
-        ax.clear()
-        ax.set_title("fitness")
-        ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=norm)
-        self.fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
-
-        # plot the estimate of test points
-        ax = self.fig.axes[1]
-        ax.clear()
-        ax.set_title("fitness estimate")
-        ref = ax.scatter(*self.test_params.T[:2], s=s, c=self.mean(self.test_params), norm=norm)
-        self.fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
-
-        # plot classification of data points
-        ax = self.fig.axes[2]
-        ax.clear()
-        ax.set_title("class")
-        ref = ax.scatter(*self.params.T[:2], s=s, c=self.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
-        self.fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
-
-        ax = self.fig.axes[3]
-        ax.clear()
-        ax.set_title("class estimate")
-        ref = ax.scatter(*self.test_params.T[:2], s=s, c=1 - p_valid, vmin=0, vmax=1)
-        self.fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
 
     def _negative_improvement_variance(self, params):
         x = self.params_trans_fun(params)
@@ -815,14 +726,14 @@ class Optimizer:
     # talk to the model
 
     def fitness_estimate(self, params):
-        return self.inv_fitness_trans_fun(
-            self.evaluator.mean(self.params_trans_fun(params).reshape(-1, self.n_dof))
-        ).reshape(params.shape[:-1])
+        return self.evaluator.mean(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(
+            params.shape[:-1]
+        )
 
     def fitness_sigma(self, params):
-        return self.inv_fitness_trans_fun(
-            self.evaluator.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof))
-        ).reshape(params.shape[:-1])
+        return self.evaluator.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(
+            params.shape[:-1]
+        )
 
     def fitness_entropy(self, params):
         return np.log(np.sqrt(2 * np.pi * np.e) * self.fitness_sigma(params) + 1e-12)
@@ -838,7 +749,7 @@ class Optimizer:
     def delay_sigma(self, params):
         return self.timer.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
 
-    def _negative_expected_improvement(self, params):
+    def _negative_expected_improvement(self, evaluator, validator, params):
         """
         Returns the negative expected improvement over the maximum, in GP units.
         """
@@ -846,96 +757,21 @@ class Optimizer:
         x = self.params_trans_fun(params).reshape(-1, self.n_dof)
 
         # using GPRC units here
-        mu = self.evaluator.mean(x)
-        sigma = self.evaluator.sigma(x)
-        nu = self.evaluator.nu
-        p = self.validator.classify(x)
+        mu = evaluator.mean(x)
+        sigma = evaluator.sigma(x)
+        nu = evaluator.nu
+        pv = validator.classify(x)
 
         A = np.exp(-0.5 * np.square((mu - nu) / sigma)) / (np.sqrt(2 * np.pi) * sigma)
         B = 0.5 * (1 + sp.special.erf((mu - nu) / (np.sqrt(2) * sigma)))
-        E = -p * (A * sigma**2 + B * (mu - nu))
+        E = -pv * (A * sigma**2 + B * (mu - nu))
 
         return E.reshape(params.shape[:-1])
-
-    # functions for expected_information strategies
-
-    def _negative_expected_information_gain(self, params):
-        current_info = -self._posterior_entropy(params=None)
-        potential_info = -self._posterior_entropy(params=params)
-        p_valid = self.validate(params)
-
-        n_bad, n_tot = (potential_info - current_info <= 0).sum(), len(potential_info.ravel())
-
-        if not n_bad == 0:  # the posterior variance should always be positive
-            warnings.warn(f"{n_bad}/{n_tot} information estimates are non-positive.")
-            if n_bad / n_tot > 0.5:
-                raise ValueError("More than half of the information estimates are non-positive.")
-
-        return -np.product(p_valid, axis=-1) * (potential_info - current_info)
-
-    def _posterior_entropy(self, params=None):
-        """
-        params is an array with shape (n_sets, n_params_per_set, n_dof)
-
-        If we observe each of the n_params_per_set in each of the n_sets, what will the resulting integrals
-        over the posterior rate be? This function estimates that using a Quasi-Monte Carlo integration over a
-        dummy Gaussian processes.
-        Returns an array of shape (n_sets,).
-
-        If None is passed, we return the posterior entropy of the real process.
-        """
-
-        if params is None:
-            params = np.empty((1, 0, self.n_dof))  # one set of zero observations
-
-        # get the noise from the evaluator likelihood
-        raw_noise = self.evaluator.model.state_dict()["likelihood.noise_covar.raw_noise"]
-        noise = self.evaluator.model.likelihood.noise_covar.raw_noise_constraint.transform(raw_noise).item()
-
-        # n_data is the number of points in each observation we consider (n_data = n_process + n_params_per_set)
-        # x_data is an array of shape (n_sets, n_data, n_dof) that describes potential obervation states
-        # x_star is an array of points at which to evaluate the entropy rate, to sum together for the QMCI
-        x_data = torch.as_tensor(
-            np.r_[[np.r_[self.evaluator.x, _x] for _x in np.atleast_3d(self.params_trans_fun(params))]]
-        )
-        x_star = torch.as_tensor(self.params_trans_fun(self.test_params))
-
-        # for each potential observation state, compute the prior-prior and prior-posterior covariance matrices
-        # $C_data_data$ is the covariance of the potential data with itself, for each set of obervations
-        # $C_star_data$ is the covariance of the QMCI points with the potential data (n_sets, n_qmci, n_data)
-        # we don't care about K_star_star for our purposes, only its diagonal which is a constant prior_variance
-        C_data_data = self.evaluator.model.covar_module(x_data, x_data).detach().numpy().astype(
-            float
-        ) + noise**2 * np.eye(x_data.shape[1])
-        C_star_data = self.evaluator.model.covar_module(x_star, x_data).detach().numpy().astype(float)
-
-        prior_variance = self.evaluator.model.covar_module.output_scale.item() ** 2 + noise**2
-
-        # normally we would compute A * B" * A', but that would be inefficient as we only care about the diagonal.
-        # instead, compute this as:
-        #
-        # diag(A * B" * A') = sum(A * B" . A', -1)
-        #
-        # which is much faster.
-
-        explained_variance = (np.matmul(C_star_data, np.linalg.inv(C_data_data)) * C_star_data).sum(axis=-1)
-        posterior_variance = prior_variance - explained_variance
-
-        n_bad, n_tot = (posterior_variance <= 0).sum(), len(posterior_variance.ravel())
-
-        if not n_bad == 0:  # the posterior variance should always be positive
-            warnings.warn(f"{n_bad}/{n_tot} variance estimates are non-positive.")
-            if n_bad / n_tot > 0.5:
-                raise ValueError("More than half of the variance estimates are non-positive.")
-
-        marginal_entropy_rate = 0.5 * np.log(2 * np.pi * np.e * posterior_variance)
-
-        return marginal_entropy_rate.sum(axis=-1)
 
     def _contingent_fisher_information_matrix(self, params):
         x = self.params_trans_fun(params).reshape(-1, self.n_dof)
 
-        X_pot = np.r_[[np.r_[self.evaluator.x, _x[None]] for _x in x]]
+        X_pot = np.r_[[np.r_[self.evaluator.X, _x[None]] for _x in x]]
         (n_sets, n_per_set, n_dof) = X_pot.shape
 
         # both of these have shape (n_hypers, n_sets, n_per_set, n_per_set)
