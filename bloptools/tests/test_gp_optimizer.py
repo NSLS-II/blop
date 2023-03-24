@@ -33,8 +33,8 @@ def test_shadow_gp_optimizer(RE, db, shadow_tes_simulation):
         verbose=True,
     )
 
-    gpo.learn(n_iter=1, n_per_iter=1, strategy="explore", greedy=True, reuse_hypers=False)
-    gpo.learn(n_iter=1, n_per_iter=1, strategy="exploit", greedy=True, reuse_hypers=False)
+    gpo.learn(n_iter=1, n_per_iter=4, strategy="explore", greedy=False, reuse_hypers=False)
+    gpo.learn(n_iter=1, n_per_iter=4, strategy="exploit", greedy=False, reuse_hypers=False)
 
     gpo.plot_state(gridded=True)
     gpo.plot_fitness()
