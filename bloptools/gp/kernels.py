@@ -93,10 +93,14 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         T = torch.matmul(torch.diag(self.trans_diagonal), T)
         return T
 
-    def forward(self, x1, x2, diag=False, last_dim_is_batch=False, **params):
+    def forward(self, x1, x2=None, diag=False, auto=False, last_dim_is_batch=False, **params):
         # returns the homoskedastic diagonal
         if diag:
             return torch.square(self.output_scale[0]) * torch.ones((*self.batch_shape, *x1.shape[:-1]))
+
+        # computes the autocovariance of the process at the parameters
+        if auto:
+            x2 = x1
 
         # x1 and x2 are arrays of shape (..., n_1, n_dof) and (..., n_2, n_dof)
         _x1, _x2 = torch.as_tensor(x1).float(), torch.as_tensor(x2).float()

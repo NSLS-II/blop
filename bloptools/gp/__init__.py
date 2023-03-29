@@ -23,11 +23,12 @@ def load(filepath, **kwargs):
     return Optimizer(init_params=params, init_data=data, **kwargs)
 
 
-def _negative_expected_information_gain(evaluator, validator, prior_X, experimental_X):
-    qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
+def _negative_information_gain(evaluator, validator, base_X, experimental_X):
+    qmc_X = sp.stats.qmc.Halton(d=base_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
 
-    current_info = -_posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=qmc_X)
-    potential_info = -_posterior_entropy(evaluator, prior_X, experimental_X, qmc_X=qmc_X)
+    potential_info = -_posterior_entropy(evaluator, base_X, experimental_X, qmc_X=qmc_X)
+    current_info = -_posterior_entropy(evaluator, base_X, experimental_X=None, qmc_X=qmc_X)
+
     PV = validator.classify(experimental_X.reshape(-1, evaluator.n_dof)).reshape(experimental_X.shape[:-1])
 
     n_bad, n_tot = (potential_info - current_info <= 0).sum(), len(potential_info.ravel())
@@ -42,7 +43,7 @@ def _negative_expected_information_gain(evaluator, validator, prior_X, experimen
     return -np.product(PV, axis=-1) * (potential_info - current_info)
 
 
-def _posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=None):
+def _posterior_entropy(evaluator, base_X, experimental_X=None, qmc_X=None):
     """
     Returns the change in integrated entropy of the process contingent on some experiment using a Quasi-
     Monte Carlo integration over a dummy Gaussian processes.
@@ -55,42 +56,62 @@ def _posterior_entropy(evaluator, prior_X, experimental_X=None, qmc_X=None):
     """
 
     if qmc_X is None:
-        qmc_X = sp.stats.qmc.Halton(d=prior_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
+        qmc_X = sp.stats.qmc.Halton(d=base_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
 
     if experimental_X is None:
-        experimental_X = np.empty((1, 0, prior_X.shape[-1]))  # one set of zero observations
+        experimental_X = np.empty((1, 0, base_X.shape[-1]))  # one set of zero observations
 
     if not experimental_X.ndim == 3:
         raise ValueError("Passed params must have shape (n_sets, n_params_per_set, n_dof).")
 
     # get the noise from the evaluator likelihood
-    noise = evaluator.model.likelihood.noise.item()
+    noise = float(evaluator.model.likelihood.noise.item())
 
-    # n_data is the number of points in each observation we consider (n_data = n_process + n_params_per_set)
-    # x_data is an array of shape (n_sets, n_data, n_dof) that describes potential obervation states
-    # x_star is an array of points at which to evaluate the entropy rate, to sum together for the QMCI
-    x_data = torch.as_tensor(np.r_[[np.r_[prior_X, x] for x in np.atleast_3d(experimental_X)]])
-    x_star = torch.as_tensor(qmc_X)
+    b_X = torch.as_tensor(base_X)  # our base points that we've already sampled
+    e_X = torch.as_tensor(experimental_X)  # points that we are thinking of sampling
+    q_X = torch.as_tensor(qmc_X)  # points that we want our experiment to explain
 
-    # for each potential observation state, compute the prior-prior and prior-posterior covariance matrices
-    # $C_data_data$ is the covariance of the potential data with itself, for each set of obervations
-    # $C_star_data$ is the covariance of the QMCI points with the potential data (n_sets, n_qmci, n_data)
-    # we don't care about K_star_star for our purposes, only its diagonal which is a constant prior_variance
-    C_data_data = evaluator.model.covar_module(x_data, x_data).detach().numpy().astype(float) + noise * np.eye(
-        x_data.shape[1]
-    )
-    C_star_data = evaluator.model.covar_module(x_star, x_data).detach().numpy().astype(float)
+    n_b = b_X.shape[0]  # how many base points we have
+    n_s = e_X.shape[0]  # how many set of experiments we're computing this stuff for
+    n_e = e_X.shape[1]  # how many points are in each set of experiments
+
+    C_pp = evaluator.model.covar_module(b_X, b_X).detach().numpy().astype(float) + noise * np.eye(n_b)
+
+    # compute the ingredients of the factors of the blockwise inverse
+    A = np.repeat(C_pp[None], n_s, axis=0)
+    B = evaluator.model.covar_module(b_X, e_X).detach().numpy().astype(float)
+    C = np.swapaxes(B, -1, -2)
+    D = evaluator.model.covar_module(e_X, e_X).detach().numpy().astype(float) + noise * np.eye(n_e)[None]
+
+    invA = np.repeat(np.linalg.inv(C_pp)[None], n_s, axis=0)
+    invD = np.linalg.inv(D)
+
+    # compute the two factors of the blockwise inverse
+    BWI_1 = np.zeros((len(e_X), n_b + n_e, n_b + n_e))
+    BWI_1[:, :n_b, :n_b] = np.linalg.inv(A - utils.mprod(B, invD, C))
+    BWI_1[:, n_b:, n_b:] = np.linalg.inv(D - utils.mprod(C, invA, B))
+
+    BWI_2 = np.repeat(np.eye(n_b + n_e)[None], n_s, axis=0)
+    BWI_2[:, :n_b, n_b:] = -utils.mprod(B, invD)
+    BWI_2[:, n_b:, :n_b] = -utils.mprod(C, invA)
+
+    # we can now use BWI_1 * BWI_2 instead of [[A, B], [C, D]]"
+
+    # the covariance of the base and experiment points with the QMC points
+    C_qb = np.repeat(evaluator.model.covar_module(q_X, b_X).detach().numpy().astype(float)[None], n_s, axis=0)
+    C_qe = evaluator.model.covar_module(q_X, e_X).detach().numpy().astype(float)
+    C_qt = np.c_[C_qb, C_qe]
 
     prior_variance = evaluator.model.covar_module.output_scale.item() ** 2 + noise
 
-    # normally we would compute A * B" * A', but that would be inefficient as we only care about the diagonal.
-    # instead, compute this as:
+    # normally we would compute the posterior covariance as A * B" * A', but that would be
+    # inefficient as we only care about the diagonal. instead, compute this as:
     #
     # diag(A * B" * A') = sum(A * B" . A', -1)
     #
     # which is much faster.
 
-    explained_variance = (np.matmul(C_star_data, np.linalg.inv(C_data_data)) * C_star_data).sum(axis=-1)
+    explained_variance = (np.matmul(C_qt, utils.mprod(BWI_1, BWI_2)) * C_qt).sum(axis=-1)
     posterior_variance = prior_variance - explained_variance
 
     n_bad, n_tot = (posterior_variance < 0).sum(), posterior_variance.size
@@ -356,7 +377,15 @@ class Optimizer:
         return ordered_params, table
 
     def recommend(
-        self, evaluator=None, validator=None, strategy=None, greedy=True, cost_model=None, n=1, n_test=1024
+        self,
+        evaluator=None,
+        validator=None,
+        strategy=None,
+        greedy=True,
+        cost_model=None,
+        n=1,
+        n_test=1024,
+        disappointment=1,
     ):
         """
         Recommends the next $n$ points to sample, according to the given strategy.
@@ -374,7 +403,7 @@ class Optimizer:
         if strategy.lower() == "quasi-random":
             return sampler.random(n=n) * 2 - 1
 
-        if greedy or (n == 1):
+        if (not greedy) or (n == 1):
             # recommend some parameters that we might want to sample, with shape (., n, n_dof)
             TEST_X = (sampler.random(n=n * n_test) * 2 - 1).reshape(n_test, n, self.n_dof)
 
@@ -397,7 +426,7 @@ class Optimizer:
                 objective = -self._negative_expected_improvement(evaluator, validator, TEST_X).sum(axis=1)
 
             if strategy.lower() == "explore":
-                objective = -_negative_expected_information_gain(evaluator, validator, evaluator.X, TEST_X)
+                objective = -_negative_information_gain(evaluator, validator, evaluator.X, TEST_X)
 
             if strategy.lower() == "a-optimal":
                 objective = -self._negative_A_optimality(TEST_X)
@@ -407,7 +436,7 @@ class Optimizer:
 
             return TEST_X[np.argmax(objective / cost)]
 
-        else:
+        if greedy and (n > 1):
             dummy_evaluator = self.evaluator.copy()
             X_to_sample = np.zeros((0, self.n_dof))
 
@@ -415,7 +444,7 @@ class Optimizer:
                 _X = self.recommend(
                     strategy=strategy, evaluator=dummy_evaluator, validator=validator, greedy=True, n=1
                 )
-                _y = self.evaluator.mean(_X)
+                _y = self.evaluator.mean(_X) - disappointment * self.evaluator.sigma(_X)
 
                 X_to_sample = np.r_[X_to_sample, _X]
 
@@ -540,8 +569,12 @@ class Optimizer:
 
         ref = ax.scatter(*self.params.T[:2], s=s, c=self.fitness, norm=fitness_norm)
 
-        max_improvement_params = self.inv_params_trans_fun(self.recommend(strategy="exploit", greedy=False, n=16))
-        max_information_params = self.inv_params_trans_fun(self.recommend(strategy="explore", greedy=False, n=16))
+        max_improvement_params = self.inv_params_trans_fun(
+            self.recommend(strategy="exploit", greedy=True, n=16, n_test=1024)
+        )
+        max_information_params = self.inv_params_trans_fun(
+            self.recommend(strategy="explore", greedy=True, n=16, n_test=1024)
+        )
 
         max_improvement_routing_index, _ = utils.get_routing(self.current_params, max_improvement_params)
         ordered_max_improvement_params = max_improvement_params[max_improvement_routing_index]
@@ -596,7 +629,7 @@ class Optimizer:
 
         if gridded:
             expected_improvement = -self._negative_expected_improvement(
-                self.evaluator, self.validator, self.test_grid
+                self.evaluator, self.validator, self.params_trans_fun(self.test_grid)
             )
             expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.pcolormesh(
@@ -604,7 +637,7 @@ class Optimizer:
             )
         else:
             expected_improvement = -self._negative_expected_improvement(
-                self.evaluator, self.validator, self.test_params
+                self.evaluator, self.validator, self.params_trans_fun(self.test_params)
             )
             expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.scatter(
@@ -658,7 +691,7 @@ class Optimizer:
         ax.clear()
         ax.set_title("information gain")
         if gridded:
-            expected_information = -_negative_expected_information_gain(
+            expected_information = -_negative_information_gain(
                 self.evaluator,
                 self.validator,
                 self.evaluator.X,
@@ -672,7 +705,7 @@ class Optimizer:
                 shading="nearest",
             )
         else:
-            expected_information = _negative_expected_information_gain(
+            expected_information = _negative_information_gain(
                 self.evaluator,
                 self.validator,
                 self.evaluator.X,
@@ -749,12 +782,11 @@ class Optimizer:
     def delay_sigma(self, params):
         return self.timer.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
 
-    def _negative_expected_improvement(self, evaluator, validator, params):
+    def _negative_expected_improvement(self, evaluator, validator, test_X):
         """
         Returns the negative expected improvement over the maximum, in GP units.
         """
-
-        x = self.params_trans_fun(params).reshape(-1, self.n_dof)
+        x = test_X.reshape(-1, self.n_dof)
 
         # using GPRC units here
         mu = evaluator.mean(x)
@@ -766,7 +798,7 @@ class Optimizer:
         B = 0.5 * (1 + sp.special.erf((mu - nu) / (np.sqrt(2) * sigma)))
         E = -pv * (A * sigma**2 + B * (mu - nu))
 
-        return E.reshape(params.shape[:-1])
+        return E.reshape(test_X.shape[:-1])
 
     def _contingent_fisher_information_matrix(self, params):
         x = self.params_trans_fun(params).reshape(-1, self.n_dof)

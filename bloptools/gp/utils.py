@@ -1,6 +1,16 @@
 import numpy as np
 import pandas as pd
+import scipy as sp
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
+
+def _fast_psd_inverse(M):
+    """
+    About twice as fast as np.linalg.inv for large, PSD matrices.
+    """
+    cholesky, dpotrf_info = sp.linalg.lapack.dpotrf(M)
+    invM, dpotri_info = sp.linalg.lapack.dpotri(cholesky)
+    return np.where(invM, invM, invM.T)
 
 
 def mprod(*M):
