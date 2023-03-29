@@ -252,12 +252,7 @@ class GPC:
 
         with gpytorch.settings.fast_pred_var(), torch.no_grad():
             dist = self.model(x)
-            samples = dist.sample(torch.Size((256,))).exp()
+            samples = dist.sample(torch.Size((64,))).exp()
             probabilities = (samples / samples.sum(-2, keepdim=True)).mean(0)
 
-        if return_variance:
-            res = probabilities[1].detach().numpy(), dist.variance.detach().numpy()
-        else:
-            res = probabilities[1].detach().numpy()
-
-        return res
+        return probabilities[1].detach().numpy()
