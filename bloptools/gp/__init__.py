@@ -11,7 +11,7 @@ import scipy as sp
 import torch
 from matplotlib import pyplot as plt
 
-from . import kernels, models, plans, utils
+from . import models, plans, utils
 
 mpl.rc("image", cmap="coolwarm")
 
@@ -23,7 +23,7 @@ def load(filepath, **kwargs):
     return Optimizer(init_params=params, init_data=data, **kwargs)
 
 
-def _negative_information_gain(evaluator, validator, base_X, experimental_X):
+def _negative_expected_information_gain(evaluator, validator, base_X, experimental_X):
     qmc_X = sp.stats.qmc.Halton(d=base_X.shape[-1], scramble=True).random(n=1024) * 2 - 1
 
     potential_info = -_posterior_entropy(evaluator, base_X, experimental_X, qmc_X=qmc_X)
@@ -217,11 +217,9 @@ class Optimizer:
             self.background = 0
 
         # for actual prediction and optimization
-        self.evaluator = models.GPR(
-            length_scale_bounds=(1e-1, 1e0), max_noise_fraction=1e-2
-        )  # at most 1% of the RMS is due to noise
-        self.timer = models.GPR(length_scale_bounds=(5e-1, 2e0), max_noise_fraction=1e0)  # can be noisy, why not
-        self.validator = models.GPC(length_scale_bounds=(1e-1, 1e0))
+        self.evaluator = models.GPR()  # at most 1% of the RMS is due to noise
+        self.timer = models.GPR()  # can be noisy, why not
+        self.validator = models.GPC()
 
         self.params = np.zeros((0, self.n_dof))
         self.data = pd.DataFrame()
@@ -426,7 +424,7 @@ class Optimizer:
                 objective = -self._negative_expected_improvement(evaluator, validator, TEST_X).sum(axis=1)
 
             if strategy.lower() == "explore":
-                objective = -_negative_information_gain(evaluator, validator, evaluator.X, TEST_X)
+                objective = -_negative_expected_information_gain(evaluator, validator, evaluator.X, TEST_X)
 
             if strategy.lower() == "a-optimal":
                 objective = -self._negative_A_optimality(TEST_X)
@@ -510,13 +508,15 @@ class Optimizer:
     def draw_fitness_plots(self):
         self.fitness_axes[0, 0].clear()
 
-        times = self.data.time.astype(int).values / 1e9
+        times = self.data.acq_time.astype(int).values / 1e9
         times -= times[0]
 
         cum_max_fitness = [
             np.nanmax(self.fitness[: i + 1]) if not all(np.isnan(self.fitness[: i + 1])) else np.nan
             for i in range(len(self.fitness))
         ]
+
+        times = np.arange(len(self.fitness))
 
         ax = self.fitness_axes[0, 0]
         ax.scatter(times, self.fitness, c="k", label="fitness samples")
@@ -540,7 +540,7 @@ class Optimizer:
         """
 
         self.state_fig, self.state_axes = plt.subplots(
-            2, 4, figsize=(12, 6), dpi=160, sharex=True, sharey=True, constrained_layout=True
+            2, 5, figsize=(12, 6), dpi=160, sharex=True, sharey=True, constrained_layout=True
         )
 
     def draw_state_plots(self, gridded=False, save_as=None):
@@ -643,7 +643,7 @@ class Optimizer:
             ref = ax.scatter(
                 *self.test_params.T[:2],
                 s=s,
-                c=-self._negative_expected_improvement(self.evaluator, self.validator, self.test_params),
+                c=-expected_improvement,
                 norm=mpl.colors.Normalize(vmin=0),
             )
 
@@ -651,7 +651,7 @@ class Optimizer:
         ax.scatter(*ordered_max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
-        clb.set_label("standard deviations")
+        clb.set_label("fitness units")
         ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot classification of data points
@@ -691,31 +691,31 @@ class Optimizer:
         ax.clear()
         ax.set_title("information gain")
         if gridded:
-            expected_information = -_negative_information_gain(
+            expected_information_gain = -_negative_expected_information_gain(
                 self.evaluator,
                 self.validator,
                 self.evaluator.X,
                 self.params_trans_fun(self.test_grid).reshape(-1, 1, self.n_dof),
             ).reshape(self.test_grid.shape[:2])
-            expected_information[~(expected_information > 0)] = np.nan
+            expected_information_gain[~(expected_information_gain > 0)] = np.nan
             ref = ax.pcolormesh(
                 *self.dim_mids[:2],
-                expected_information / self.evaluator.model.covar_module.output_scale.item(),
+                expected_information_gain,
                 norm=mpl.colors.Normalize(vmin=0),
                 shading="nearest",
             )
         else:
-            expected_information = _negative_information_gain(
+            expected_information_gain = _negative_expected_information_gain(
                 self.evaluator,
                 self.validator,
                 self.evaluator.X,
                 self.params_trans_fun(self.test_params[:, None, :]),
             )
-            expected_information[~(expected_information > 0)] = np.nan
+            expected_information_gain[~(expected_information_gain > 0)] = np.nan
             ref = ax.scatter(
                 *self.test_params.T[:2],
                 s=s,
-                c=expected_information / self.evaluator.model.covar_module.output_scale.item(),
+                c=expected_information_gain,
                 norm=mpl.colors.Normalize(vmin=0),
             )
 
@@ -727,6 +727,29 @@ class Optimizer:
 
         ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
+        ax = self.state_axes[1, 4]
+        ax.clear()
+        ax.set_title("cFIM determinant")
+        if gridded:
+            D_optimality = -self._negative_D_optimality(self.test_grid.reshape(-1, 1, self.n_dof)).reshape(
+                self.test_grid.shape[:2]
+            )
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2],
+                D_optimality,
+                shading="nearest",
+            )
+        else:
+            D_optimality = -self._negative_D_optimality(self.test_params)
+            ref = ax.scatter(
+                *self.test_params.T[:2],
+                s=s,
+                c=D_optimality,
+            )
+
+        clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32)
+        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+
         for ax in self.state_axes.ravel():
             ax.set_xlim(*self.dof_bounds[0])
             ax.set_ylim(*self.dof_bounds[1])
@@ -736,25 +759,6 @@ class Optimizer:
 
         if save_as is not None:
             plt.savefig(save_as)
-
-    def _negative_improvement_variance(self, params):
-        x = self.params_trans_fun(params)
-
-        mu = self.evaluator.mean(x)
-        sigma = self.evaluator.sigma(x)
-        nu = self.evaluator.nu
-        p = self.validator.classify(x)
-
-        # sigma += 1e-3 * np.random.uniform(size=sigma.shape)
-
-        A = np.exp(-0.5 * np.square((mu - nu) / sigma)) / (np.sqrt(2 * np.pi) * sigma)
-        B = 0.5 * (1 + sp.special.erf((mu - nu) / (np.sqrt(2) * sigma)))
-
-        V = -(p**2) * (A * sigma**2 + B * (mu - nu)) ** 2 + p * (
-            A * sigma**2 * (mu - nu) + B * (sigma**2 + (mu - nu) ** 2)
-        )
-
-        return -np.maximum(0, V)
 
     # talk to the model
 
@@ -782,6 +786,22 @@ class Optimizer:
     def delay_sigma(self, params):
         return self.timer.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
 
+    def _negative_improvement_probability(self, evaluator, validator, test_X):
+        """
+        Returns the negative expected improvement over the maximum, in GP units.
+        """
+        x = test_X.reshape(-1, self.n_dof)
+
+        # using GPRC units here
+        mu = evaluator.mean(x)
+        sigma = evaluator.sigma(x)
+        nu = evaluator.nu
+        pv = validator.classify(x)
+
+        P = pv * 0.5 * (1 + sp.special.erf((mu - nu) / (np.sqrt(2) * sigma)))
+
+        return -P.reshape(test_X.shape[:-1])
+
     def _negative_expected_improvement(self, evaluator, validator, test_X):
         """
         Returns the negative expected improvement over the maximum, in GP units.
@@ -800,69 +820,18 @@ class Optimizer:
 
         return E.reshape(test_X.shape[:-1])
 
-    def _contingent_fisher_information_matrix(self, params):
-        x = self.params_trans_fun(params).reshape(-1, self.n_dof)
-
-        X_pot = np.r_[[np.r_[self.evaluator.X, _x[None]] for _x in x]]
-        (n_sets, n_per_set, n_dof) = X_pot.shape
-
-        # both of these have shape (n_hypers, n_sets, n_per_set, n_per_set)
-        dC_dtheta = np.zeros((0, n_sets, n_per_set, n_per_set))
-
-        dummy_kernel = kernels.LatentMaternKernel(n_dof=self.n_dof, length_scale_bounds=(1e-3, 1e3))
-        dummy_kernel.load_state_dict(self.evaluator.model.covar_module.state_dict())
-
-        C0 = dummy_kernel.forward(X_pot, X_pot).detach().numpy()
-
-        delta = 1e-4
-
-        for hyper_label in ["output_scale", "trans_diagonal", "trans_off_diag"]:
-            # constraint = getattr(dummy_kernel, f"raw_{hyper_label}_constraint")
-            hyper_value = getattr(dummy_kernel, f"raw_{hyper_label}").detach().numpy()
-
-            for i_hyper, hyper_val in enumerate(hyper_value):
-                d_hyper = np.array([delta if i == i_hyper else 0 for i in range(len(hyper_value))])
-
-                getattr(dummy_kernel, f"raw_{hyper_label}").data = torch.as_tensor(hyper_value + d_hyper).float()
-                # print(getattr(dummy_kernel, f'raw_{hyper_label}'))
-
-                _C = dummy_kernel.forward(X_pot, X_pot).detach().numpy()
-                _C += 1e-6 * np.square(dummy_kernel.output_scale.detach().numpy()) * np.eye(n_per_set)[None, :, :]
-
-                # m = np.matmul()
-                # C = np.r_[C, _C[None]]
-                dC_dtheta = np.r_[dC_dtheta, (_C - C0)[None] / delta]
-
-                getattr(dummy_kernel, f"raw_{hyper_label}").data = torch.as_tensor(hyper_value).float()
-                # print(getattr(dummy_kernel, f'raw_{hyper_label}'))
-
-                # getattr(dummy_kernel, hyper_label)[i_hyper] = hyper_value + 1e-12
-
-        n_hypers = len(dC_dtheta)
-        invC0 = np.linalg.inv(C0)
-
-        fisher_information = np.zeros((n_sets, n_hypers, n_hypers))
-
-        for i in range(n_hypers):
-            for j in range(n_hypers):
-                fisher_information[:, i, j] = np.trace(
-                    utils.mprod(invC0, dC_dtheta[i], invC0, dC_dtheta[j]), axis1=-1, axis2=-2
-                )
-
-        return fisher_information
-
     def _negative_A_optimality(self, params):
         """
         The negative trace of the inverse Fisher information matrix contingent on sampling the passed params.
         """
-
-        invFIM = np.linalg.inv(self._contingent_fisher_information_matrix(params))
+        test_X = self.params_trans_fun(params)
+        invFIM = np.linalg.inv(self.evaluator._contingent_fisher_information_matrix(test_X, delta=1e-3))
         return np.array(list(map(np.trace, invFIM)))
 
     def _negative_D_optimality(self, params):
         """
         The negative determinant of the inverse Fisher information matrix contingent on sampling the passed params.
         """
-
-        invFIM = np.linalg.inv(self._contingent_fisher_information_matrix(params))
-        return np.array(list(map(np.linalg.det, invFIM)))
+        test_X = self.params_trans_fun(params)
+        FIM_stack = self.evaluator._contingent_fisher_information_matrix(test_X, delta=1e-3)
+        return -np.array(list(map(np.linalg.det, FIM_stack)))
