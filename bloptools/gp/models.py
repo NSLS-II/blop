@@ -2,7 +2,7 @@ import gpytorch
 import numpy as np
 import torch
 
-from . import kernels
+from . import kernels, utils
 
 
 class GaussianProcessModel(gpytorch.models.ExactGP):
@@ -144,6 +144,52 @@ class GPR:
     @property
     def nu(self):
         return self.y.max()
+
+    def _contingent_fisher_information_matrix(self, test_X, delta=1e-3):
+        x = test_X.reshape(-1, self.n_dof)
+
+        total_X = np.r_[[np.r_[self.X, _x[None]] for _x in x]]
+        (n_sets, n_per_set, n_dof) = total_X.shape
+
+        # both of these have shape (n_hypers, n_sets, n_per_set, n_per_set)
+
+        dummy_evaluator = self.copy()
+        C = dummy_evaluator.model.covar_module.forward(total_X, total_X).detach().numpy().astype(float)
+        C += dummy_evaluator.likelihood.noise.item() * np.eye(n_per_set)[None]
+
+        M = dummy_evaluator.model.mean_module.forward(total_X).detach().numpy().astype(float)[:, :, None]
+
+        delta = 1e-3
+
+        dC_dtheta = np.zeros((0, n_sets, n_per_set, n_per_set))
+        dM_dtheta = np.zeros((0, n_sets, n_per_set, 1))
+
+        for hyper_name, hyper in self.model.named_hyperparameters():
+            for hyper_dim, hyper_val in enumerate(hyper.detach().numpy()):
+                dummy_state_dict = dummy_evaluator.model.state_dict().copy()
+                # print(dummy_evaluator.likelihood.noise.item())
+                dummy_state_dict[hyper_name][hyper_dim] += delta
+                # print(dummy_evaluator.likelihood.noise.item())
+                dummy_evaluator.model.load_state_dict(dummy_state_dict)
+                C_ = dummy_evaluator.model.covar_module.forward(total_X, total_X).detach().numpy().astype(float)
+                M_ = dummy_evaluator.model.mean_module.forward(total_X).detach().numpy().astype(float)[:, :, None]
+                C_ += dummy_evaluator.likelihood.noise.item() * np.eye(n_per_set)[None]
+                dummy_evaluator.model.load_state_dict(self.model.state_dict())
+                dC_dtheta = np.r_[dC_dtheta, (C_ - C)[None] / delta]
+                dM_dtheta = np.r_[dM_dtheta, (M_ - M)[None] / delta]
+
+        n_hypers = len(dC_dtheta)
+        invC = np.linalg.inv(C)
+
+        FIM_stack = np.zeros((n_sets, n_hypers, n_hypers))
+
+        for i in range(n_hypers):
+            for j in range(n_hypers):
+                FIM_stack[:, i, j] = utils.mprod(
+                    np.swapaxes(dM_dtheta[i], -1, -2), invC, dM_dtheta[j]
+                ).ravel() + 0.5 * np.trace(utils.mprod(invC, dC_dtheta[i], invC, dC_dtheta[j]), axis1=-1, axis2=-2)
+
+        return FIM_stack
 
 
 class GPC:

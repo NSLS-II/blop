@@ -7,7 +7,6 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
     def __init__(
         self,
         n_dof,
-        length_scale_bounds,
         off_diag=True,
         **kwargs,
     ):
@@ -17,10 +16,8 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         self.n_off_diag = int(n_dof * (n_dof - 1) / 2)
         self.off_diag = off_diag
 
-        inv_length_scale_bounds = (1 / length_scale_bounds[1], 1 / length_scale_bounds[0])
-
         output_scale_constraint = gpytorch.constraints.Positive()
-        trans_diagonal_constraint = gpytorch.constraints.Interval(*inv_length_scale_bounds)
+        trans_diagonal_constraint = gpytorch.constraints.Interval(1e0, 1e2)
         trans_off_diag_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
 
         trans_diagonal_initial = np.sqrt(
@@ -87,10 +84,19 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
 
     @property
     def trans_matrix(self):
-        T = torch.eye(self.n_dof)
-        if self.off_diag:
-            T[np.triu_indices(self.n_dof, k=1)] = self.trans_off_diag
+        # no rotations
+        if not self.off_diag:
+            T = torch.eye(self.n_dof)
+
+        # construct an orthogonal matrix. exp(skew(N)) is the generator of SO(N)
+        else:
+            A = torch.zeros((self.n_dof, self.n_dof))
+            A[np.triu_indices(self.n_dof, k=1)] = self.trans_off_diag
+            A += -A.T
+            T = torch.linalg.matrix_exp(A)
+
         T = torch.matmul(torch.diag(self.trans_diagonal), T)
+
         return T
 
     def forward(self, x1, x2=None, diag=False, auto=False, last_dim_is_batch=False, **params):
@@ -108,7 +114,7 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         # dx has shape (..., n_1, n_2, n_dof)
         dx = _x1.unsqueeze(-2) - _x2.unsqueeze(-3)
 
-        # transform coordinate frame with hyperparameters (this applies lengthscale and rotations)
+        # transform coordinates with hyperparameters (this applies lengthscale and rotations)
         trans_dx = torch.matmul(self.trans_matrix, dx.unsqueeze(-1))
 
         # total transformed distance. D has shape (..., n_1, n_2)
