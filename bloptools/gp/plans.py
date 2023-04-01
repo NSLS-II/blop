@@ -16,7 +16,7 @@ def take_background(self):
         yield from bps.sleep(1.0)
         yield from bps.mv(self.shutter.close_cmd, 1)
 
-    yield from bp.count([self.detector])
+    yield from bp.count(self.detectors)
 
     yield from bps.mv(self.shutter.open_cmd, 1)
     yield from bps.sleep(2.0)
@@ -27,3 +27,5 @@ def take_background(self):
         print(f"Shutter not open, retrying ... (closed_status = {self.shutter.status.get()})")
         yield from bps.sleep(1.0)
         yield from bps.mv(self.shutter.open_cmd, 1)
+
+    yield from bps.sleep(10.0)
