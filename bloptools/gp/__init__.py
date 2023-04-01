@@ -674,18 +674,12 @@ class BayesianOptimizer:
         detectors,
         dofs,
         dof_bounds,
-        run_engine,
         db,
         shutter=None,
-        fitness_model="tes",
-        init_params=None,
-        init_data=None,
-        init_scheme=None,
-        n_init=None,
+        mode="tes",
         training_iter=256,
         verbose=True,
         sample_center_on_init=True,
-        **kwargs,
     ):
         """
         A Bayesian optimizer object.
@@ -694,7 +688,6 @@ class BayesianOptimizer:
         detector_type (str)
         dofs (list of Devices)
         dof_bounds (list of bounds)
-        run_engine ()
         fitness_model (str)
 
         training_iter (int)
@@ -704,13 +697,15 @@ class BayesianOptimizer:
 
         self.sample_center_on_init = sample_center_on_init
 
-        self.fitness_func = getattr(fitness, fitness_model)
-        self.fitness_args = configs.FITNESS_CONFIGS[fitness_model]['fitness_args']
+        self.mode = mode
+        self.shutter = shutter
+
+        self.fitness_func = getattr(fitness, mode)
+        self.fitness_args = configs.CONFIGS[mode]['fitness_args']
 
         self.dofs, self.dof_bounds = dofs, dof_bounds
         self.n_dof = len(dofs)
 
-        self.run_engine = run_engine
         self.detectors = detectors
 
         self.db = db
@@ -743,20 +738,6 @@ class BayesianOptimizer:
         # convert x to params
         self.inv_params_trans_fun = lambda x: x * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
 
-        self.shutter = shutter
-        self.fig, self.axes = None, None
-
-        if self.shutter is not None:
-
-            (uid,) = self.run_engine(plans.take_background(self))
-            self.fitness_args['background'] = np.array(list(db[uid].data(field=self.fitness_args['image'])))[0]
-
-            if self.shutter.status.get() != 0:
-                raise RuntimeError("Could not open shutter!")
-
-        else:
-            self.background = 0
-
         # for actual prediction and optimization
         self.evaluator = models.GPR()  # at most 1% of the RMS is due to noise
         self.validator = models.GPC()
@@ -765,11 +746,26 @@ class BayesianOptimizer:
         self.params = np.zeros((0, self.n_dof))
         self.data = pd.DataFrame()
 
+    def initialize(self,
+        init_params=None,
+        init_data=None,
+        init_scheme=None,
+        n_init=4,
+    ):
+        if self.mode == "tes":
+            uid = (yield from plans.take_background(self.shutter, self.detectors))
+            self.fitness_args['background'] = np.array(list(self.db[uid].data(field=self.fitness_args['image'])))[0]
+
+            if self.shutter.status.get(as_string=True) != "Open":
+                raise RuntimeError(f"Could not open shutter {self.shutter.name}!")
+        else:
+            self.background = 0
+
         if (init_params is not None) and (init_data is not None):
-            self.tell(new_params=init_params, new_data=init_data, reuse_hypers=True, verbose=verbose)
+            self.tell(new_params=init_params, new_data=init_data, reuse_hypers=True, verbose=self.verbose)
 
         elif init_scheme == "quasi-random":
-            self.learn(n_iter=1, n_per_iter=n_init, strategy="quasi-random", greedy=True, reuse_hypers=False, init=True)
+            yield from self.learn(n_iter=1, n_per_iter=n_init, strategy=init_scheme, greedy=True, reuse_hypers=False, init=True)
 
         else:
             raise Exception(
@@ -790,10 +786,10 @@ class BayesianOptimizer:
         return self.inv_params_trans_fun(self.evaluator.X[np.nanargmax(self.evaluator.y)])
 
     def go_to_optimum(self):
-        self.run_engine(bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items]))
+        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items])
 
     def go_to(self, x):
-        self.run_engine(bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(x).T) for _ in items]))
+        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(x).T) for _ in items])
 
     def inspect_beam(self, index, border=None):
 
@@ -860,11 +856,7 @@ class BayesianOptimizer:
         start_time = ttime.monotonic()
 
         #try:
-        (uid,) = self.run_engine(
-            bp.list_scan(
-                self.detectors, *[_ for items in zip(self.dofs, np.atleast_2d(ordered_params).T) for _ in items]
-            )
-        )
+        uid = yield from bp.list_scan(self.detectors, *[_ for items in zip(self.dofs, np.atleast_2d(ordered_params).T) for _ in items])
         _table = self.db[uid].table(fill=True)
         _table.loc[:, 'uid'] = uid
 
@@ -1008,9 +1000,10 @@ class BayesianOptimizer:
                 np.arange(n_original + 1), np.r_[self.current_params[None], params_to_sample], axis=0
             )(np.linspace(0, n_original, n_upsample)[1:])
 
-            sampled_params, res_table = self.acquire_with_bluesky(
+            sampled_params, res_table = yield from self.acquire_with_bluesky(
                 upsampled_params_to_sample
             )  # sample the point(s)
+
             self.tell(new_params=sampled_params, new_data=res_table, reuse_hypers=reuse_hypers)
 
             if "state" in plots:

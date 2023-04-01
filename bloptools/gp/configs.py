@@ -1,4 +1,4 @@
-FITNESS_CONFIGS = {
+CONFIGS = {
     "tes" : {
         "fitness_args" : {
             'image' : 'vstream_image',
