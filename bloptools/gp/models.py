@@ -86,8 +86,8 @@ class GPR:
 
     def tell(self, X, y):
         self.model.set_train_data(
-            torch.cat([self.torch_inputs, torch.as_tensor(np.atleast_2d(X))]),
-            torch.cat([self.torch_targets, torch.as_tensor(np.atleast_1d(y))]),
+            torch.cat([self.torch_inputs, torch.as_tensor(np.atleast_2d(X))]).float(),
+            torch.cat([self.torch_targets, torch.as_tensor(np.atleast_1d(y))]).float(),
             strict=False,
         )
 
@@ -99,7 +99,7 @@ class GPR:
         self.model.train()
 
         # Use the adam optimizer
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-1)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-2)
 
         # "Loss" for GPs - the marginal log likelihood
         self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
@@ -136,10 +136,12 @@ class GPR:
         return dummy
 
     def mean(self, X):
-        return self.regress(X).mean.detach().numpy().ravel()
+        *input_shape, _ = X.shape
+        return self.regress(X.reshape(-1, self.n_dof)).mean.detach().numpy().reshape(input_shape)
 
     def sigma(self, X):
-        return self.regress(X).stddev.detach().numpy().ravel()
+        *input_shape, _ = X.shape
+        return self.regress(X.reshape(-1, self.n_dof)).stddev.detach().numpy().reshape(input_shape)
 
     @property
     def nu(self):
@@ -265,7 +267,7 @@ class GPC:
         self.likelihood.train()
         self.model.train()
 
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-1)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=1e-2)
         self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self.model)
 
         for i in range(training_iter):
@@ -289,8 +291,11 @@ class GPC:
 
         return dummy
 
-    def classify(self, x, return_variance=False):
-        x = torch.as_tensor(np.atleast_2d(x)).float()
+    def classify(self, X, return_variance=False):
+
+        *input_shape, _ = X.shape
+
+        x = torch.as_tensor(X.reshape(-1, self.n_dof)).float()
 
         # set to evaluation mode
         self.likelihood.eval()
@@ -298,7 +303,7 @@ class GPC:
 
         with gpytorch.settings.fast_pred_var(), torch.no_grad():
             dist = self.model(x)
-            samples = dist.sample(torch.Size((64,))).exp()
+            samples = dist.sample(torch.Size((256,))).exp()
             probabilities = (samples / samples.sum(-2, keepdim=True)).mean(0)
 
-        return probabilities[1].detach().numpy()
+        return probabilities[1].detach().numpy().reshape(input_shape)
