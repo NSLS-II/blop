@@ -1,5 +1,6 @@
 CONFIGS = {
     "tes" : {
+        "fields" : ['vstream_image', 'I0'],
         "fitness_args" : {
             'image' : 'vstream_image',
              'flux' : 'I0',
