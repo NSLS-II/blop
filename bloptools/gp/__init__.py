@@ -220,7 +220,7 @@ def load(filepath, **kwargs):
 #         # for actual prediction and optimization
 #         self.evaluator = models.GPR()  # at most 1% of the RMS is due to noise
 #         self.validator = models.GPC()
-#         self.adjfitGP = models.GPR() 
+#         self.adjfitGP = models.GPR()
 
 #         self.params = np.zeros((0, self.n_dof))
 #         self.data = pd.DataFrame()
@@ -315,7 +315,7 @@ def load(filepath, **kwargs):
 #         for i, entry in _table.iterrows():
 
 #             keys, vals = self.fitness_func(entry, self.fitness_args)
-            
+
 #             _table.loc[i, keys] = vals
 #         # _table.insert(0, "acq_time", ttime.time())
 #         # _table.insert(1, "acq_duration", ttime.monotonic() - start_time)
@@ -640,7 +640,7 @@ def load(filepath, **kwargs):
 #         E = A * sigma**2 + B * (mu - nu)
 
 #         return E.reshape(test_X.shape[:-1])
-    
+
 #     def _negative_variance(self, gp, test_X):
 #         """
 #         Returns the negative expected improvement over the maximum, in GP units.
@@ -667,8 +667,10 @@ def load(filepath, **kwargs):
 #         FIM_stack = self.evaluator._contingent_fisher_information_matrix(test_X, delta=1e-3)
 #         return -np.array(list(map(np.linalg.det, FIM_stack)))
 
+import bluesky_adaptive
+from bluesky_adaptive.agents.base import Agent
 
-class BayesianOptimizer:
+class BayesianOptimizationAgent(Agent):
     def __init__(
         self,
         detectors,
@@ -700,8 +702,10 @@ class BayesianOptimizer:
         self.mode = mode
         self.shutter = shutter
 
+        self.config = configs.CONFIGS[mode]
+
         self.fitness_func = getattr(fitness, mode)
-        self.fitness_args = configs.CONFIGS[mode]['fitness_args']
+        self.fitness_args = self.config['fitness_args']
 
         self.dofs, self.dof_bounds = dofs, dof_bounds
         self.n_dof = len(dofs)
@@ -715,8 +719,6 @@ class BayesianOptimizer:
 
         self.gp_lp_fig = None
         self.fit_lp_fig = None
-
-        self.dof_names = np.array([dof.name for dof in self.dofs])
 
         MAX_TEST_POINTS = 2**10
 
@@ -732,7 +734,7 @@ class BayesianOptimizer:
 
         # convert params to x
         self.params_trans_fun = (
-            lambda params: (params - self.dof_bounds.min(axis=1)) / self.dof_bounds.ptp(axis=1) 
+            lambda params: (params - self.dof_bounds.min(axis=1)) / self.dof_bounds.ptp(axis=1)
         )
 
         # convert x to params
@@ -741,10 +743,16 @@ class BayesianOptimizer:
         # for actual prediction and optimization
         self.evaluator = models.GPR()  # at most 1% of the RMS is due to noise
         self.validator = models.GPC()
-        self.adjfitGP = models.GPR() 
+        self.adjfitGP = models.GPR()
 
         self.params = np.zeros((0, self.n_dof))
         self.data = pd.DataFrame()
+
+    def measurement_plan(self):
+        yield from bp.count(detectors=self.detectors)
+
+    def unpack_run(self):
+        return None
 
     def initialize(self,
         init_params=None,
@@ -778,6 +786,14 @@ class BayesianOptimizer:
         return np.array([dof.read()[dof.name]["value"] for dof in self.dofs])
 
     @property
+    def dof_names(self):
+        return [dof.name for dof in self.dofs]
+
+    @property
+    def det_names(self):
+        return self.config['fields']
+
+    @property
     def current_X(self):
         return self.inv_params_trans_fun(self.current_params)
 
@@ -796,7 +812,7 @@ class BayesianOptimizer:
         im = self.images[index]
 
         x_min, x_max, y_min, y_max, width_x, width_y = self.data.loc[index, ['x_min', 'x_max', 'y_min', 'y_max', 'width_x', 'width_y']]
-        
+
         bbx = np.array([x_min, x_max])[[0, 0, 1, 1, 0]]
         bby = np.array([y_min, y_max])[[0, 1, 1, 0, 0]]
 
@@ -1346,7 +1362,7 @@ class BayesianOptimizer:
         E = -pv * (A * sigma**2 + B * (mu - nu))
 
         return E.reshape(test_X.shape[:-1])
-    
+
     def _negative_expected_variance(self, evaluator, validator, test_X):
         """
         Returns the negative expected improvement over the maximum, in GP units.
