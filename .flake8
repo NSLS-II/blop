@@ -7,6 +7,7 @@ exclude =
     dist,
     docs/source/conf.py
     examples/benchmark.py,
+    bloptools/tests/test_boa.py,
     versioneer.py,
 max-line-length = 115
 # Ignore some style 'errors' produced while formatting by 'black'

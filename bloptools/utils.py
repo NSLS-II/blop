@@ -1,14 +1,14 @@
 import numpy as np
-import pandas as pd
 import scipy as sp
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
-def estimate_root_indices(x):
 
+def estimate_root_indices(x):
     # or, indices_before_sign_changes
-    i_whole = np.where(np.sign(x[1:])!=np.sign(x[:-1]))[0]
-    i_part = 1 - x[i_whole+1] / (x[i_whole+1] - x[i_whole])
-    return i_whole + i_part 
+    i_whole = np.where(np.sign(x[1:]) != np.sign(x[:-1]))[0]
+    i_part = 1 - x[i_whole + 1] / (x[i_whole + 1] - x[i_whole])
+    return i_whole + i_part
+
 
 def _fast_psd_inverse(M):
     """
@@ -38,7 +38,7 @@ def get_routing(origin, points):
 
     # delay_matrix = gpo.delay_estimate(rel_points[:,None,:] - rel_points[None,:,:])
     delay_matrix = np.sqrt(np.square(rel_points[:, None, :] - rel_points[None, :, :]).sum(axis=-1))
-    delay_matrix = (1e6 * delay_matrix).astype(int) # it likes integers idk
+    delay_matrix = (1e6 * delay_matrix).astype(int)  # it likes integers idk
 
     manager = pywrapcp.RoutingIndexManager(
         len(_points), 1, 0
@@ -81,14 +81,11 @@ def get_movement_time(x, v_max, a):
     )
 
 
-def get_beam_stats(image, beam_prop=0.5):
+def get_principal_component_bounds(image, beam_prop=0.5):
     """
-    Parse the beam from an image. Returns the normalized bounding box, along with a flux
-    estimate and a goodness of fit parameter. This should go off without a hitch
-    as long as beam_prop is less than 1.
+    Returns the bounding box in pixel units of an image, along with a goodness of fit parameter.
+    This should go off without a hitch as long as beam_prop is less than 1.
     """
-
-    n_y, n_x = image.shape
 
     if image.sum() == 0:
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan

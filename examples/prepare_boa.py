@@ -18,10 +18,13 @@ from sirepo_bluesky.sirepo_ophyd import create_classes
 from sirepo_bluesky.srw_handler import SRWFileHandler
 
 import bloptools  # noqa F401
-from bloptools.gp import Optimizer  # noqa F401
+from bloptools.bo import BayesianOptimizationAgent  # noqa F401
 
 RE = RunEngine({})
+
 bec = best_effort.BestEffortCallback()
+bec.disable_plots()
+
 RE.subscribe(bec)
 
 # MongoDB backend:
@@ -41,8 +44,7 @@ plt.ion()
 root_dir = "/tmp/sirepo-bluesky-data"
 _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 
-
-connection = SirepoBluesky("http://localhost:8000")
+connection = SirepoBluesky("http://localhost:8001")
 
 data, schema = connection.auth("shadow", "00000002")
 classes, objects = create_classes(connection.data, connection=connection)
