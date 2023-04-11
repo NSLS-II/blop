@@ -130,7 +130,7 @@ class BayesianOptimizationAgent:
 
     @property
     def det_names(self):
-        return self.config["fields"]
+        return self.experiment.DEPENDENT_COMPONENTS
 
     @property
     def current_X(self):
