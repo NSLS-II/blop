@@ -12,8 +12,6 @@ from . import models
 
 mpl.rc("image", cmap="coolwarm")
 
-print("reloaded!")
-
 
 def load(filepath, **kwargs):
     with h5py.File(filepath, "r") as f:
