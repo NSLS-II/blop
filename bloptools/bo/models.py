@@ -128,7 +128,7 @@ class GPR:
             raise RuntimeError("You cannot copy a model with no data.")
 
         dummy = GPR()
-        dummy.set_data(self.X, self.y)
+        dummy.set_data(self.X, self.Y)
         dummy.model.load_state_dict(self.model.state_dict())
 
         return dummy
