@@ -1,6 +1,22 @@
 import numpy as np
-import pandas as pd
+import scipy as sp
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
+
+def estimate_root_indices(x):
+    # or, indices_before_sign_changes
+    i_whole = np.where(np.sign(x[1:]) != np.sign(x[:-1]))[0]
+    i_part = 1 - x[i_whole + 1] / (x[i_whole + 1] - x[i_whole])
+    return i_whole + i_part
+
+
+def _fast_psd_inverse(M):
+    """
+    About twice as fast as np.linalg.inv for large, PSD matrices.
+    """
+    cholesky, dpotrf_info = sp.linalg.lapack.dpotrf(M)
+    invM, dpotri_info = sp.linalg.lapack.dpotri(cholesky)
+    return np.where(invM, invM, invM.T)
 
 
 def mprod(*M):
@@ -22,7 +38,7 @@ def get_routing(origin, points):
 
     # delay_matrix = gpo.delay_estimate(rel_points[:,None,:] - rel_points[None,:,:])
     delay_matrix = np.sqrt(np.square(rel_points[:, None, :] - rel_points[None, :, :]).sum(axis=-1))
-    delay_matrix *= 1000
+    delay_matrix = (1e6 * delay_matrix).astype(int)  # it likes integers idk
 
     manager = pywrapcp.RoutingIndexManager(
         len(_points), 1, 0
@@ -65,89 +81,11 @@ def get_movement_time(x, v_max, a):
     )
 
 
-def parse_images(
-    images, extents=None, index_to_parse=None, n_max_median=1024, remove_background=False, verbose=False
-):
+def get_principal_component_bounds(image, beam_prop=0.5):
     """
-    Parse a stack of images of shape (n_f, n_y, n_x)
+    Returns the bounding box in pixel units of an image, along with a goodness of fit parameter.
+    This should go off without a hitch as long as beam_prop is less than 1.
     """
-    n_f, n_y, n_x = images.shape
-
-    if extents is None:
-        extents = [None for i in range(n_f)]
-    if index_to_parse is None:
-        index_to_parse = np.arange(n_f)
-
-    # sample at most n_max_median points in estimating the background
-    background = (
-        np.median(images[np.unique(np.linspace(0, len(images) - 1, n_max_median).astype(int))], axis=0)
-        if remove_background
-        else 0
-    )
-    beam_stats = pd.DataFrame(
-        columns=[
-            "x_min",
-            "x_max",
-            "y_min",
-            "y_max",
-            "rel_x_min",
-            "rel_x_max",
-            "rel_y_min",
-            "rel_y_max",
-            "flux",
-            "maximum",
-            "separability",
-        ],
-        dtype=float,
-    )
-
-    for i, (image, extent) in enumerate(zip(images, extents)):
-        if i not in index_to_parse:
-            continue
-        if extent is None:
-            extent = np.array([0, n_y, 0, n_x])
-
-        beam_stats.loc[
-            i, ["rel_x_min", "rel_x_max", "rel_y_min", "rel_y_max", "flux", "maximum", "separability"]
-        ] = _get_beam_stats(image - background, beam_prop=0.95)
-        beam_stats.loc[i, ["x_min", "x_max"]] = np.interp(
-            beam_stats.loc[i, ["rel_x_min", "rel_x_max"]].values, [0, 1], extent[2:]
-        )
-        beam_stats.loc[i, ["y_min", "y_max"]] = np.interp(
-            beam_stats.loc[i, ["rel_y_min", "rel_y_max"]].values, [0, 1], extent[:-2]
-        )
-        # if verbose: print(i); ip.display.clear_output(wait=True)
-
-    beam_stats["w_x"] = beam_stats.x_max - beam_stats.x_min
-    beam_stats["w_y"] = beam_stats.y_max - beam_stats.y_min
-
-    beam_stats["pixel_area"] = (images > 0.05 * images.max(axis=(1, 2))[:, None, None]).sum(axis=(1, 2))
-
-    beam_stats["fitness"] = np.log(beam_stats.separability / (beam_stats.w_x**2 + beam_stats.w_y**2))
-
-    # beam_stats['fitness'] = beam_stats['flux'] / beam_stats['pixel_area']
-
-    OOB_rel_buffer = 1 / 32  # out-of-bounds relative buffer
-
-    bad = beam_stats.rel_x_min.values < OOB_rel_buffer
-    bad |= beam_stats.rel_x_max.values > 1 - OOB_rel_buffer
-    bad |= beam_stats.rel_y_min.values < OOB_rel_buffer
-    bad |= beam_stats.rel_y_max.values > 1 - OOB_rel_buffer
-    bad |= beam_stats.separability.values < 0.5  # at least half the variance must be explained by a beam
-
-    beam_stats.loc[bad, "fitness"] = np.nan  # set the fitness of questionable beams to nan
-
-    return beam_stats
-
-
-def _get_beam_stats(image, beam_prop=0.5):
-    """
-    Parse the beam from an image. Returns the normalized bounding box, along with a flux
-    estimate and a goodness of fit parameter. This should go off without a hitch
-    as long as beam_prop is less than 1.
-    """
-
-    n_y, n_x = image.shape
 
     if image.sum() == 0:
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
@@ -175,17 +113,15 @@ def _get_beam_stats(image, beam_prop=0.5):
 
     # interpolate, so that we can go finer than one pixel. this quartet is the "bounding box", from 0 to 1.
     # (let's make this more efficient later)
-    x_min = np.interp(q_min, cs_beam_x[[i_q_min_x, i_q_min_x + 1]], [i_q_min_x, i_q_min_x + 1]) / n_x
-    x_max = np.interp(q_max, cs_beam_x[[i_q_max_x, i_q_max_x + 1]], [i_q_max_x, i_q_max_x + 1]) / n_x
-    y_min = np.interp(q_min, cs_beam_y[[i_q_min_y, i_q_min_y + 1]], [i_q_min_y, i_q_min_y + 1]) / n_y
-    y_max = np.interp(q_max, cs_beam_y[[i_q_max_y, i_q_max_y + 1]], [i_q_max_y, i_q_max_y + 1]) / n_y
+    x_min = np.interp(q_min, cs_beam_x[[i_q_min_x, i_q_min_x + 1]], [i_q_min_x, i_q_min_x + 1])
+    x_max = np.interp(q_max, cs_beam_x[[i_q_max_x, i_q_max_x + 1]], [i_q_max_x, i_q_max_x + 1])
+    y_min = np.interp(q_min, cs_beam_y[[i_q_min_y, i_q_min_y + 1]], [i_q_min_y, i_q_min_y + 1])
+    y_max = np.interp(q_max, cs_beam_y[[i_q_max_y, i_q_max_y + 1]], [i_q_max_y, i_q_max_y + 1])
 
     return (
         x_min,
         x_max,
         y_min,
         y_max,
-        s[0] * np.outer(u[:, 0], v[0]).sum(),
-        image.max() - image.mean(),
         separability,
     )
