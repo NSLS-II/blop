@@ -36,8 +36,6 @@ class BoTorchClassifier(gpytorch.models.ExactGP, botorch.models.gpytorch.GPyTorc
         self.mean_module = gpytorch.means.ConstantMean(batch_shape=len(train_Y.unique()))
         self.covar_module = kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True)
 
-        print(train_Y.shape[-1])
-
     def forward(self, x):
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x)
@@ -121,7 +119,7 @@ class GPR:
         )
 
     def train(self, maxiter=100, lr=1e-2):
-        botorch.optim.fit.fit_gpytorch_torch(self.mll, options={"lr": lr, "maxiter": maxiter})
+        botorch.optim.fit.fit_gpytorch_mll_torch(self.mll, optimizer=torch.optim.Adam, step_limit=256)
 
     def copy(self):
         if self.model is None:
@@ -144,8 +142,18 @@ class GPR:
         return self.model.posterior(x).stddev.detach().numpy().reshape(input_shape)
 
     @property
+    def scale(self):
+        return self.model.covar_module.task_covar_module.var.sqrt().item()
+
+    @property
     def nu(self):
         return self.Y.max()
+
+    def entropy(self, X):
+        return 0.5 + np.log(np.sqrt(2 * np.pi) * self.sigma(X))
+
+    def normalized_entropy(self, X):
+        return 0.5 + np.log(np.sqrt(2 * np.pi) * self.sigma(X) / self.scale)
 
     def _contingent_fisher_information_matrix(self, test_X, delta=1e-3):
         x = test_X.reshape(-1, self.n_dof)
@@ -252,7 +260,7 @@ class GPC:
         self.set_data(np.r_[self.X, np.atleast_2d(X)], np.r_[self.c, np.atleast_1d(c)])
 
     def train(self, maxiter=100, lr=1e-2):
-        botorch.optim.fit.fit_gpytorch_torch(self.mll, options={"lr": lr, "maxiter": maxiter})
+        botorch.optim.fit.fit_gpytorch_mll_torch(self.mll, optimizer=torch.optim.Adam, step_limit=256)
 
     def copy(self):
         if self.model is None:
@@ -264,11 +272,17 @@ class GPC:
 
         return dummy
 
-    def classify(self, X, n_samples=256):
+    def p(self, X, n_samples=256):
         *input_shape, _ = X.shape
 
         x = torch.as_tensor(X.reshape(-1, self.n_dof)).double()
 
         samples = self.model.posterior(x).sample(torch.Size((n_samples,))).exp()
 
-        return (samples / samples.sum(-3, keepdim=True)).mean(0)[1].reshape(input_shape)
+        return (samples / samples.sum(-3, keepdim=True)).mean(0)[1].reshape(input_shape).detach().numpy()
+
+    def entropy(self, X, n_samples=256):
+        p = self.p(X, n_samples)
+        q = 1 - p
+
+        return -p * np.log(p) - q * np.log(q)
