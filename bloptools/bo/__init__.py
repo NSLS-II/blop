@@ -8,7 +8,7 @@ import scipy as sp
 from matplotlib import pyplot as plt
 
 from .. import utils
-from . import models
+from . import acquisition, models
 
 mpl.rc("image", cmap="coolwarm")
 
@@ -29,7 +29,7 @@ class BayesianOptimizationAgent:
         self,
         dofs,
         dets,
-        dof_bounds,
+        bounds,
         experiment,
         db,
         training_iter=256,
@@ -42,7 +42,7 @@ class BayesianOptimizationAgent:
         detector (Detector)
         detector_type (str)
         dofs (list of Devices)
-        dof_bounds (list of bounds)
+        bounds (list of bounds)
         fitness_model (str)
 
         training_iter (int)
@@ -50,8 +50,14 @@ class BayesianOptimizationAgent:
 
         """
 
-        self.dofs, self.dof_bounds = dofs, dof_bounds
+        self.dofs = dofs
+        for dof in self.dofs:
+            dof.kind = "hinted"
+
         self.n_dof = len(dofs)
+
+        self.bounds = bounds if bounds is not None else np.array([[-1.0, +1.0] for i in range(self.n_dof)])
+
         self.dets = dets
 
         self.experiment = experiment
@@ -64,20 +70,18 @@ class BayesianOptimizationAgent:
         MAX_TEST_POINTS = 2**10
 
         n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
-        self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.dof_bounds]
+        self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.bounds]
         self.dim_mids = [0.5 * (bins[1:] + bins[:-1]) for bins in self.dim_bins]
         self.test_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing="ij")], 0, -1)
 
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-        self.test_params = sampler.random(n=MAX_TEST_POINTS) * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(
-            axis=1
-        )
+        self.test_params = sampler.random(n=MAX_TEST_POINTS) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
 
         # convert params to x
-        self.params_trans_fun = lambda params: (params - self.dof_bounds.min(axis=1)) / self.dof_bounds.ptp(axis=1)
+        self.params_trans_fun = lambda params: (params - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
 
         # convert x to params
-        self.inv_params_trans_fun = lambda x: x * self.dof_bounds.ptp(axis=1) + self.dof_bounds.min(axis=1)
+        self.inv_params_trans_fun = lambda x: x * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
 
         # for actual prediction and optimization
 
@@ -172,7 +176,8 @@ class BayesianOptimizationAgent:
         self.data = pd.concat([self.data, new_data])
         self.data.index = np.arange(len(self.data))
 
-        self.images = np.array([im for im in self.data[self.experiment.IMAGE_NAME].values])
+        if hasattr(self.experiment, "IMAGE_NAME"):
+            self.images = np.array([im for im in self.data[self.experiment.IMAGE_NAME].values])
 
         X = self.params_trans_fun(self.params)
         Y = self.data.fitness.values[:, None]
@@ -263,23 +268,23 @@ class BayesianOptimizationAgent:
                 if not all(cost > 0):
                     raise ValueError("Some estimated acquisition times are non-positive.")
 
-            if strategy.lower() == "exploit":  # greedy expected reward maximization
-                objective = -self._negative_expected_improvement(evaluator, classifier, TEST_X).sum(axis=1)
+            if strategy.lower() == "ei":  # greedy expected reward maximization
+                objective = acquisition.expected_improvement(evaluator, classifier, TEST_X).sum(axis=1)
 
             if strategy.lower() == "explore":  # greedy expected reward maximization
                 objective = -self._negative_expected_variance(evaluator, classifier, TEST_X).sum(axis=1)
 
-            # if strategy.lower() == "eig":
-            #     objective = -_negative_expected_information_gain(evaluator, classifier, evaluator.X, TEST_X)
+            if strategy.lower() == "egibbon":
+                objective = acquisition.expected_gibbon(evaluator, classifier, TEST_X).sum(axis=1)
 
-            if strategy.lower() == "ip":
-                objective = -self._negative_improvement_probability(evaluator, classifier, evaluator.X, TEST_X)
+            # if strategy.lower() == "ip":
+            #     objective = -self._negative_improvement_probability(evaluator, classifier, evaluator.X, TEST_X)
 
-            if strategy.lower() == "a-optimal":
-                objective = -self._negative_A_optimality(TEST_X)
+            # if strategy.lower() == "a-optimal":
+            #     objective = -self._negative_A_optimality(TEST_X)
 
-            if strategy.lower() == "d-optimal":
-                objective = -self._negative_D_optimality(TEST_X)
+            # if strategy.lower() == "d-optimal":
+            #     objective = -self._negative_D_optimality(TEST_X)
 
             return TEST_X[np.argmax(objective / cost)]
 
@@ -401,18 +406,7 @@ class BayesianOptimizationAgent:
         Create the axes onto which we plot/update the state of the GPO
         """
 
-        # self.state_fig.clear()
-
         s = 16
-
-        if gridded:
-            P = self.validate(self.test_grid)
-            FE = self.fitness_entropy(self.test_grid)
-        else:
-            P = self.validate(self.test_params)
-            FE = self.fitness_entropy(self.test_params)
-
-        PE = 0.5 * np.log(2 * np.pi * np.e * P * (1 - P))
 
         # so that the points and estimates have the same nice norm
         fitness_norm = mpl.colors.Normalize(*np.nanpercentile(self.data.fitness.values, q=[1, 99]))
@@ -485,23 +479,23 @@ class BayesianOptimizationAgent:
         ax.set_title("expected improvement")
 
         if gridded:
-            expected_improvement = -self._negative_expected_improvement(
+            expected_improvement = acquisition.expected_improvement(
                 self.evaluator, self.classifier, self.params_trans_fun(self.test_grid)
             )
-            expected_improvement[~(expected_improvement > 0)] = np.nan
+            # expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.pcolormesh(
-                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(vmin=0), shading="nearest"
+                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(), shading="nearest"
             )
         else:
-            expected_improvement = -self._negative_expected_improvement(
+            expected_improvement = acquisition.expected_improvement(
                 self.evaluator, self.classifier, self.params_trans_fun(self.test_params)
             )
-            expected_improvement[~(expected_improvement > 0)] = np.nan
+            # expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.scatter(
                 *self.test_params.T[:2],
                 s=s,
-                c=-expected_improvement,
-                norm=mpl.colors.Normalize(vmin=0),
+                c=expected_improvement,
+                norm=mpl.colors.Normalize(),
             )
 
         # ax.plot(*ordered_max_improvement_params.T[:2], lw=1, color="k")
@@ -526,36 +520,71 @@ class BayesianOptimizationAgent:
         ax.clear()
         ax.set_title("validity estimate")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], P, vmin=0, vmax=1, shading="nearest")
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2],
+                self.classifier.p(self.params_trans_fun(self.test_grid)),
+                vmin=0,
+                vmax=1,
+                shading="nearest",
+            )
         else:
-            ref = ax.scatter(*self.test_params.T[:2], s=s, c=P, vmin=0, vmax=1)
+            ref = ax.scatter(
+                *self.test_params.T[:2],
+                c=self.classifier.p(self.params_trans_fun(self.test_params)),
+                s=s,
+                vmin=0,
+                vmax=1,
+            )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("probability of validity")
         ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 2]
-        ax.set_title("validity entropy rate")
+        ax.clear()
+        ax.set_title("validity entropy")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], PE, shading="nearest")
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2],
+                self.classifier.entropy(self.params_trans_fun(self.test_grid)),
+                shading="nearest",
+            )
         else:
-            ref = ax.scatter(*self.test_params.T[:2], s=s, c=PE)
+            ref = ax.scatter(
+                *self.test_params.T[:2], c=self.classifier.entropy(self.params_trans_fun(self.test_params)), s=s
+            )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
-        clb.set_label("nepits per volume")
+        clb.set_label("nats")
         ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 3]
-        ax.set_title("expected entropy reduction")
+        ax.clear()
+        ax.set_title("expected GIBBON")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], P * FE, shading="nearest")
+            expected_improvement = acquisition.expected_gibbon(
+                self.evaluator, self.classifier, self.params_trans_fun(self.test_grid)
+            )
+            # expected_improvement[~(expected_improvement > 0)] = np.nan
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(), shading="nearest"
+            )
         else:
-            ref = ax.scatter(*self.test_params.T[:2], s=s, c=P * FE)
+            expected_improvement = acquisition.expected_gibbon(
+                self.evaluator, self.classifier, self.params_trans_fun(self.test_params)
+            )
+            # expected_improvement[~(expected_improvement > 0)] = np.nan
+            ref = ax.scatter(
+                *self.test_params.T[:2],
+                s=s,
+                c=expected_improvement,
+                norm=mpl.colors.Normalize(),
+            )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
-        clb.set_label("nepits per volume")
+        clb.set_label("units")
         ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
 
         for ax in self.state_axes.ravel():
-            ax.set_xlim(*self.dof_bounds[0])
-            ax.set_ylim(*self.dof_bounds[1])
+            ax.set_xlim(*self.bounds[0])
+            ax.set_ylim(*self.bounds[1])
 
     def show_state_plots(self, save_as=None):
         self.state_fig.canvas.draw_idle()
@@ -580,60 +609,13 @@ class BayesianOptimizationAgent:
         return np.log(np.sqrt(2 * np.pi * np.e) * self.fitness_sigma(params) + 1e-12)
 
     def validate(self, params):
-        return self.classifier.classify(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(
-            params.shape[:-1]
-        )
+        return self.classifier.p(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
 
     def delay_estimate(self, params):
         return self.timer.mean(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
 
     def delay_sigma(self, params):
         return self.timer.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
-
-    def _negative_improvement_probability(self, evaluator, classifier, test_X):
-        """
-        Returns the negative expected improvement over the maximum, in GP units.
-        """
-        x = test_X.reshape(-1, self.n_dof)
-
-        # using GPRC units here
-        mu = evaluator.mean(x)
-        sigma = evaluator.sigma(x)
-        nu = evaluator.nu
-        pv = classifier.classify(x)
-
-        P = pv * 0.5 * (1 + sp.special.erf((mu - nu) / (np.sqrt(2) * sigma)))
-
-        return -P.reshape(test_X.shape[:-1])
-
-    def _negative_expected_improvement(self, evaluator, classifier, test_X):
-        """
-        Returns the negative expected improvement over the maximum, in GP units.
-        """
-        x = test_X.reshape(-1, self.n_dof)
-
-        # using GPRC units here
-        mu = evaluator.mean(x)
-        sigma = evaluator.sigma(x)
-        nu = evaluator.nu
-        pv = classifier.classify(x)
-
-        A = np.exp(-0.5 * np.square((mu - nu) / sigma)) / (np.sqrt(2 * np.pi) * sigma)
-        B = 0.5 * (1 + sp.special.erf((mu - nu) / (np.sqrt(2) * sigma)))
-        E = -pv * (A * sigma**2 + B * (mu - nu))
-
-        return E.reshape(test_X.shape[:-1])
-
-    def _negative_expected_variance(self, evaluator, classifier, test_X):
-        """
-        Returns the negative expected improvement over the maximum, in GP units.
-        """
-        x = test_X.reshape(-1, self.n_dof)
-
-        sigma = evaluator.sigma(x)
-        pv = classifier.classify(x)
-
-        return -(pv * sigma**2).reshape(test_X.shape[:-1])
 
     def _negative_A_optimality(self, params):
         """
