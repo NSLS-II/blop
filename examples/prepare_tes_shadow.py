@@ -7,7 +7,7 @@ plt.ion()
 root_dir = "/tmp/sirepo-bluesky-data"
 _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 
-connection = SirepoBluesky("http://localhost:8001")
+connection = SirepoBluesky("http://localhost:8000")
 
 data, schema = connection.auth("shadow", "00000002")
 classes, objects = create_classes(connection.data, connection=connection)
