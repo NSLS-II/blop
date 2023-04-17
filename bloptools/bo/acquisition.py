@@ -8,6 +8,10 @@ from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntr
 
 
 def expected_improvement(evaluator, classifier, X):
+    """
+    Given a botorch fitness model "evaluator" and a botorch validation model "classifier", compute the
+    expected improvement at parameters X.
+    """
     torch_X = torch.as_tensor(X.reshape(-1, X.shape[-1]))
 
     ei = np.exp(
@@ -19,6 +23,10 @@ def expected_improvement(evaluator, classifier, X):
 
 
 def expected_gibbon(evaluator, classifier, X, n_candidates=1024):
+    """
+    Given a botorch fitness model "evaluator" and a botorch validation model "classifier", compute the
+    expected GIBBON at parameters X (https://www.jmlr.org/papers/volume22/21-0120/21-0120.pdf)
+    """
     torch_X = torch.as_tensor(X.reshape(-1, X.shape[-1]))
 
     sampler = sp.stats.qmc.Halton(d=evaluator.X.shape[-1], scramble=True)
@@ -33,14 +41,20 @@ def expected_gibbon(evaluator, classifier, X, n_candidates=1024):
 # these return params that maximize the objective
 
 
-def MaxExpectedImprovement(evaluator, classifier, n_test=1024):
+def max_expected_improvement(evaluator, classifier, n_test=1024):
+    """
+    Compute the expected improvement over quasi-random sampled parameters, and return the location of the maximum.
+    """
     sampler = sp.stats.qmc.Halton(d=evaluator.X.shape[-1], scramble=True)
     test_X = torch.as_tensor(sampler.random(n=n_test)).double()
 
     return test_X(expected_improvement(evaluator, classifier, test_X).argmax())
 
 
-def MaxExpectedGIBBON(evaluator, classifier, n_test=1024):
+def max_expected_gibbon(evaluator, classifier, n_test=1024):
+    """
+    Compute the expected GIBBON over quasi-random sampled parameters, and return the location of the maximum.
+    """
     sampler = sp.stats.qmc.Halton(d=evaluator.X.shape[-1], scramble=True)
     test_X = torch.as_tensor(sampler.random(n=n_test)).double()
 
