@@ -1,3 +1,5 @@
+import logging
+
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp  # noqa F401
 import h5py
@@ -203,12 +205,14 @@ class BayesianOptimizationAgent:
         if verbose:
             print(f"sampling {ordered_params}")
 
-        # try:
-        uid = yield from bp.list_scan(
-            self.dets, *[_ for items in zip(self.dofs, np.atleast_2d(ordered_params).T) for _ in items]
-        )
-        _table = self.db[uid].table(fill=True)
-        _table.loc[:, "uid"] = uid
+        try:
+            uid = yield from bp.list_scan(
+                self.dets, *[_ for items in zip(self.dofs, np.atleast_2d(ordered_params).T) for _ in items]
+            )
+            _table = self.db[uid].table(fill=True)
+            _table.loc[:, "uid"] = uid
+        except Exception as err:
+            logging.warning(repr(err))
 
         for i, entry in _table.iterrows():
             keys, vals = self.experiment.parse_entry(entry)
