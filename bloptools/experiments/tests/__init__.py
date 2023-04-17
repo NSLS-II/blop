@@ -12,8 +12,6 @@ class Ackley:
     Ackley's function in $n$ dimensions (https://en.wikipedia.org/wiki/Ackley_function)
     """
 
-    # dofs_256 = DOF256s(name="dofs")  # a device with 256 components (we'll subset it later)
-
     MIN_SNR = 1e1
 
     def __init__(self, n_dof=2):
@@ -39,8 +37,6 @@ class Himmelblau:
     """
     Himmelblau's function (https://en.wikipedia.org/wiki/Himmelblau%27s_function)
     """
-
-    # dofs_256 = DOF256s(name="dofs")  # a device with 256 components (we'll subset it later)
 
     MIN_SNR = 1e1
 
