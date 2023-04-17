@@ -17,9 +17,9 @@ mpl.rc("image", cmap="coolwarm")
 
 def load(filepath, **kwargs):
     with h5py.File(filepath, "r") as f:
-        params = f["params"][:]
+        X = f["X"][:]
     data = pd.read_hdf(filepath, key="data")
-    return BayesianOptimizationAgent(init_params=params, init_data=data, **kwargs)
+    return BayesianOptimizationAgent(init_X=X, init_data=data, **kwargs)
 
 
 # import bluesky_adaptive
@@ -77,20 +77,20 @@ class BayesianOptimizationAgent:
         self.test_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing="ij")], 0, -1)
 
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-        self.test_params = sampler.random(n=MAX_TEST_POINTS) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+        self.test_X = sampler.random(n=MAX_TEST_POINTS) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
 
-        # convert params to x
-        self.params_trans_fun = lambda params: (params - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
+        # convert X to x
+        self.X_trans_fun = lambda X: (X - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
 
-        # convert x to params
-        self.inv_params_trans_fun = lambda x: x * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+        # convert x to X
+        self.inv_X_trans_fun = lambda x: x * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
 
         # for actual prediction and optimization
-        self.params = np.empty((0, self.n_dof))
+        self.X = np.empty((0, self.n_dof))
         self.data = pd.DataFrame()
 
-        self.evaluator = models.GPR(MIN_SNR=experiment.MIN_SNR)
-        self.classifier = models.GPC()
+        self.evaluator = models.GPR(bounds=self.bounds, MIN_SNR=experiment.MIN_SNR)
+        self.classifier = models.GPC(bounds=self.bounds)
 
     def measurement_plan(self):
         yield from bp.count(detectors=self.dets)
@@ -100,7 +100,7 @@ class BayesianOptimizationAgent:
 
     def initialize(
         self,
-        init_params=None,
+        init_X=None,
         init_data=None,
         init_scheme=None,
         n_init=4,
@@ -109,8 +109,8 @@ class BayesianOptimizationAgent:
         yield from self.experiment.initialize()
 
         # now let's get bayesian
-        if (init_params is not None) and (init_data is not None):
-            self.tell(new_params=init_params, new_data=init_data, reuse_hypers=True, verbose=self.verbose)
+        if (init_X is not None) and (init_data is not None):
+            self.tell(new_X=init_X, new_data=init_data, reuse_hypers=True, verbose=self.verbose)
 
         elif init_scheme == "quasi-random":
             yield from self.learn(
@@ -119,12 +119,12 @@ class BayesianOptimizationAgent:
 
         else:
             raise Exception(
-                "Could not initialize model! Either pass initial params and data, or specify one of:"
+                "Could not initialize model! Either pass initial X and data, or specify one of:"
                 "['quasi-random']."
             )
 
     @property
-    def current_params(self):
+    def current_X(self):
         return np.array([dof.read()[dof.name]["value"] for dof in self.dofs])
 
     @property
@@ -136,12 +136,8 @@ class BayesianOptimizationAgent:
         return self.experiment.DEPENDENT_COMPONENTS
 
     @property
-    def current_X(self):
-        return self.inv_params_trans_fun(self.current_params)
-
-    @property
     def optimum(self):
-        return self.inv_params_trans_fun(self.evaluator.X[np.nanargmax(self.evaluator.y)])
+        return self.evaluator.X[np.argmax(self.evaluator.Y)]
 
     def go_to_optimum(self):
         yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items])
@@ -169,18 +165,18 @@ class BayesianOptimizationAgent:
 
     def save(self, filepath="./model.gpo"):
         with h5py.File(filepath, "w") as f:
-            f.create_dataset("params", data=self.params)
+            f.create_dataset("X", data=self.X)
         self.data.to_hdf(filepath, key="data")
 
-    def tell(self, new_params, new_data, reuse_hypers=True, verbose=False):
-        self.params = np.r_[self.params, new_params]
+    def tell(self, new_X, new_data, reuse_hypers=True, verbose=False):
+        self.X = np.r_[self.X, new_X]
         self.data = pd.concat([self.data, new_data])
         self.data.index = np.arange(len(self.data))
 
         if hasattr(self.experiment, "IMAGE_NAME"):
             self.images = np.array([im for im in self.data[self.experiment.IMAGE_NAME].values])
 
-        X = self.params_trans_fun(self.params)
+        X = self.X.copy()
         Y = self.data.fitness.values[:, None]
         c = (~np.isnan(Y).any(axis=-1)).astype(int)
 
@@ -188,26 +184,27 @@ class BayesianOptimizationAgent:
         self.classifier.set_data(X, c)
 
         # self.timer.train(training_iter=self.training_iter, reuse_hypers=reuse_hypers, verbose=verbose)
-        self.evaluator.train(maxiter=self.training_iter)
-        self.classifier.train(maxiter=self.training_iter)
 
-    def acquire_with_bluesky(self, params, routing=True, verbose=False):
+        self.evaluator.train(step_limit=self.training_iter)
+        self.classifier.train(step_limit=self.training_iter)
+
+    def acquire_with_bluesky(self, X, routing=True, verbose=False):
         if routing:
-            routing_index, _ = utils.get_routing(self.current_params, params)
-            ordered_params = params[routing_index]
+            routing_index, _ = utils.get_routing(self.current_X, X)
+            ordered_X = X[routing_index]
 
         else:
-            ordered_params = params
+            ordered_X = X
 
         table = pd.DataFrame(columns=[])
 
-        # for _params in ordered_params:
+        # for _X in ordered_X:
         if verbose:
-            print(f"sampling {ordered_params}")
+            print(f"sampling {ordered_X}")
 
         try:
             uid = yield from bp.list_scan(
-                self.dets, *[_ for items in zip(self.dofs, np.atleast_2d(ordered_params).T) for _ in items]
+                self.dets, *[_ for items in zip(self.dofs, np.atleast_2d(ordered_X).T) for _ in items]
             )
             _table = self.db[uid].table(fill=True)
             _table.loc[:, "uid"] = uid
@@ -220,9 +217,9 @@ class BayesianOptimizationAgent:
 
         table = pd.concat([table, _table])
 
-        return ordered_params, table
+        return ordered_X, table
 
-    def recommend(
+    def ask(
         self,
         evaluator=None,
         classifier=None,
@@ -250,11 +247,12 @@ class BayesianOptimizationAgent:
         if strategy.lower() == "quasi-random":
             # if init and self.sample_center_on_init:
             #    return np.r_[0.5 * np.ones((1, self.n_dof)), sampler.random(n=n-1)]
-            return sampler.random(n=n)
+            return sampler.random(n=n) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
 
         if (not greedy) or (n == 1):
             # recommend some parameters that we might want to sample, with shape (., n, n_dof)
-            TEST_X = sampler.random(n=n * n_test).reshape(n_test, n, self.n_dof)
+            TEST_X = sampler.random(n=n * n_test) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+            TEST_X = TEST_X.reshape(n_test, n, self.n_dof)
 
             # how much will we have to change our parameters to sample these guys?
             DELTA_TEST_X = np.diff(
@@ -274,7 +272,10 @@ class BayesianOptimizationAgent:
             if strategy.lower() == "ei":  # maximize the expected improvement
                 objective = acquisition.expected_improvement(evaluator, classifier, TEST_X).sum(axis=1)
 
-            if strategy.lower() == "max_entropy":  # maximize the total entropy
+            if strategy.lower() == "class_entropy":  # maximize the class entropy
+                objective = classifier.entropy(TEST_X).sum(axis=1)
+
+            if strategy.lower() == "total_entropy":  # maximize the total entropy
                 objective = (evaluator.normalized_entropy(TEST_X) + classifier.entropy(TEST_X)).sum(axis=1)
 
             if strategy.lower() == "egibbon":  # maximize the expected GIBBON
@@ -287,7 +288,7 @@ class BayesianOptimizationAgent:
             X_to_sample = np.zeros((0, self.n_dof))
 
             for i in range(n):
-                _X = self.recommend(
+                _X = self.ask(
                     strategy=strategy, evaluator=dummy_evaluator, classifier=classifier, greedy=True, n=1
                 )
                 _y = self.evaluator.mean(_X) - disappointment * self.evaluator.sigma(_X)
@@ -299,9 +300,6 @@ class BayesianOptimizationAgent:
 
             return X_to_sample
 
-    def ask(self, **kwargs):
-        return self.inv_params_trans_fun(self.recommend(**kwargs))
-
     def learn(
         self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs
     ):
@@ -309,22 +307,22 @@ class BayesianOptimizationAgent:
         print(f'learning with strategy "{strategy}" ...')
 
         for i in range(n_iter):
-            params_to_sample = np.atleast_2d(
+            X_to_sample = np.atleast_2d(
                 self.ask(n=n_per_iter, strategy=strategy, **kwargs)
             )  # get point(s) to sample from the strategizer
 
-            n_original = len(params_to_sample)
+            n_original = len(X_to_sample)
             n_upsample = upsample * n_original + 1
 
-            upsampled_params_to_sample = sp.interpolate.interp1d(
-                np.arange(n_original + 1), np.r_[self.current_params[None], params_to_sample], axis=0
+            upsampled_X_to_sample = sp.interpolate.interp1d(
+                np.arange(n_original + 1), np.r_[self.current_X[None], X_to_sample], axis=0
             )(np.linspace(0, n_original, n_upsample)[1:])
 
-            sampled_params, res_table = yield from self.acquire_with_bluesky(
-                upsampled_params_to_sample
+            sampled_X, res_table = yield from self.acquire_with_bluesky(
+                upsampled_X_to_sample
             )  # sample the point(s)
 
-            self.tell(new_params=sampled_params, new_data=res_table, reuse_hypers=reuse_hypers)
+            self.tell(new_X=sampled_X, new_data=res_table, reuse_hypers=reuse_hypers)
 
             if "state" in plots:
                 self.plot_state(remake=False, gridded=self.gridded_plots)
@@ -332,10 +330,10 @@ class BayesianOptimizationAgent:
                 self.plot_fitness(remake=False)
 
             if verbose:
-                n_params = len(sampled_params)
+                n_X = len(sampled_X)
                 df_to_print = pd.DataFrame(
-                    np.c_[self.params, self.data.fitness.values], columns=[*self.dof_names, "fitness"]
-                ).iloc[-n_params:]
+                    np.c_[self.X, self.data.fitness.values], columns=[*self.dof_names, "fitness"]
+                ).iloc[-n_X:]
                 print(df_to_print)
 
     def plot_fitness(self, remake=True, **kwargs):
@@ -410,24 +408,9 @@ class BayesianOptimizationAgent:
         ax.clear()
         ax.set_title("sampled fitness")
 
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
-        ref = ax.scatter(*self.params.T[:2], s=s, c=self.data.fitness.values, norm=fitness_norm)
-
-        # max_improvement_params = self.inv_params_trans_fun(
-        #     self.recommend(strategy="exploit", greedy=True, n=8, n_test=1024)
-        # )
-        # max_information_params = self.inv_params_trans_fun(
-        #     self.recommend(strategy="ev", greedy=True, n=8, n_test=1024)
-        # )
-
-        # max_improvement_routing_index, _ = utils.get_routing(self.current_params, max_improvement_params)
-        # ordered_max_improvement_params = max_improvement_params[max_improvement_routing_index]
-
-        # max_information_routing_index, _ = utils.get_routing(self.current_params, max_information_params)
-        # ordered_max_information_params = max_information_params[max_information_routing_index]
-
-        # ax.legend(fontsize=6)
+        ref = ax.scatter(*self.X.T[:2], s=s, c=self.data.fitness.values, norm=fitness_norm)
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
@@ -441,13 +424,11 @@ class BayesianOptimizationAgent:
                 *self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm, shading="nearest"
             )
         else:
-            ref = ax.scatter(
-                *self.test_params.T[:2], s=s, c=self.fitness_estimate(self.test_params), norm=fitness_norm
-            )
+            ref = ax.scatter(*self.test_X.T[:2], s=s, c=self.fitness_estimate(self.test_X), norm=fitness_norm)
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the entropy rate of test points
         ax = self.state_axes[0, 2]
@@ -457,15 +438,15 @@ class BayesianOptimizationAgent:
             ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_sigma(self.test_grid), shading="nearest")
         else:
             ref = ax.scatter(
-                *self.test_params.T[:2],
+                *self.test_X.T[:2],
                 s=s,
-                c=self.fitness_sigma(self.test_params),
+                c=self.fitness_sigma(self.test_X),
                 norm=mpl.colors.LogNorm(),
             )
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the estimate of test points
         ax = self.state_axes[0, 3]
@@ -474,38 +455,36 @@ class BayesianOptimizationAgent:
 
         if gridded:
             expected_improvement = acquisition.expected_improvement(
-                self.evaluator, self.classifier, self.params_trans_fun(self.test_grid)
+                self.evaluator, self.classifier, self.test_grid
             )
             # expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.pcolormesh(
                 *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(), shading="nearest"
             )
         else:
-            expected_improvement = acquisition.expected_improvement(
-                self.evaluator, self.classifier, self.params_trans_fun(self.test_params)
-            )
+            expected_improvement = acquisition.expected_improvement(self.evaluator, self.classifier, self.test_X)
             # expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.scatter(
-                *self.test_params.T[:2],
+                *self.test_X.T[:2],
                 s=s,
                 c=expected_improvement,
                 norm=mpl.colors.Normalize(),
             )
 
-        # ax.plot(*ordered_max_improvement_params.T[:2], lw=1, color="k")
-        # ax.scatter(*ordered_max_improvement_params.T[:2], marker="*", color="k", s=s, label="max_improvement")
+        # ax.plot(*ordered_max_improvement_X.T[:2], lw=1, color="k")
+        # ax.scatter(*ordered_max_improvement_X.T[:2], marker="*", color="k", s=s, label="max_improvement")
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot classification of data points
         ax = self.state_axes[1, 0]
         ax.clear()
         ax.set_title("sampled validity")
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
-        ref = ax.scatter(*self.params.T[:2], s=s, c=self.classifier.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
+        ref = ax.scatter(*self.X.T[:2], s=s, c=self.classifier.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_ticks([0, 1])
         clb.set_ticklabels(["invalid", "valid"])
@@ -516,22 +495,22 @@ class BayesianOptimizationAgent:
         if gridded:
             ref = ax.pcolormesh(
                 *self.dim_mids[:2],
-                self.classifier.p(self.params_trans_fun(self.test_grid)),
+                self.classifier.p(self.test_grid),
                 vmin=0,
                 vmax=1,
                 shading="nearest",
             )
         else:
             ref = ax.scatter(
-                *self.test_params.T[:2],
-                c=self.classifier.p(self.params_trans_fun(self.test_params)),
+                *self.test_X.T[:2],
+                c=self.classifier.p(self.test_X),
                 s=s,
                 vmin=0,
                 vmax=1,
             )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("probability of validity")
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 2]
         ax.clear()
@@ -539,42 +518,36 @@ class BayesianOptimizationAgent:
         if gridded:
             ref = ax.pcolormesh(
                 *self.dim_mids[:2],
-                self.classifier.entropy(self.params_trans_fun(self.test_grid)),
+                self.classifier.entropy(self.test_grid),
                 shading="nearest",
             )
         else:
-            ref = ax.scatter(
-                *self.test_params.T[:2], c=self.classifier.entropy(self.params_trans_fun(self.test_params)), s=s
-            )
+            ref = ax.scatter(*self.test_X.T[:2], c=self.classifier.entropy(self.test_X), s=s)
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("nats")
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 3]
         ax.clear()
         ax.set_title("expected GIBBON")
         if gridded:
-            expected_improvement = acquisition.expected_gibbon(
-                self.evaluator, self.classifier, self.params_trans_fun(self.test_grid)
-            )
+            expected_improvement = acquisition.expected_gibbon(self.evaluator, self.classifier, self.test_grid)
             # expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.pcolormesh(
                 *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(), shading="nearest"
             )
         else:
-            expected_improvement = acquisition.expected_gibbon(
-                self.evaluator, self.classifier, self.params_trans_fun(self.test_params)
-            )
+            expected_improvement = acquisition.expected_gibbon(self.evaluator, self.classifier, self.test_X)
             # expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.scatter(
-                *self.test_params.T[:2],
+                *self.test_X.T[:2],
                 s=s,
                 c=expected_improvement,
                 norm=mpl.colors.Normalize(),
             )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("units")
-        ax.scatter(*self.params.T[:2], s=s, edgecolor="k", facecolor="none")
+        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         for ax in self.state_axes.ravel():
             ax.set_xlim(*self.bounds[0])
@@ -589,40 +562,36 @@ class BayesianOptimizationAgent:
 
     # talk to the model
 
-    def fitness_estimate(self, params):
-        return self.evaluator.mean(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(
-            params.shape[:-1]
-        )
+    def fitness_estimate(self, X):
+        return self.evaluator.mean(X.reshape(-1, self.n_dof)).reshape(X.shape[:-1])
 
-    def fitness_sigma(self, params):
-        return self.evaluator.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(
-            params.shape[:-1]
-        )
+    def fitness_sigma(self, X):
+        return self.evaluator.sigma(X.reshape(-1, self.n_dof)).reshape(X.shape[:-1])
 
-    def fitness_entropy(self, params):
-        return np.log(np.sqrt(2 * np.pi * np.e) * self.fitness_sigma(params) + 1e-12)
+    def fitness_entropy(self, X):
+        return np.log(np.sqrt(2 * np.pi * np.e) * self.fitness_sigma(X) + 1e-12)
 
-    def validate(self, params):
-        return self.classifier.p(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
+    def validate(self, X):
+        return self.classifier.p(X.reshape(-1, self.n_dof)).reshape(X.shape[:-1])
 
-    def delay_estimate(self, params):
-        return self.timer.mean(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
+    def delay_estimate(self, X):
+        return self.timer.mean(X.reshape(-1, self.n_dof)).reshape(X.shape[:-1])
 
-    def delay_sigma(self, params):
-        return self.timer.sigma(self.params_trans_fun(params).reshape(-1, self.n_dof)).reshape(params.shape[:-1])
+    def delay_sigma(self, X):
+        return self.timer.sigma(X.reshape(-1, self.n_dof)).reshape(X.shape[:-1])
 
-    def _negative_A_optimality(self, params):
+    def _negative_A_optimality(self, X):
         """
-        The negative trace of the inverse Fisher information matrix contingent on sampling the passed params.
+        The negative trace of the inverse Fisher information matrix contingent on sampling the passed X.
         """
-        test_X = self.params_trans_fun(params)
+        test_X = X
         invFIM = np.linalg.inv(self.evaluator._contingent_fisher_information_matrix(test_X, delta=1e-3))
         return np.array(list(map(np.trace, invFIM)))
 
-    def _negative_D_optimality(self, params):
+    def _negative_D_optimality(self, X):
         """
-        The negative determinant of the inverse Fisher information matrix contingent on sampling the passed params.
+        The negative determinant of the inverse Fisher information matrix contingent on sampling the passed X.
         """
-        test_X = self.params_trans_fun(params)
+        test_X = X
         FIM_stack = self.evaluator._contingent_fisher_information_matrix(test_X, delta=1e-3)
         return -np.array(list(map(np.linalg.det, FIM_stack)))

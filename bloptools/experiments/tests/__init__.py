@@ -8,7 +8,7 @@ def get_dofs(n=2):
 
 
 class BaseOptimizationTest:
-    MIN_SNR = 1e2
+    MIN_SNR = 1e3
 
     n_dof = 2
     dofs = get_dofs(n=2)
@@ -64,7 +64,7 @@ class Himmelblau(BaseOptimizationTest):
 
 class Rosenbrock(BaseOptimizationTest):
     """
-    Ackley's function in $n$ dimensions (https://en.wikipedia.org/wiki/Ackley_function)
+    Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
     """
 
     def __init__(self, n_dof=2):
@@ -78,9 +78,21 @@ class Rosenbrock(BaseOptimizationTest):
         return -np.log((100 * (X[..., 1:] - X[..., :-1] ** 2) ** 2 + (1 - X[..., :-1]) ** 2).sum(axis=-1))
 
 
+class ConstrainedRosenbrock(Rosenbrock):
+    """
+    Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
+    """
+
+    @staticmethod
+    def fitness_func(X):
+        if (X**2).sum(axis=-1) > len(X):
+            return np.nan
+        return -np.log((100 * (X[..., 1:] - X[..., :-1] ** 2) ** 2 + (1 - X[..., :-1]) ** 2).sum(axis=-1))
+
+
 class StyblinskiTang(BaseOptimizationTest):
     """
-    Ackley's function in $n$ dimensions (https://en.wikipedia.org/wiki/Ackley_function)
+    Styblinski-Tang function in $n$ dimensions (https://en.wikipedia.org/wiki/Test_functions_for_optimization)
     """
 
     def __init__(self, n_dof=2):
