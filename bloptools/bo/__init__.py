@@ -84,7 +84,6 @@ class BayesianOptimizationAgent:
         self.inv_params_trans_fun = lambda x: x * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
 
         # for actual prediction and optimization
-
         self.params = np.empty((0, self.n_dof))
         self.data = pd.DataFrame()
 
