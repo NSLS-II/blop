@@ -2,7 +2,7 @@ import numpy as np
 from sirepo_bluesky.sirepo_ophyd import create_classes
 
 from bloptools.bo import BayesianOptimizationAgent
-from bloptools.experiments.nsls2 import tes_shadow
+from bloptools.experiments.shadow import tes
 
 
 def test_tes_shadow_boa(RE, db, shadow_tes_simulation):
@@ -19,7 +19,7 @@ def test_tes_shadow_boa(RE, db, shadow_tes_simulation):
     for dof in kbs:
         dof.kind = "hinted"
 
-    boa = BayesianOptimizationAgent(dofs=kbs, dets=[w9], bounds=kb_bounds, db=db, experiment=tes_shadow)
+    boa = BayesianOptimizationAgent(dofs=kbs, dets=[w9], bounds=kb_bounds, db=db, experiment=tes)
 
     RE(boa.initialize(init_scheme="quasi-random", n_init=8))
 

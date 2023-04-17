@@ -268,23 +268,14 @@ class BayesianOptimizationAgent:
                 if not all(cost > 0):
                     raise ValueError("Some estimated acquisition times are non-positive.")
 
-            if strategy.lower() == "ei":  # greedy expected reward maximization
+            if strategy.lower() == "ei":  # maximize the expected improvement
                 objective = acquisition.expected_improvement(evaluator, classifier, TEST_X).sum(axis=1)
 
-            if strategy.lower() == "explore":  # greedy expected reward maximization
-                objective = -self._negative_expected_variance(evaluator, classifier, TEST_X).sum(axis=1)
+            if strategy.lower() == "max_entropy":  # maximize the total entropy
+                objective = (evaluator.normalized_entropy(TEST_X) + classifier.entropy(TEST_X)).sum(axis=1)
 
-            if strategy.lower() == "egibbon":
+            if strategy.lower() == "egibbon":  # maximize the expected GIBBON
                 objective = acquisition.expected_gibbon(evaluator, classifier, TEST_X).sum(axis=1)
-
-            # if strategy.lower() == "ip":
-            #     objective = -self._negative_improvement_probability(evaluator, classifier, evaluator.X, TEST_X)
-
-            # if strategy.lower() == "a-optimal":
-            #     objective = -self._negative_A_optimality(TEST_X)
-
-            # if strategy.lower() == "d-optimal":
-            #     objective = -self._negative_D_optimality(TEST_X)
 
             return TEST_X[np.argmax(objective / cost)]
 
