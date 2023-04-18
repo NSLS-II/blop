@@ -1,3 +1,4 @@
+import bluesky.plan_stubs as bps
 import numpy as np
 
 from ... import utils
@@ -17,7 +18,7 @@ MIN_SNR = 1e1
 
 
 def initialize():
-    yield from iter([])  # do nothing
+    yield from bps.null()  # do nothing
 
 
 def parse_entry(entry):
