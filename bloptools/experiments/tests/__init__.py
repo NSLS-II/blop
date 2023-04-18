@@ -8,7 +8,7 @@ def get_dofs(n=2):
 
 
 class BaseOptimizationTest:
-    MIN_SNR = 1e3
+    MIN_SNR = 1e2
 
     n_dof = 2
     dofs = get_dofs(n=2)

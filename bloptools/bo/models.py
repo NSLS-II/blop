@@ -19,7 +19,9 @@ class BoTorchMultiTaskGP(ExactGP, GPyTorchModel):
         super(BoTorchMultiTaskGP, self).__init__(train_X, train_Y, likelihood)
         self.mean_module = gpytorch.means.MultitaskMean(gpytorch.means.ConstantMean(), num_tasks=self._num_outputs)
         self.covar_module = gpytorch.kernels.MultitaskKernel(
-            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True), num_tasks=self._num_outputs, rank=1
+            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=False),
+            num_tasks=self._num_outputs,
+            rank=1,
         )
 
     def forward(self, x):
@@ -138,6 +140,9 @@ class GPR(BoTorchModelWrapper):
         ).double()
 
         self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
+
+    def tell(self, X, Y):
+        self.set_data(np.r_[self.X, np.atleast_2d(X)], np.r_[self.Y, np.atleast_2d(Y)])
 
     def copy(self):
         if self.model is None:

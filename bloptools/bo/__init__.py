@@ -69,7 +69,7 @@ class BayesianOptimizationAgent:
 
         self.gridded_plots = True if self.n_dof == 2 else False
 
-        MAX_TEST_POINTS = 2**10
+        MAX_TEST_POINTS = 2**11
 
         n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
         self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.bounds]
@@ -228,7 +228,7 @@ class BayesianOptimizationAgent:
         cost_model=None,
         n=1,
         n_test=1024,
-        disappointment=1,
+        disappointment=1.0,
         init=False,
     ):
         """
