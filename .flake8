@@ -9,7 +9,7 @@ exclude =
     examples/benchmark.py,
     examples/prepare_bluesky.py,
     examples/prepare_tes_shadow.py,
-    bloptools/tests/test_boa.py,
+    bloptools/tests/test_bayesian_shadow.py,
     versioneer.py,
 max-line-length = 115
 # Ignore some style 'errors' produced while formatting by 'black'

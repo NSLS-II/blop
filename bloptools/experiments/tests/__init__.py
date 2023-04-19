@@ -1,10 +1,24 @@
 import bluesky.plan_stubs as bps
 import numpy as np
-from ophyd import Signal
+from ophyd import Component as Cpt
+from ophyd import Device, Signal
 
 
 def get_dofs(n=2):
     return [Signal(name=f"x{i+1}", value=0) for i in range(n)]
+
+
+def get_device(name="dofs", n=2):
+    components = {}
+
+    for i in range(n):
+        components[f"{i+1}"] = Cpt(Signal, value=i + 1)
+
+    cls = type("DOF", (Device,), components)
+
+    device = cls(name=name)
+
+    return [getattr(device, attr) for attr in device.read_attrs]
 
 
 class BaseOptimizationTest:
@@ -14,7 +28,7 @@ class BaseOptimizationTest:
     dofs = get_dofs(n=2)
     bounds = np.array([[-5.0, +5.0], [-5.0, +5.0]])
 
-    DEPENDENT_COMPONENTS = [f"x{i+1}" for i in range(2)]
+    DEPENDENT_COMPONENTS = [dof.name for dof in dofs]
 
     def initialize(self):
         yield from bps.null()  # do nothing
@@ -34,7 +48,7 @@ class Ackley(BaseOptimizationTest):
         self.n_dof = n_dof
         self.dofs = get_dofs(n=n_dof)
         self.bounds = np.array([[-5.0, +5.0] for i in range(self.n_dof)])
-        self.DEPENDENT_COMPONENTS = [f"x{i+1}" for i in range(self.n_dof)]
+        self.DEPENDENT_COMPONENTS = [dof.name for dof in self.dofs]
 
     @staticmethod
     def fitness_func(X):
@@ -55,7 +69,7 @@ class Himmelblau(BaseOptimizationTest):
     dofs = get_dofs(n=2)
     bounds = np.array([[-5.0, +5.0], [-5.0, +5.0]])
 
-    DEPENDENT_COMPONENTS = [f"x{i+1}" for i in range(2)]
+    DEPENDENT_COMPONENTS = [dof.name for dof in dofs]
 
     @staticmethod
     def fitness_func(X):
@@ -71,7 +85,7 @@ class Rosenbrock(BaseOptimizationTest):
         self.n_dof = n_dof
         self.dofs = get_dofs(n=n_dof)
         self.bounds = np.array([[-2.0, +2.0] for i in range(self.n_dof)])
-        self.DEPENDENT_COMPONENTS = [f"x{i+1}" for i in range(self.n_dof)]
+        self.DEPENDENT_COMPONENTS = [dof.name for dof in self.dofs]
 
     @staticmethod
     def fitness_func(X):
@@ -99,7 +113,7 @@ class StyblinskiTang(BaseOptimizationTest):
         self.n_dof = n_dof
         self.dofs = get_dofs(n=n_dof)
         self.bounds = np.array([[-5.0, +5.0] for i in range(self.n_dof)])
-        self.DEPENDENT_COMPONENTS = [f"x{i+1}" for i in range(self.n_dof)]
+        self.DEPENDENT_COMPONENTS = [dof.name for dof in self.dofs]
 
     @staticmethod
     def fitness_func(X):
