@@ -74,7 +74,7 @@ class BayesianOptimizationAgent:
         n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
         self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.bounds]
         self.dim_mids = [0.5 * (bins[1:] + bins[:-1]) for bins in self.dim_bins]
-        self.test_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing="ij")], 0, -1)
+        self.test_X_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing="ij")], 0, -1)
 
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
         self.test_X = sampler.random(n=MAX_TEST_POINTS) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
@@ -421,7 +421,7 @@ class BayesianOptimizationAgent:
         ax.set_title("fitness estimate")
         if gridded:
             ref = ax.pcolormesh(
-                *self.dim_mids[:2], self.fitness_estimate(self.test_grid), norm=fitness_norm, shading="nearest"
+                *self.dim_mids[:2], self.fitness_estimate(self.test_X_grid), norm=fitness_norm, shading="nearest"
             )
         else:
             ref = ax.scatter(*self.test_X.T[:2], s=s, c=self.fitness_estimate(self.test_X), norm=fitness_norm)
@@ -435,13 +435,13 @@ class BayesianOptimizationAgent:
         ax.clear()
         ax.set_title("fitness uncertainty")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_sigma(self.test_grid), shading="nearest")
+            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_sigma(self.test_X_grid), shading="nearest")
         else:
             ref = ax.scatter(
                 *self.test_X.T[:2],
                 s=s,
                 c=self.fitness_sigma(self.test_X),
-                norm=mpl.colors.LogNorm(),
+                norm=mpl.colors.Normalize(),
             )
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
@@ -455,7 +455,7 @@ class BayesianOptimizationAgent:
 
         if gridded:
             expected_improvement = acquisition.expected_improvement(
-                self.evaluator, self.classifier, self.test_grid
+                self.evaluator, self.classifier, self.test_X_grid
             )
             # expected_improvement[~(expected_improvement > 0)] = np.nan
             ref = ax.pcolormesh(
@@ -495,7 +495,7 @@ class BayesianOptimizationAgent:
         if gridded:
             ref = ax.pcolormesh(
                 *self.dim_mids[:2],
-                self.classifier.p(self.test_grid),
+                self.classifier.p(self.test_X_grid),
                 vmin=0,
                 vmax=1,
                 shading="nearest",
@@ -518,7 +518,7 @@ class BayesianOptimizationAgent:
         if gridded:
             ref = ax.pcolormesh(
                 *self.dim_mids[:2],
-                self.classifier.entropy(self.test_grid),
+                self.classifier.entropy(self.test_X_grid),
                 shading="nearest",
             )
         else:
@@ -529,24 +529,26 @@ class BayesianOptimizationAgent:
 
         ax = self.state_axes[1, 3]
         ax.clear()
-        ax.set_title("expected GIBBON")
+        ax.set_title("total entropy")
         if gridded:
-            expected_improvement = acquisition.expected_gibbon(self.evaluator, self.classifier, self.test_grid)
-            # expected_improvement[~(expected_improvement > 0)] = np.nan
+            expected_gibbon = acquisition.expected_gibbon(self.evaluator, self.classifier, self.test_X_grid)
+            # total_entropy = self.evaluator.normalized_entropy(self.test_X_grid) \
+            # + self.classifier.entropy(self.test_X_grid)
             ref = ax.pcolormesh(
-                *self.dim_mids[:2], expected_improvement, norm=mpl.colors.Normalize(), shading="nearest"
+                *self.dim_mids[:2], expected_gibbon, norm=mpl.colors.Normalize(), shading="nearest"
             )
         else:
-            expected_improvement = acquisition.expected_gibbon(self.evaluator, self.classifier, self.test_X)
-            # expected_improvement[~(expected_improvement > 0)] = np.nan
+            expected_gibbon = acquisition.expected_gibbon(self.evaluator, self.classifier, self.test_X)
+            # total_entropy = self.evaluator.normalized_entropy(self.test_X) \
+            # + self.classifier.entropy(self.test_X)
             ref = ax.scatter(
                 *self.test_X.T[:2],
                 s=s,
-                c=expected_improvement,
+                c=expected_gibbon,
                 norm=mpl.colors.Normalize(),
             )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
-        clb.set_label("units")
+        clb.set_label("nats")
         ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         for ax in self.state_axes.ravel():

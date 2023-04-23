@@ -19,7 +19,7 @@ class BoTorchMultiTaskGP(ExactGP, GPyTorchModel):
         super(BoTorchMultiTaskGP, self).__init__(train_X, train_Y, likelihood)
         self.mean_module = gpytorch.means.MultitaskMean(gpytorch.means.ConstantMean(), num_tasks=self._num_outputs)
         self.covar_module = gpytorch.kernels.MultitaskKernel(
-            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=False),
+            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True),
             num_tasks=self._num_outputs,
             rank=1,
         )
