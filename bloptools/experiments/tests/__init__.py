@@ -12,7 +12,7 @@ def get_device(name="dofs", n=2):
     components = {}
 
     for i in range(n):
-        components[f"{i+1}"] = Cpt(Signal, value=i + 1)
+        components[f"x{i+1}"] = Cpt(Signal, value=i + 1)
 
     cls = type("DOF", (Device,), components)
 
