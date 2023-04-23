@@ -12,7 +12,7 @@ def get_device(name="dofs", n=2):
     components = {}
 
     for i in range(n):
-        components[f"{i+1}"] = Cpt(Signal, value=i + 1)
+        components[f"x{i+1}"] = Cpt(Signal, value=i + 1)
 
     cls = type("DOF", (Device,), components)
 
@@ -93,7 +93,7 @@ class ConstrainedHimmelblau(Himmelblau):
 
 class Rosenbrock(BaseOptimizationTest):
     """
-    Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
+    Rosenbrock function in $n$ dimensions (https://en.wikipedia.org/wiki/Rosenbrock_function)
     """
 
     def __init__(self, n_dof=2):
@@ -109,7 +109,7 @@ class Rosenbrock(BaseOptimizationTest):
 
 class ConstrainedRosenbrock(Rosenbrock):
     """
-    Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
+    Rosenbrock function in $n$ dimensions (https://en.wikipedia.org/wiki/Rosenbrock_function)
     Return NaN if ||X|| > dim(X)
     """
 
