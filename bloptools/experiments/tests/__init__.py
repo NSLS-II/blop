@@ -76,6 +76,21 @@ class Himmelblau(BaseOptimizationTest):
         return -((X[0] ** 2 + X[1] - 11) ** 2 + (X[0] + X[1] ** 2 - 7) ** 2)
 
 
+class ConstrainedHimmelblau(Himmelblau):
+    """
+    Himmelblau's function (https://en.wikipedia.org/wiki/Himmelblau%27s_function)
+    Return NaN if ||X|| > dim(X)
+    """
+
+    bounds = np.array([[-10.0, +10.0], [-10.0, +10.0]])
+
+    @staticmethod
+    def fitness_func(X):
+        if np.sqrt(np.sum(np.square(X))) > 8:
+            return np.nan
+        return -((X[0] ** 2 + X[1] - 11) ** 2 + (X[0] + X[1] ** 2 - 7) ** 2)
+
+
 class Rosenbrock(BaseOptimizationTest):
     """
     Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
@@ -95,6 +110,7 @@ class Rosenbrock(BaseOptimizationTest):
 class ConstrainedRosenbrock(Rosenbrock):
     """
     Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
+    Return NaN if ||X|| > dim(X)
     """
 
     @staticmethod
