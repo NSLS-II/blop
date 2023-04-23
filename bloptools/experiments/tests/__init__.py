@@ -94,7 +94,7 @@ class Rosenbrock(BaseOptimizationTest):
 
 class ConstrainedRosenbrock(Rosenbrock):
     """
-    Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
+    Rosenbrock function in $n$ dimensions (https://en.wikipedia.org/wiki/Rosenbrock_function)
     """
 
     @staticmethod
