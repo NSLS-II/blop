@@ -78,7 +78,7 @@ class Himmelblau(BaseOptimizationTest):
 
 class Rosenbrock(BaseOptimizationTest):
     """
-    Rosenbrock function in $n$ dimensions (hhttps://en.wikipedia.org/wiki/Rosenbrock_function)
+    Rosenbrock function in $n$ dimensions (https://en.wikipedia.org/wiki/Rosenbrock_function)
     """
 
     def __init__(self, n_dof=2):
