@@ -19,7 +19,9 @@ class BoTorchMultiTaskGP(ExactGP, GPyTorchModel):
         super(BoTorchMultiTaskGP, self).__init__(train_X, train_Y, likelihood)
         self.mean_module = gpytorch.means.MultitaskMean(gpytorch.means.ConstantMean(), num_tasks=self._num_outputs)
         self.covar_module = gpytorch.kernels.MultitaskKernel(
-            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True), num_tasks=self._num_outputs, rank=1
+            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True),
+            num_tasks=self._num_outputs,
+            rank=1,
         )
 
     def forward(self, x):
@@ -42,15 +44,55 @@ class BoTorchClassifier(gpytorch.models.ExactGP, botorch.models.gpytorch.GPyTorc
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
 
-class GPR:
+class BoTorchModelWrapper:
+    def __init__(self, bounds, MIN_SNR=1e-2):
+        self.model = None
+        self.bounds = bounds
+        self.MIN_SNR = MIN_SNR
+
+        self.prepare_inputs = lambda inputs: torch.tensor(
+            (inputs - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
+        ).double()
+        self.unprepare_inputs = lambda inputs: inputs.detach().numpy() * self.bounds.ptp(axis=1) + self.bounds.min(
+            axis=1
+        )
+
+    def tell(self, X, Y):
+        self.model.set_train_data(
+            torch.cat([self.train_inputs, self.prepare_inputs(X)]),
+            torch.cat([self.train_targets, self.prepare_targets(Y)]),
+            strict=False,
+        )
+
+    def train(self, **kwargs):
+        botorch.optim.fit.fit_gpytorch_mll_torch(self.mll, optimizer=torch.optim.Adam, **kwargs)
+
+    @property
+    def train_inputs(self):
+        return self.prepare_inputs(self.X)
+
+    @property
+    def train_targets(self):
+        return self.prepare_targets(self.Y)
+
+    @property
+    def n(self):
+        return self.X.shape[0]
+
+    @property
+    def n_dof(self):
+        return self.X.shape[-1]
+
+    @property
+    def n_tasks(self):
+        return self.Y.shape[-1]
+
+
+class GPR(BoTorchModelWrapper):
 
     """
     A Gaussian process regressor, with learning methods.
     """
-
-    def __init__(self, MIN_SNR=1e-2):
-        self.model = None
-        self.MIN_SNR = MIN_SNR
 
     def set_data(self, X, Y):
         """
@@ -66,12 +108,24 @@ class GPR:
         # prepare Gaussian process ingredients for the regressor and classifier
         # use only regressable points for the regressor
 
+        self.X, self.Y = X, Y
+
+        self.target_means = Y.mean(axis=0)
+        self.target_scales = Y.std(axis=0)
+
+        self.prepare_targets = lambda targets: torch.tensor(
+            (targets - self.target_means[None]) / self.target_scales[None]
+        ).double()
+        self.unprepare_targets = (
+            lambda targets: targets.detach().numpy() * self.target_scales[None] + self.target_means[None]
+        )
+
         self.num_tasks = Y.shape[-1]
 
-        self.noise_upper_bound = np.square((1 if not Y.shape[0] > 1 else Y.std(axis=0)) / self.MIN_SNR)
+        self.noise_upper_bound = np.square(1 / self.MIN_SNR)
 
         likelihood_noise_constraint = gpytorch.constraints.Interval(
-            0, torch.as_tensor(self.noise_upper_bound).double()
+            0, torch.tensor(self.noise_upper_bound).double()
         )
 
         likelihood = MultitaskGaussianLikelihood(
@@ -80,52 +134,21 @@ class GPR:
         ).double()
 
         self.model = BoTorchMultiTaskGP(
-            train_X=torch.as_tensor(X).double(),
-            train_Y=torch.as_tensor(Y).double(),
+            train_X=self.train_inputs,
+            train_Y=self.train_targets,
             likelihood=likelihood,
         ).double()
 
         self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
 
-    @property
-    def torch_inputs(self):
-        return self.model.train_inputs[0]
-
-    @property
-    def torch_targets(self):
-        return self.model.train_targets
-
-    @property
-    def X(self):
-        return self.torch_inputs.detach().numpy().astype(float)
-
-    @property
-    def Y(self):
-        return self.torch_targets.detach().numpy().astype(float)
-
-    @property
-    def n(self):
-        return self.Y.size
-
-    @property
-    def n_dof(self):
-        return self.X.shape[-1]
-
     def tell(self, X, Y):
-        self.model.set_train_data(
-            torch.cat([self.torch_inputs, torch.as_tensor(np.atleast_2d(X))]).double(),
-            torch.cat([self.torch_targets, torch.as_tensor(np.atleast_2d(Y))]).double(),
-            strict=False,
-        )
-
-    def train(self, maxiter=100, lr=1e-2):
-        botorch.optim.fit.fit_gpytorch_mll_torch(self.mll, optimizer=torch.optim.Adam, step_limit=256)
+        self.set_data(np.r_[self.X, np.atleast_2d(X)], np.r_[self.Y, np.atleast_2d(Y)])
 
     def copy(self):
         if self.model is None:
             raise RuntimeError("You cannot copy a model with no data.")
 
-        dummy = GPR()
+        dummy = GPR(bounds=self.bounds, MIN_SNR=self.MIN_SNR)
         dummy.set_data(self.X, self.Y)
         dummy.model.load_state_dict(self.model.state_dict())
 
@@ -133,13 +156,13 @@ class GPR:
 
     def mean(self, X):
         *input_shape, _ = X.shape
-        x = torch.as_tensor(X.reshape(-1, self.n_dof)).double()
-        return self.model.posterior(x).mean.detach().numpy().reshape(input_shape)
+        x = self.prepare_inputs(X).reshape(-1, self.n_dof)
+        return self.unprepare_targets(self.model.posterior(x).mean).reshape(input_shape)
 
     def sigma(self, X):
         *input_shape, _ = X.shape
-        x = torch.as_tensor(X.reshape(-1, self.n_dof)).double()
-        return self.model.posterior(x).stddev.detach().numpy().reshape(input_shape)
+        x = self.prepare_inputs(X).reshape(-1, self.n_dof)
+        return self.target_scales * self.model.posterior(x).stddev.detach().numpy().reshape(input_shape)
 
     @property
     def scale(self):
@@ -202,13 +225,10 @@ class GPR:
         return FIM_stack
 
 
-class GPC:
+class GPC(BoTorchModelWrapper):
     """
     A Gaussian process classifier, with learning methods.
     """
-
-    def __init__(self):
-        self.model = None
 
     def set_data(self, X, c):
         """
@@ -220,53 +240,31 @@ class GPC:
         Passed parameters must be between [-1, 1] in every dimension. Passed values must be integer labels.
         """
 
+        self.X, self.c = X, c
+
+        self.prepare_targets = lambda targets: torch.tensor(targets).int()
+        self.unprepare_targets = lambda targets: targets.detach().numpy().astype(int)
+
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
             torch.as_tensor(c).int(), learn_additional_noise=True
         ).double()
 
         self.model = BoTorchClassifier(
-            torch.as_tensor(X).double(),
+            self.train_inputs,
             dirichlet_likelihood.transformed_targets,
             dirichlet_likelihood,
         ).double()
 
         self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
 
-    @property
-    def torch_inputs(self):
-        return self.model.train_inputs[0]
-
-    @property
-    def torch_targets(self):
-        return self.model.train_targets
-
-    @property
-    def X(self):
-        return self.torch_inputs.detach().numpy().astype(float)
-
-    @property
-    def c(self):
-        return self.torch_targets.detach().numpy().argmax(axis=0)
-
-    @property
-    def n(self):
-        return self.c.size
-
-    @property
-    def n_dof(self):
-        return self.X.shape[-1]
-
     def tell(self, X, c):
         self.set_data(np.r_[self.X, np.atleast_2d(X)], np.r_[self.c, np.atleast_1d(c)])
-
-    def train(self, maxiter=100, lr=1e-2):
-        botorch.optim.fit.fit_gpytorch_mll_torch(self.mll, optimizer=torch.optim.Adam, step_limit=256)
 
     def copy(self):
         if self.model is None:
             raise RuntimeError("You cannot copy a model with no data.")
 
-        dummy = GPC()
+        dummy = GPC(bounds=self.bounds, MIN_SNR=self.MIN_SNR)
         dummy.set_data(self.X, self.c)
         dummy.model.load_state_dict(self.model.state_dict())
 
@@ -274,15 +272,11 @@ class GPC:
 
     def p(self, X, n_samples=256):
         *input_shape, _ = X.shape
-
-        x = torch.as_tensor(X.reshape(-1, self.n_dof)).double()
-
+        x = self.prepare_inputs(X).reshape(-1, self.n_dof)
         samples = self.model.posterior(x).sample(torch.Size((n_samples,))).exp()
-
         return (samples / samples.sum(-3, keepdim=True)).mean(0)[1].reshape(input_shape).detach().numpy()
 
     def entropy(self, X, n_samples=256):
         p = self.p(X, n_samples)
         q = 1 - p
-
         return -p * np.log(p) - q * np.log(q)
