@@ -1,10 +1,12 @@
 import numpy as np
+import pytest
 from sirepo_bluesky.sirepo_ophyd import create_classes
 
 from bloptools.bo import BayesianOptimizationAgent
 from bloptools.experiments.shadow import tes
 
 
+@pytest.mark.shadow
 def test_tes_shadow_boa(RE, db, shadow_tes_simulation):
     data, schema = shadow_tes_simulation.auth("shadow", "00000002")
     classes, objects = create_classes(shadow_tes_simulation.data, connection=shadow_tes_simulation)
