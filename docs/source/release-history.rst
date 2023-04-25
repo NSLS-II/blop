@@ -3,6 +3,14 @@ Release History
 ===============
 
 
+v0.2.0 (2023-03-25)
+-------------------
+
+- Rebased the Bayesian optimization models to be compatible with ``botorch`` code.
+- Optimization objectives can be customized with ``experiment`` modules. 
+- Added optimization test functions for quicker testing and development.  
+
+
 v0.1.0 (2023-03-10)
 -------------------
 
