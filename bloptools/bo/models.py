@@ -36,7 +36,9 @@ class BoTorchClassifier(gpytorch.models.ExactGP, botorch.models.gpytorch.GPyTorc
     def __init__(self, train_X, train_Y, likelihood):
         super(BoTorchClassifier, self).__init__(train_X, train_Y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean(batch_shape=len(train_Y.unique()))
-        self.covar_module = kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True)
+        self.covar_module = gpytorch.kernels.ScaleKernel(
+            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True)
+        )
 
     def forward(self, x):
         mean_x = self.mean_module(x)

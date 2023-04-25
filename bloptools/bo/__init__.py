@@ -69,7 +69,7 @@ class BayesianOptimizationAgent:
 
         self.gridded_plots = True if self.n_dof == 2 else False
 
-        MAX_TEST_POINTS = 2**11
+        MAX_TEST_POINTS = 2**10
 
         n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
         self.dim_bins = [np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.bounds]
@@ -156,7 +156,7 @@ class BayesianOptimizationAgent:
         bby = np.array([y_min, y_max])[[0, 1, 1, 0, 0]]
 
         plt.figure()
-        plt.imshow(im, cmap="gray")
+        plt.imshow(im, cmap="gray_r")
         plt.plot(bbx, bby, lw=4e0, c="r")
 
         if border is not None:
@@ -209,6 +209,7 @@ class BayesianOptimizationAgent:
             _table = self.db[uid].table(fill=True)
             _table.loc[:, "uid"] = uid
         except Exception as err:
+            _table = pd.DataFrame()
             logging.warning(repr(err))
 
         for i, entry in _table.iterrows():
@@ -398,7 +399,8 @@ class BayesianOptimizationAgent:
         Create the axes onto which we plot/update the state of the GPO
         """
 
-        s = 16
+        s = 32
+        lw = 1e0
 
         # so that the points and estimates have the same nice norm
         fitness_norm = mpl.colors.Normalize(*np.nanpercentile(self.data.fitness.values, q=[1, 99]))
@@ -408,9 +410,7 @@ class BayesianOptimizationAgent:
         ax.clear()
         ax.set_title("sampled fitness")
 
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
-
-        ref = ax.scatter(*self.X.T[:2], s=s, c=self.data.fitness.values, norm=fitness_norm)
+        ref = ax.scatter(*self.X.T[:2], s=s, c=self.data.fitness.values, norm=fitness_norm, cmap="plasma")
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
@@ -421,32 +421,42 @@ class BayesianOptimizationAgent:
         ax.set_title("fitness estimate")
         if gridded:
             ref = ax.pcolormesh(
-                *self.dim_mids[:2], self.fitness_estimate(self.test_X_grid), norm=fitness_norm, shading="nearest"
+                *self.dim_mids[:2],
+                self.fitness_estimate(self.test_X_grid),
+                norm=fitness_norm,
+                shading="nearest",
+                cmap="plasma",
             )
         else:
-            ref = ax.scatter(*self.test_X.T[:2], s=s, c=self.fitness_estimate(self.test_X), norm=fitness_norm)
+            ref = ax.scatter(
+                *self.test_X.T[:2], s=s, c=self.fitness_estimate(self.test_X), norm=fitness_norm, cmap="plasma"
+            )
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the entropy rate of test points
         ax = self.state_axes[0, 2]
         ax.clear()
         ax.set_title("fitness uncertainty")
         if gridded:
-            ref = ax.pcolormesh(*self.dim_mids[:2], self.fitness_sigma(self.test_X_grid), shading="nearest")
+            ref = ax.pcolormesh(
+                *self.dim_mids[:2],
+                self.fitness_sigma(self.test_X_grid),
+                shading="nearest",
+                cmap="plasma",
+            )
         else:
             ref = ax.scatter(
                 *self.test_X.T[:2],
                 s=s,
                 c=self.fitness_sigma(self.test_X),
                 norm=mpl.colors.Normalize(),
+                cmap="plasma",
             )
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot the estimate of test points
         ax = self.state_axes[0, 3]
@@ -476,15 +486,20 @@ class BayesianOptimizationAgent:
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         # plot classification of data points
         ax = self.state_axes[1, 0]
         ax.clear()
         ax.set_title("sampled validity")
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
-        ref = ax.scatter(*self.X.T[:2], s=s, c=self.classifier.c, norm=mpl.colors.Normalize(vmin=0, vmax=1))
+        ref = ax.scatter(
+            *self.X.T[:2],
+            s=s,
+            ec="k",
+            c=self.classifier.c,
+            norm=mpl.colors.Normalize(vmin=0, vmax=1),
+            cmap="gray_r",
+        )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_ticks([0, 1])
         clb.set_ticklabels(["invalid", "valid"])
@@ -499,6 +514,7 @@ class BayesianOptimizationAgent:
                 vmin=0,
                 vmax=1,
                 shading="nearest",
+                cmap="gray_r",
             )
         else:
             ref = ax.scatter(
@@ -507,10 +523,10 @@ class BayesianOptimizationAgent:
                 s=s,
                 vmin=0,
                 vmax=1,
+                cmap="gray_r",
             )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("probability of validity")
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 2]
         ax.clear()
@@ -520,16 +536,21 @@ class BayesianOptimizationAgent:
                 *self.dim_mids[:2],
                 self.classifier.entropy(self.test_X_grid),
                 shading="nearest",
+                cmap="gray_r",
             )
         else:
-            ref = ax.scatter(*self.test_X.T[:2], c=self.classifier.entropy(self.test_X), s=s)
+            ref = ax.scatter(
+                *self.test_X.T[:2],
+                c=self.classifier.entropy(self.test_X),
+                s=s,
+                cmap="gray_r",
+            )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("nats")
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
 
         ax = self.state_axes[1, 3]
         ax.clear()
-        ax.set_title("total entropy")
+        ax.set_title("expected GIBBON")
         if gridded:
             expected_gibbon = acquisition.expected_gibbon(self.evaluator, self.classifier, self.test_X_grid)
             # total_entropy = self.evaluator.normalized_entropy(self.test_X_grid) \
@@ -548,8 +569,12 @@ class BayesianOptimizationAgent:
                 norm=mpl.colors.Normalize(),
             )
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
-        clb.set_label("nats")
-        ax.scatter(*self.X.T[:2], s=s, edgecolor="k", facecolor="none")
+        clb.set_label("objective")
+
+        for ax in [self.state_axes[0, 0], *self.state_axes[:, -1]]:
+            good = self.classifier.c == 1
+            ax.scatter(*self.classifier.X.T[:2, good], s=s, edgecolor="k", facecolor="none", lw=lw)
+            ax.scatter(*self.classifier.X.T[:2, ~good], s=s, color="k", marker="x", lw=lw)
 
         for ax in self.state_axes.ravel():
             ax.set_xlim(*self.bounds[0])
