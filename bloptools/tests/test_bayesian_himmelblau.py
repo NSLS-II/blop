@@ -4,7 +4,7 @@ from bloptools.bo import BayesianOptimizationAgent
 from bloptools.experiments.tests import Himmelblau
 
 
-@pytest.mark.test_func
+@pytest.mark.test-func
 def test_himmelblau_boa(RE, db):
     himmelblau = Himmelblau()
 
