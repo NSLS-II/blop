@@ -156,7 +156,7 @@ class BayesianOptimizationAgent:
         bby = np.array([y_min, y_max])[[0, 1, 1, 0, 0]]
 
         plt.figure()
-        plt.imshow(im, cmap="gray_r_r")
+        plt.imshow(im, cmap="gray_r")
         plt.plot(bbx, bby, lw=4e0, c="r")
 
         if border is not None:
@@ -209,6 +209,7 @@ class BayesianOptimizationAgent:
             _table = self.db[uid].table(fill=True)
             _table.loc[:, "uid"] = uid
         except Exception as err:
+            _table = pd.DataFrame()
             logging.warning(repr(err))
 
         for i, entry in _table.iterrows():
@@ -427,7 +428,9 @@ class BayesianOptimizationAgent:
                 cmap="plasma",
             )
         else:
-            ref = ax.scatter(*self.test_X.T[:2], s=s, c=self.fitness_estimate(self.test_X), norm=fitness_norm)
+            ref = ax.scatter(
+                *self.test_X.T[:2], s=s, c=self.fitness_estimate(self.test_X), norm=fitness_norm, cmap="plasma"
+            )
 
         clb = self.state_fig.colorbar(ref, ax=ax, location="bottom", aspect=32, shrink=0.8)
         clb.set_label("fitness units")
