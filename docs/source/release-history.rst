@@ -3,7 +3,7 @@ Release History
 ===============
 
 
-v0.2.0 (2023-03-25)
+v0.2.0 (2023-04-25)
 -------------------
 
 - Rebased the Bayesian optimization models to be compatible with ``botorch`` code.
