@@ -19,7 +19,7 @@ class BoTorchMultiTaskGP(ExactGP, GPyTorchModel):
         super(BoTorchMultiTaskGP, self).__init__(train_X, train_Y, likelihood)
         self.mean_module = gpytorch.means.MultitaskMean(gpytorch.means.ConstantMean(), num_tasks=self._num_outputs)
         self.covar_module = gpytorch.kernels.MultitaskKernel(
-            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True),
+            kernels.LatentMaternKernel(n_dim=train_X.shape[-1], off_diag=True, diagonal_prior=True),
             num_tasks=self._num_outputs,
             rank=1,
         )
@@ -37,7 +37,7 @@ class BoTorchClassifier(gpytorch.models.ExactGP, botorch.models.gpytorch.GPyTorc
         super(BoTorchClassifier, self).__init__(train_X, train_Y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean(batch_shape=len(train_Y.unique()))
         self.covar_module = gpytorch.kernels.ScaleKernel(
-            kernels.LatentMaternKernel(n_dof=train_X.shape[-1], off_diag=True)
+            kernels.LatentMaternKernel(n_dim=train_X.shape[-1], off_diag=False, diagonal_prior=False)
         )
 
     def forward(self, x):
@@ -52,30 +52,31 @@ class BoTorchModelWrapper:
         self.bounds = bounds
         self.MIN_SNR = MIN_SNR
 
-        self.prepare_inputs = lambda inputs: torch.tensor(
+        self.normalize_inputs = lambda inputs: torch.tensor(
             (inputs - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
         ).double()
-        self.unprepare_inputs = lambda inputs: inputs.detach().numpy() * self.bounds.ptp(axis=1) + self.bounds.min(
+        self.unnormalize_inputs = lambda inputs: inputs.detach().numpy() * self.bounds.ptp(
             axis=1
-        )
+        ) + self.bounds.min(axis=1)
 
     def tell(self, X, Y):
         self.model.set_train_data(
-            torch.cat([self.train_inputs, self.prepare_inputs(X)]),
-            torch.cat([self.train_targets, self.prepare_targets(Y)]),
+            torch.cat([self.train_inputs, self.normalize_inputs(X)]),
+            torch.cat([self.train_targets, self.normalize_targets(Y)]),
             strict=False,
         )
 
     def train(self, **kwargs):
-        botorch.optim.fit.fit_gpytorch_mll_torch(self.mll, optimizer=torch.optim.Adam, **kwargs)
+        botorch.fit.fit_gpytorch_mll(self.mll, **kwargs)
+        # botorch.optim.fit.fit_gpytorch_mll_torch(self.mll, optimizer=torch.optim.Adam, **kwargs)
 
     @property
     def train_inputs(self):
-        return self.prepare_inputs(self.X)
+        return self.normalize_inputs(self.X)
 
     @property
     def train_targets(self):
-        return self.prepare_targets(self.Y)
+        return self.normalize_targets(self.Y)
 
     @property
     def n(self):
@@ -107,7 +108,7 @@ class GPR(BoTorchModelWrapper):
         if np.isnan(Y).any():
             raise ValueError("One of the passed values is NaN.")
 
-        # prepare Gaussian process ingredients for the regressor and classifier
+        # normalize Gaussian process ingredients for the regressor and classifier
         # use only regressable points for the regressor
 
         self.X, self.Y = X, Y
@@ -115,10 +116,10 @@ class GPR(BoTorchModelWrapper):
         self.target_means = Y.mean(axis=0)
         self.target_scales = Y.std(axis=0)
 
-        self.prepare_targets = lambda targets: torch.tensor(
+        self.normalize_targets = lambda targets: torch.tensor(
             (targets - self.target_means[None]) / self.target_scales[None]
         ).double()
-        self.unprepare_targets = (
+        self.unnormalize_targets = (
             lambda targets: targets.detach().numpy() * self.target_scales[None] + self.target_means[None]
         )
 
@@ -158,13 +159,15 @@ class GPR(BoTorchModelWrapper):
 
     def mean(self, X):
         *input_shape, _ = X.shape
-        x = self.prepare_inputs(X).reshape(-1, self.n_dof)
-        return self.unprepare_targets(self.model.posterior(x).mean).reshape(input_shape)
+        x = self.normalize_inputs(X).reshape(-1, self.n_dof)
+        return self.unnormalize_targets(self.model.posterior(x).mean).reshape(*input_shape, self.num_tasks)
 
     def sigma(self, X):
         *input_shape, _ = X.shape
-        x = self.prepare_inputs(X).reshape(-1, self.n_dof)
-        return self.target_scales * self.model.posterior(x).stddev.detach().numpy().reshape(input_shape)
+        x = self.normalize_inputs(X).reshape(-1, self.n_dof)
+        return self.target_scales * self.model.posterior(x).stddev.detach().numpy().reshape(
+            *input_shape, self.num_tasks
+        )
 
     @property
     def scale(self):
@@ -244,8 +247,8 @@ class GPC(BoTorchModelWrapper):
 
         self.X, self.c = X, c
 
-        self.prepare_targets = lambda targets: torch.tensor(targets).int()
-        self.unprepare_targets = lambda targets: targets.detach().numpy().astype(int)
+        self.normalize_targets = lambda targets: torch.tensor(targets).int()
+        self.unnormalize_targets = lambda targets: targets.detach().numpy().astype(int)
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
             torch.as_tensor(c).int(), learn_additional_noise=True
@@ -274,7 +277,7 @@ class GPC(BoTorchModelWrapper):
 
     def p(self, X, n_samples=256):
         *input_shape, _ = X.shape
-        x = self.prepare_inputs(X).reshape(-1, self.n_dof)
+        x = self.normalize_inputs(X).reshape(-1, self.n_dof)
         samples = self.model.posterior(x).sample(torch.Size((n_samples,))).exp()
         return (samples / samples.sum(-3, keepdim=True)).mean(0)[1].reshape(input_shape).detach().numpy()
 
