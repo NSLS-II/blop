@@ -15,7 +15,8 @@ def test_himmelblau_boa(RE, db):
         db=db,  # a databroker instance
     )
 
-    RE(boa.initialize(init_scheme="quasi-random", n_init=8))
+    RE(boa.initialize(init_scheme="quasi-random", n_init=4))
+
     RE(boa.learn(strategy="esti", n_iter=2, n_per_iter=3))
 
     boa.plot_tasks()

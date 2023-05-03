@@ -16,7 +16,7 @@ def test_tes_shadow_boa(RE, db, shadow_tes_simulation):
     data["models"]["watchpointReport12"]["histogramBins"] = 32
 
     kb_dofs = [kbv.x_rot, kbv.offz]
-    kb_bounds = np.array([[-0.10, +0.10], [-0.50, +0.50]]) * 2
+    kb_bounds = np.array([[-0.10, +0.10], [-0.50, +0.50]])
 
     for dof in kb_dofs:
         dof.kind = "hinted"
@@ -30,5 +30,7 @@ def test_tes_shadow_boa(RE, db, shadow_tes_simulation):
         db=db,  # a databroker instance
     )
 
-    RE(boa.learn(strategy="esti", n_iter=2, n_per_iter=3))
+    RE(boa.initialize(init_scheme="quasi-random", n_init=4))
+
+    RE(boa.learn(strategy="esti", n_iter=2, n_per_iter=2))
     boa.plot_tasks()

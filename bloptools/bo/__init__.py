@@ -70,6 +70,8 @@ class BayesianOptimizationAgent:
 
         self.num_tasks = len(tasks)
 
+        self._initialized = False
+
         self.db = db
         self.training_iter = training_iter
 
@@ -143,6 +145,8 @@ class BayesianOptimizationAgent:
                 "Could not initialize model! Either pass initial X and data, or specify one of:"
                 "['quasi-random']."
             )
+
+        self._initialized = True
 
     @property
     def current_X(self):
@@ -285,6 +289,9 @@ class BayesianOptimizationAgent:
             # if init and self.sample_center_on_init:
             #    return np.r_[0.5 * np.ones((1, self.dim)), sampler.random(n=n-1)]
             return sampler.random(n=n) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+
+        if not self._initialized:
+            raise RuntimeError('An uninitialized agent only accepts the strategy "quasi-random".')
 
         if tasks is None:
             tasks = self.tasks
