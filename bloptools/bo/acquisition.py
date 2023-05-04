@@ -4,12 +4,12 @@ import torch
 from botorch.acquisition.analytic import LogExpectedImprovement
 from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 
-# these return the values of the acquisition objectives
 
-
-def expected_sumtask_improvement(tasks, classifier, X):
+def expected_sum_of_tasks_improvement(X, tasks, classifier):
+    """
+    Return the expected improvement in the sum of tasks.
+    """
     total_mu, total_var = 0, 0
-
     total_nu = np.c_[[task.regressor.Y[:, 0] for task in tasks]].sum(axis=0).max()
 
     for task in tasks:
@@ -27,7 +27,7 @@ def expected_sumtask_improvement(tasks, classifier, X):
     return esti.reshape(X.shape[:-1]) * p_good.reshape(X.shape[:-1])
 
 
-def expected_improvement(regressor, classifier, X):
+def expected_improvement(X, regressor, classifier):
     """
     Given a botorch fitness model "regressor" and a botorch validation model "classifier", compute the
     expected improvement at parameters X.
@@ -45,7 +45,7 @@ def expected_improvement(regressor, classifier, X):
     return ei.reshape(X.shape[:-1]) * p_good.reshape(X.shape[:-1])
 
 
-def expected_gibbon(regressor, classifier, X, n_candidates=1024):
+def expected_gibbon(X, regressor, classifier, n_candidates=1024):
     """
     Given a botorch fitness model "regressor" and a botorch validation model "classifier", compute the
     expected GIBBON at parameters X (https://www.jmlr.org/papers/volume22/21-0120/21-0120.pdf)
@@ -59,26 +59,3 @@ def expected_gibbon(regressor, classifier, X, n_candidates=1024):
     p_good = classifier.p(X)
 
     return gibbon.reshape(X.shape[:-1]) * p_good.reshape(X.shape[:-1])
-
-
-# these return params that maximize the objective
-
-
-def max_expected_improvement(regressor, classifier, n_test=1024):
-    """
-    Compute the expected improvement over quasi-random sampled parameters, and return the location of the maximum.
-    """
-    sampler = sp.stats.qmc.Halton(d=regressor.X.shape[-1], scramble=True)
-    test_X = torch.as_tensor(sampler.random(n=n_test)).double()
-
-    return test_X(expected_improvement(regressor, classifier, test_X).argmax())
-
-
-def max_expected_gibbon(regressor, classifier, n_test=1024):
-    """
-    Compute the expected GIBBON over quasi-random sampled parameters, and return the location of the maximum.
-    """
-    sampler = sp.stats.qmc.Halton(d=regressor.X.shape[-1], scramble=True)
-    test_X = torch.as_tensor(sampler.random(n=n_test)).double()
-
-    return test_X(expected_gibbon(regressor, classifier, test_X).argmax())

@@ -204,7 +204,7 @@ class BayesianOptimizationAgent:
                 task_fitness = task.get_fitness(entry)
                 self.data.loc[index, f"{task.name}_fitness"] = task_fitness
                 total_fitness += task_fitness
-            self.data.loc[index, "total_fitness"] = total_fitness
+            self.data.loc[index, "tasks_sum"] = total_fitness
 
         if hasattr(self.experiment, "IMAGE_NAME"):
             self.images = np.array([im for im in self.data[self.experiment.IMAGE_NAME].values])
@@ -250,6 +250,27 @@ class BayesianOptimizationAgent:
 
         return X, table
 
+    def sample_acqf(self, acqf, n_test=1024, optimize=False):
+        def acq_loss(x, *args):
+            return -acqf(x, *args)
+
+        acq_args = (self.tasks, self.classifier)
+
+        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
+
+        test_X = sampler.random(n=n_test)
+        init_X = test_X[acq_loss(test_X, *acq_args).argmin()]
+
+        if optimize:
+            res = sp.optimize.minimize(
+                fun=acq_loss, args=acq_args, x0=init_X, bounds=self.bounds, method="SLSQP", options={"maxiter": 64}
+            )
+            X = res.x
+        else:
+            X = init_X
+
+        return X, acq_loss(X, *acq_args)
+
     def ask(
         self,
         tasks=None,
@@ -261,7 +282,12 @@ class BayesianOptimizationAgent:
         route=True,
         cost_model=None,
         n_test=1024,
+        optimize=True,
     ):
+        """
+        Recommends the next $n$ points to sample.
+        """
+
         if route:
             unrouted_X = self.ask(
                 tasks=tasks,
@@ -277,10 +303,6 @@ class BayesianOptimizationAgent:
 
             routing_index, _ = utils.get_routing(self.current_X, unrouted_X)
             return unrouted_X[routing_index]
-
-        """
-        Recommends the next $n$ points to sample, according to the given strategy.
-        """
 
         sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
 
@@ -300,29 +322,17 @@ class BayesianOptimizationAgent:
             classifier = self.classifier
 
         if (not greedy) or (n == 1):
-            # recommend some parameters that we might want to sample, with shape (., n, dim)
-            TEST_X = sampler.random(n=n * n_test) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
-            TEST_X = TEST_X.reshape(n_test, n, self.n_dof)
-
-            # how much will we have to change our parameters to sample these guys?
-            DELTA_TEST_X = np.diff(
-                np.concatenate([np.repeat(self.current_X[None, None], n_test, axis=0), TEST_X], axis=1),
-                axis=1,
-            )
-
-            if cost_model is None:
-                cost = np.ones(n_test)
-
-            # how long will that take?
-            if cost_model == "delay":
-                cost = self.delay_estimate(DELTA_TEST_X).sum(axis=1)
-                if not all(cost > 0):
-                    raise ValueError("Some estimated acquisition times are non-positive.")
+            acqf = None
 
             if strategy.lower() == "esti":  # maximize the expected improvement
-                objective = acquisition.expected_sumtask_improvement(tasks, classifier, TEST_X).sum(axis=1)
+                acqf = acquisition.expected_sum_of_tasks_improvement
 
-            return TEST_X[np.argmax(objective / cost)]
+            if acqf is None:
+                raise ValueError(f'Unrecognized strategy "{strategy}".')
+
+            X, loss = self.sample_acqf(acqf, optimize=optimize)
+
+            return np.atleast_2d(X)
 
         if greedy and (n > 1):
             dummy_tasks = [copy.deepcopy(task) for task in self.tasks]
