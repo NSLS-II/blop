@@ -250,16 +250,20 @@ class BayesianOptimizationAgent:
 
         return X, table
 
-    def sample_acqf(self, acqf, n_test=1024, optimize=False):
+    def qr_sample(self, n):
+        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
+        return sampler.random(n=n) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+
+    def sample_acqf(self, acqf, n_test=2048, optimize=False):
         def acq_loss(x, *args):
             return -acqf(x, *args)
 
         acq_args = (self.tasks, self.classifier)
 
-        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-
-        test_X = sampler.random(n=n_test)
+        test_X = self.qr_sample(n=n_test)
         init_X = test_X[acq_loss(test_X, *acq_args).argmin()]
+
+        # print(init_X)
 
         if optimize:
             res = sp.optimize.minimize(
@@ -268,6 +272,8 @@ class BayesianOptimizationAgent:
             X = res.x
         else:
             X = init_X
+
+        # print(res)
 
         return X, acq_loss(X, *acq_args)
 
@@ -278,7 +284,7 @@ class BayesianOptimizationAgent:
         strategy=None,
         greedy=True,
         n=1,
-        disappointment=1.0,
+        disappointment=0,
         route=True,
         cost_model=None,
         n_test=1024,
@@ -323,6 +329,9 @@ class BayesianOptimizationAgent:
 
         if (not greedy) or (n == 1):
             acqf = None
+
+            if strategy.lower() == "est":  # maximize the expected improvement
+                acqf = acquisition.expected_sum_of_tasks
 
             if strategy.lower() == "esti":  # maximize the expected improvement
                 acqf = acquisition.expected_sum_of_tasks_improvement

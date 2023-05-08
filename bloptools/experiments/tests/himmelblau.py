@@ -12,7 +12,7 @@ class MinHimmelblau(BaseTask):
     name = "minimize_himmelblau"
 
     def get_fitness(processed_entry):
-        return -getattr(processed_entry, "himmelblau")
+        return -np.log(1 + 1e-1 * getattr(processed_entry, "himmelblau"))
 
 
 def initialize():

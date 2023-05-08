@@ -5,6 +5,18 @@ from botorch.acquisition.analytic import LogExpectedImprovement
 from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 
 
+def expected_sum_of_tasks(X, tasks, classifier):
+    """
+    Return the expected sum of tasks.
+    """
+    total_mu = 0
+
+    for task in tasks:
+        total_mu += task.regressor.mean(X)
+
+    return total_mu.reshape(X.shape[:-1])
+
+
 def expected_sum_of_tasks_improvement(X, tasks, classifier):
     """
     Return the expected improvement in the sum of tasks.
