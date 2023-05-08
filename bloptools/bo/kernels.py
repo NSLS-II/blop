@@ -18,7 +18,7 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         self.off_diag = off_diag
 
         # output_scale_constraint = gpytorch.constraints.Positive()
-        trans_diagonal_constraint = gpytorch.constraints.Interval(2e0, 1e2)
+        trans_diagonal_constraint = gpytorch.constraints.Interval(1e0, 1e2)
         trans_off_diag_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
 
         trans_diagonal_initial = np.sqrt(
@@ -42,7 +42,7 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         if diagonal_prior:
             self.register_prior(
                 name="trans_diagonal_prior",
-                prior=gpytorch.priors.GammaPrior(concentration=1, rate=0.1),
+                prior=gpytorch.priors.GammaPrior(concentration=2, rate=0.2),
                 param_or_closure=lambda m: m.trans_diagonal,
                 setting_closure=lambda m, v: m._set_trans_diagonal(v),
             )
@@ -119,6 +119,8 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         # computes the autocovariance of the process at the parameters
         if auto:
             x2 = x1
+
+        # print(x1, x2)
 
         # x1 and x2 are arrays of shape (..., n_1, n_dim) and (..., n_2, n_dim)
         _x1, _x2 = torch.as_tensor(x1).double(), torch.as_tensor(x2).double()
