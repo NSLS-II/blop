@@ -20,6 +20,7 @@ def postprocess(entry):
     """
 
     # get the ingredient from our dependent variables
+
     flux = -getattr(entry, "apb_ch4") # lower number is more flux :(
 
     if flux < 100:
