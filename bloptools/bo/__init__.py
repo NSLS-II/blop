@@ -267,7 +267,7 @@ class BayesianOptimizationAgent:
 
         if optimize:
             res = sp.optimize.minimize(
-                fun=acq_loss, args=acq_args, x0=init_X, bounds=self.bounds, method="SLSQP", options={"maxiter": 64}
+                fun=acq_loss, args=acq_args, x0=init_X, bounds=self.bounds, method="SLSQP", options={"maxiter": 32}
             )
             X = res.x
         else:
@@ -415,7 +415,7 @@ class BayesianOptimizationAgent:
             ax.set_ylabel(self.dofs[axes[1]].name)
 
         data_ax = self.class_axes[0].scatter(
-            *self.classifier.X.T[:2], s=s, c=self.classifier.c, vmin=0, vmax=1, cmap="plasma"
+            *self.classifier.X.T[:2], s=s, c=self.classifier.Y, vmin=0, vmax=1, cmap="plasma"
         )
 
         if gridded:

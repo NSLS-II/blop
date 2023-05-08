@@ -19,7 +19,7 @@ class BoTorchMultiTaskGP(ExactGP, GPyTorchModel):
         super(BoTorchMultiTaskGP, self).__init__(train_X, train_Y, likelihood)
         self.mean_module = gpytorch.means.MultitaskMean(gpytorch.means.ConstantMean(), num_tasks=self._num_outputs)
         self.covar_module = gpytorch.kernels.MultitaskKernel(
-            kernels.LatentMaternKernel(n_dim=train_X.shape[-1], off_diag=True, diagonal_prior=False),
+            kernels.LatentMaternKernel(n_dim=train_X.shape[-1], off_diag=True, diagonal_prior=True),
             num_tasks=self._num_outputs,
             rank=1,
         )
@@ -235,7 +235,7 @@ class GPC(BoTorchModelWrapper):
     A Gaussian process classifier, with learning methods.
     """
 
-    def set_data(self, X, c):
+    def set_data(self, X, Y):
         """
         Set the data with parameters and values.
 
@@ -245,13 +245,13 @@ class GPC(BoTorchModelWrapper):
         Passed parameters must be between [-1, 1] in every dimension. Passed values must be integer labels.
         """
 
-        self.X, self.c = X, c
+        self.X, self.Y = X, Y
 
-        self.normalize_targets = lambda targets: torch.tensor(targets).int()
+        self.normalize_targets = lambda targets: torch.tensor(targets).long()
         self.unnormalize_targets = lambda targets: targets.detach().numpy().astype(int)
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            torch.as_tensor(c).int(), learn_additional_noise=True
+            torch.as_tensor(Y).long(), learn_additional_noise=True
         ).double()
 
         self.model = BoTorchClassifier(
@@ -262,15 +262,15 @@ class GPC(BoTorchModelWrapper):
 
         self.mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.model.likelihood, self.model)
 
-    def tell(self, X, c):
-        self.set_data(np.r_[self.X, np.atleast_2d(X)], np.r_[self.c, np.atleast_1d(c)])
+    def tell(self, X, Y):
+        self.set_data(np.r_[self.X, np.atleast_2d(X)], np.r_[self.c, np.atleast_1d(Y)])
 
     def copy(self):
         if self.model is None:
             raise RuntimeError("You cannot copy a model with no data.")
 
         dummy = GPC(bounds=self.bounds, MIN_SNR=self.MIN_SNR)
-        dummy.set_data(self.X, self.c)
+        dummy.set_data(self.X, self.Y)
         dummy.model.load_state_dict(self.model.state_dict())
 
         return dummy
