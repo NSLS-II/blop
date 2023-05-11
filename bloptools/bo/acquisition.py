@@ -5,38 +5,31 @@ from botorch.acquisition.analytic import LogExpectedImprovement
 from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 
 
-def expected_sum_of_tasks(X, tasks, classifier):
-    """
-    Return the expected sum of tasks.
-    """
-    total_mu = 0
-
-    for task in tasks:
-        total_mu += task.regressor.mean(X)
-
-    return total_mu.reshape(X.shape[:-1])
-
-
-def expected_sum_of_tasks_improvement(X, tasks, classifier):
+def log_expected_sum_of_tasks_improvement(X, agent):
     """
     Return the expected improvement in the sum of tasks.
     """
-    total_mu, total_var = 0, 0
-    total_nu = np.c_[[task.regressor.Y[:, 0] for task in tasks]].sum(axis=0).max()
 
-    for task in tasks:
-        total_mu += task.regressor.mean(X)
-        total_var += task.regressor.sigma(X) ** 2
+    *input_shape, input_dim = np.atleast_2d(X).shape
+    x = torch.tensor(X).reshape(-1, input_dim).double()
 
-    total_sigma = np.sqrt(total_var)
+    tasks_posterior = agent.multimodel.posterior(x)
 
-    esti = np.exp(-0.5 * np.square(total_mu - total_nu) / total_var) * total_sigma / np.sqrt(2 * np.pi) + 0.5 * (
-        total_mu - total_nu
-    ) * (1 + sp.special.erf((total_mu - total_nu) / (np.sqrt(2) * total_sigma)))
+    nu = np.nanmax(agent.targets.sum(axis=-1))  # the best sum of tasks so far
+    mu = agent.normalize_targets(tasks_posterior.mean.detach().numpy()).sum(axis=-1)  # the expected sum of tasks
+    noise = np.array([task.regressor.likelihood.noise.item() for task in agent.tasks])
+    sigma = (agent.targets.std(axis=0) * np.sqrt(tasks_posterior.variance.detach().numpy() + noise)).sum(
+        axis=-1
+    )  # the variance in that estimate
 
-    p_good = classifier.p(X)
+    log_esti = np.log(
+        np.exp(-0.5 * np.square((mu - nu) / sigma)) * sigma / np.sqrt(2 * np.pi)
+        + 0.5 * (mu - nu) * (1 + sp.special.erf((mu - nu) / (np.sqrt(2) * sigma)))
+    )
 
-    return esti.reshape(X.shape[:-1]) * p_good.reshape(X.shape[:-1])
+    log_prob = agent.classifier.log_prob(x).detach().numpy()
+
+    return log_esti.reshape(input_shape) + log_prob.reshape(input_shape)
 
 
 def expected_improvement(X, regressor, classifier):

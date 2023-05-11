@@ -1,5 +1,6 @@
 class BaseTask:
-    MIN_SNR = 1e1
+    MIN_NOISE_LEVEL = 1e-8
+    MAX_NOISE_LEVEL = 1e-3
 
     def __init__(self):
         pass

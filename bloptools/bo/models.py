@@ -3,23 +3,37 @@ import gpytorch
 import numpy as np
 import torch
 from botorch.models.gpytorch import GPyTorchModel
-from gpytorch.likelihoods import MultitaskGaussianLikelihood
 from gpytorch.models import ExactGP
 
 from .. import utils
 from . import kernels
 
 
+class BoTorchSingleTaskGP(ExactGP, GPyTorchModel):
+    def __init__(self, train_inputs, train_targets, likelihood):
+        super(BoTorchSingleTaskGP, self).__init__(train_inputs, train_targets, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean()
+        self.covar_module = gpytorch.kernels.ScaleKernel(
+            kernels.LatentMaternKernel(n_dim=train_inputs.shape[-1], off_diag=True, diagonal_prior=True)
+        )
+
+    def forward(self, x):
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x)
+
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+
 class BoTorchMultiTaskGP(ExactGP, GPyTorchModel):
     _num_outputs = 1  # to inform GPyTorchModel API
 
-    def __init__(self, train_X, train_Y, likelihood):
-        self._num_outputs = train_Y.shape[-1]
+    def __init__(self, train_inputs, train_targets, likelihood):
+        self._num_outputs = train_targets.shape[-1]
 
-        super(BoTorchMultiTaskGP, self).__init__(train_X, train_Y, likelihood)
+        super(BoTorchMultiTaskGP, self).__init__(train_inputs, train_targets, likelihood)
         self.mean_module = gpytorch.means.MultitaskMean(gpytorch.means.ConstantMean(), num_tasks=self._num_outputs)
         self.covar_module = gpytorch.kernels.MultitaskKernel(
-            kernels.LatentMaternKernel(n_dim=train_X.shape[-1], off_diag=True, diagonal_prior=True),
+            kernels.LatentMaternKernel(n_dim=train_inputs.shape[-1], off_diag=True, diagonal_prior=True),
             num_tasks=self._num_outputs,
             rank=1,
         )
@@ -33,11 +47,11 @@ class BoTorchMultiTaskGP(ExactGP, GPyTorchModel):
 class BoTorchClassifier(gpytorch.models.ExactGP, botorch.models.gpytorch.GPyTorchModel):
     _num_outputs = 1  # to inform GPyTorchModel API
 
-    def __init__(self, train_X, train_Y, likelihood):
-        super(BoTorchClassifier, self).__init__(train_X, train_Y, likelihood)
-        self.mean_module = gpytorch.means.ConstantMean(batch_shape=len(train_Y.unique()))
+    def __init__(self, train_inputs, train_targets, likelihood):
+        super(BoTorchClassifier, self).__init__(train_inputs, train_targets, likelihood)
+        self.mean_module = gpytorch.means.ConstantMean(batch_shape=len(train_targets.unique()))
         self.covar_module = gpytorch.kernels.ScaleKernel(
-            kernels.LatentMaternKernel(n_dim=train_X.shape[-1], off_diag=False, diagonal_prior=False)
+            kernels.LatentMaternKernel(n_dim=train_inputs.shape[-1], off_diag=False, diagonal_prior=False)
         )
 
     def forward(self, x):
@@ -45,19 +59,17 @@ class BoTorchClassifier(gpytorch.models.ExactGP, botorch.models.gpytorch.GPyTorc
         covar_x = self.covar_module(x)
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
+    def log_prob(self, x, n_samples=256):
+        *input_shape, input_dim = torch.atleast_2d(x).shape
+        samples = self.posterior(x.reshape(-1, input_dim)).sample(torch.Size((n_samples,))).exp()
+        return torch.log((samples / samples.sum(-3, keepdim=True)).mean(0)[1].reshape(input_shape))
+
 
 class BoTorchModelWrapper:
     def __init__(self, bounds, MIN_SNR=1e-2):
         self.model = None
         self.bounds = bounds
         self.MIN_SNR = MIN_SNR
-
-        self.normalize_inputs = lambda inputs: torch.tensor(
-            (inputs - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
-        ).double()
-        self.unnormalize_inputs = lambda inputs: inputs.detach().numpy() * self.bounds.ptp(
-            axis=1
-        ) + self.bounds.min(axis=1)
 
     def tell(self, X, Y):
         self.model.set_train_data(
@@ -91,39 +103,43 @@ class BoTorchModelWrapper:
         return self.Y.shape[-1]
 
 
+# class MultiGPR(BoTorchModelWrapper):
+
+#     def set_data(self)
+
+
 class GPR(BoTorchModelWrapper):
 
     """
     A Gaussian process regressor, with learning methods.
     """
 
-    def set_data(self, X, Y):
+    def set_data(self, X, y):
         """
         Instantiate the GP with parameters and values.
 
         X: parameters
-        Y: values of functions at those parameters
+        y: values of the function at those parameters
         """
 
-        if np.isnan(Y).any():
+        if np.isnan(y).any():
             raise ValueError("One of the passed values is NaN.")
 
         # normalize Gaussian process ingredients for the regressor and classifier
         # use only regressable points for the regressor
 
-        self.X, self.Y = X, Y
+        self.X, self.Y = X, y
 
-        self.target_means = Y.mean(axis=0)
-        self.target_scales = Y.std(axis=0)
+        self.target_means = y.mean(axis=0)
+        self.target_scales = y.std(axis=0)
 
         self.normalize_targets = lambda targets: torch.tensor(
             (targets - self.target_means[None]) / self.target_scales[None]
         ).double()
+
         self.unnormalize_targets = (
             lambda targets: targets.detach().numpy() * self.target_scales[None] + self.target_means[None]
         )
-
-        self.num_tasks = Y.shape[-1]
 
         self.noise_upper_bound = np.square(1 / self.MIN_SNR)
 
@@ -131,14 +147,13 @@ class GPR(BoTorchModelWrapper):
             0, torch.tensor(self.noise_upper_bound).double()
         )
 
-        likelihood = MultitaskGaussianLikelihood(
-            num_tasks=self.num_tasks,
+        likelihood = gpytorch.likelihoods.GaussianLikelihood(
             noise_constraint=likelihood_noise_constraint,
         ).double()
 
-        self.model = BoTorchMultiTaskGP(
-            train_X=self.train_inputs,
-            train_Y=self.train_targets,
+        self.model = BoTorchSingleTaskGP(
+            train_inputs=self.train_inputs,
+            train_targets=self.train_targets,
             likelihood=likelihood,
         ).double()
 
