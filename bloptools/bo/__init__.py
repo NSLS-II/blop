@@ -19,7 +19,7 @@ from . import acquisition, models
 mpl.rc("image", cmap="coolwarm")
 
 
-class BayesianOptimizationAgent:
+class Agent:
     def __init__(
         self,
         dofs,
@@ -195,6 +195,9 @@ class BayesianOptimizationAgent:
         self.table.to_hdf(filepath, key="table")
 
     def untell(self, n):
+        self.inputs = self.inputs[:-n]
+        self.targets = self.targets[:-n]
+
         for task in self.tasks:
             task.regressor.set_train_data(
                 task.regressor.train_inputs[0][:-n], task.regressor.train_targets[:-n], strict=False
@@ -222,7 +225,8 @@ class BayesianOptimizationAgent:
 
             regressor_likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
-                    torch.tensor(task.MIN_NOISE_LEVEL).double(), torch.tensor(task.MAX_NOISE_LEVEL).double()
+                    torch.tensor(task.MIN_NOISE_LEVEL).square(),
+                    torch.tensor(task.MAX_NOISE_LEVEL).square(),
                 ),
             ).double()
 
@@ -282,6 +286,7 @@ class BayesianOptimizationAgent:
                 new_table.loc[index, f"{task.name}_fitness"] = task.get_fitness(new_table.loc[index])
 
         self.table = pd.concat([self.table, new_table])
+        self.table.index = np.arange(len(self.table))
 
         return new_table
 
@@ -434,7 +439,7 @@ class BayesianOptimizationAgent:
         gridded = self.n_dof == 2
 
         self.class_fig, self.class_axes = plt.subplots(
-            1, 3, figsize=(7, 2), sharex=True, sharey=True, constrained_layout=True
+            1, 3, figsize=(10, 4), sharex=True, sharey=True, constrained_layout=True
         )
 
         for ax in self.class_axes.ravel():
@@ -442,13 +447,17 @@ class BayesianOptimizationAgent:
             ax.set_ylabel(self.dofs[axes[1]].name)
 
         data_ax = self.class_axes[0].scatter(
-            *self.classifier.X.T[:2], s=s, c=self.classifier.Y, vmin=0, vmax=1, cmap="plasma"
+            *self.inputs.T[:2], s=s, c=~np.isnan(self.targets).any(axis=1), vmin=0, vmax=1, cmap="plasma"
         )
 
         if gridded:
+            x = torch.tensor(self.test_X_grid.reshape(-1, self.n_dof)).double()
+            log_prob = self.classifier.log_prob(x).detach().numpy().reshape(self.test_X_grid.shape[:-1])
+            entropy = -log_prob * np.exp(log_prob) - (1 - log_prob) * np.exp(1 - log_prob)
+
             self.class_axes[1].pcolormesh(
                 *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
-                np.exp(self.classifier.log_prob(self.test_X_grid).detach().numpy()),
+                np.exp(log_prob),
                 shading="nearest",
                 cmap="plasma",
                 vmin=0,
@@ -456,18 +465,20 @@ class BayesianOptimizationAgent:
             )
             entropy_ax = self.class_axes[2].pcolormesh(
                 *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
-                self.classifier.entropy(self.test_X_grid),
+                entropy,
                 shading="nearest",
                 cmap="plasma",
             )
 
         else:
+            x = torch.tensor(self.test_X).double()
+            log_prob = self.classifier.log_prob(x).detach().numpy()
+            entropy = -log_prob * np.exp(log_prob) - (1 - log_prob) * np.exp(1 - log_prob)
+
             self.class_axes[1].scatter(
-                *self.test_X.T[axes], s=s, c=self.classifier.p(self.test_X), vmin=0, vmax=1, cmap="plasma"
+                *self.test_X.T[axes], s=s, c=np.exp(log_prob), vmin=0, vmax=1, cmap="plasma"
             )
-            entropy_ax = self.class_axes[2].scatter(
-                *self.test_X.T[axes], s=s, c=self.classifier.entropy(self.test_X), cmap="plasma"
-            )
+            entropy_ax = self.class_axes[2].scatter(*self.test_X.T[axes], s=s, c=entropy, cmap="plasma")
 
         self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
         self.class_fig.colorbar(entropy_ax, ax=self.class_axes[2], location="bottom", aspect=32, shrink=0.8)
