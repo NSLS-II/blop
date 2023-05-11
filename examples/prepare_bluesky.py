@@ -18,7 +18,7 @@ from sirepo_bluesky.sirepo_ophyd import create_classes
 from sirepo_bluesky.srw_handler import SRWFileHandler
 
 import bloptools  # noqa F401
-from bloptools.bo import BayesianOptimizationAgent  # noqa F401
+from bloptools.bo import Agent  # noqa F401
 
 RE = RunEngine({})
 
