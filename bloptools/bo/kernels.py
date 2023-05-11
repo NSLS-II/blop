@@ -18,7 +18,7 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         self.off_diag = off_diag
 
         # output_scale_constraint = gpytorch.constraints.Positive()
-        trans_diagonal_constraint = gpytorch.constraints.Interval(1e0, 1e2)
+        trans_diagonal_constraint = gpytorch.constraints.Interval(5e-1, 1e2)
         trans_off_diag_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
 
         trans_diagonal_initial = np.sqrt(
@@ -42,7 +42,7 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         if diagonal_prior:
             self.register_prior(
                 name="trans_diagonal_prior",
-                prior=gpytorch.priors.GammaPrior(concentration=1, rate=0.1),
+                prior=gpytorch.priors.GammaPrior(concentration=1, rate=0.2),
                 param_or_closure=lambda m: m.trans_diagonal,
                 setting_closure=lambda m, v: m._set_trans_diagonal(v),
             )

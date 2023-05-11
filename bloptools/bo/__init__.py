@@ -3,28 +3,20 @@ import logging
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp  # noqa F401
+import botorch
+import gpytorch
 import h5py
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy as sp
+import torch
 from matplotlib import pyplot as plt
 
 from .. import utils
 from . import acquisition, models
 
 mpl.rc("image", cmap="coolwarm")
-
-
-def load(filepath, **kwargs):
-    with h5py.File(filepath, "r") as f:
-        X = f["X"][:]
-    data = pd.read_hdf(filepath, key="data")
-    return BayesianOptimizationAgent(init_X=X, init_data=data, **kwargs)
-
-
-# import bluesky_adaptive
-# from bluesky_adaptive.agents.base import Agent
 
 
 class BayesianOptimizationAgent:
@@ -68,38 +60,42 @@ class BayesianOptimizationAgent:
 
         self.tasks = tasks
 
-        self.num_tasks = len(tasks)
+        self.target_names = [f"{task.name}_fitness" for task in tasks]
+
+        self.n_tasks = len(tasks)
 
         self._initialized = False
 
         self.db = db
         self.training_iter = training_iter
 
+        self.verbose = verbose
+
         MAX_TEST_POINTS = 2**10
 
-        n_bins_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
-        self.dim_bins = np.array([np.linspace(*bounds, n_bins_per_dim + 1) for bounds in self.bounds])
-        self.dim_mids = np.array([0.5 * (bins[1:] + bins[:-1]) for bins in self.dim_bins])
-        self.test_X_grid = np.swapaxes(np.r_[np.meshgrid(*self.dim_mids, indexing="ij")], 0, -1)
+        self.test_X = sp.stats.qmc.Sobol(d=self.n_dof, scramble=True).random(n=MAX_TEST_POINTS)
+        self.test_inputs = self.unnormalize_inputs(self.test_X)
 
-        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-        self.test_X = sampler.random(n=MAX_TEST_POINTS) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+        n_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
+        self.X_samples = np.linspace(0, 1, n_per_dim)
+        self.test_X_grid = np.swapaxes(np.r_[np.meshgrid(*self.n_dof * [self.X_samples], indexing="ij")], 0, -1)
+        self.test_inputs_grid = self.unnormalize_inputs(self.test_X)
 
-        # convert X to x
-        self.X_trans_fun = lambda X: (X - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
+        self.inputs = np.empty((0, self.n_dof))
+        self.targets = np.empty((0, self.n_tasks))
+        self.table = pd.DataFrame()
 
-        # convert x to X
-        self.inv_X_trans_fun = lambda x: x * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+    def normalize_inputs(self, inputs):
+        return (inputs - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
 
-        # for actual prediction and optimization
-        self.X = np.empty((0, self.n_dof))
-        self.data = pd.DataFrame()
+    def unnormalize_inputs(self, X):
+        return X * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
 
-        for task in self.tasks:
-            task.regressor = models.GPR(bounds=self.bounds, MIN_SNR=task.MIN_SNR)
+    def normalize_targets(self, targets):
+        return (targets - np.nanmean(self.targets, axis=0)) / np.nanstd(self.targets, axis=0)
 
-        # self.regressor = models.GPR(bounds=self.bounds, MIN_SNR=experiment.MIN_SNR)
-        self.classifier = models.GPC(bounds=self.bounds)
+    def unnormalize_targets(self, targets):
+        return targets * np.nanstd(self.targets, axis=0) + np.nanmean(self.targets, axis=0)
 
     def measurement_plan(self):
         yield from bp.count(detectors=self.dets)
@@ -110,35 +106,35 @@ class BayesianOptimizationAgent:
     # def load(filepath, **kwargs):
     # with h5py.File(filepath, "r") as f:
     #     X = f["X"][:]
-    # data = pd.read_hdf(filepath, key="data")
-    # return BayesianOptimizationAgent(init_X=X, init_data=data, **kwargs)
+    # table = pd.read_hdf(filepath, key="table")
+    # return BayesianOptimizationAgent(init_X=X, init_table=table, **kwargs)
 
     def initialize(
         self,
         filepath=None,
-        init_X=None,
-        init_data=None,
         init_scheme=None,
         n_init=4,
     ):
         if filepath is not None:
             with h5py.File(filepath, "r") as f:
-                X = f["X"][:]
-            data = pd.read_hdf(filepath, key="data")
-            self.tell(new_X=X, new_data=data)
+                inputs = f["inputs"][:]
+            self.table = pd.read_hdf(filepath, key="table")
+            targets = self.table.loc[:, self.target_names].values
+            self.tell(new_inputs=inputs, new_targets=targets)
             return
 
         # experiment-specific stuff
         yield from self.experiment.initialize()
 
         # now let's get bayesian
-        if (init_X is not None) and (init_data is not None):
-            self.tell(new_X=init_X, new_data=init_data, reuse_hypers=True, verbose=self.verbose)
-
-        elif init_scheme == "quasi-random":
-            yield from self.learn(
-                n_iter=1, n_per_iter=n_init, strategy=init_scheme, greedy=True, reuse_hypers=False, route=True
+        if init_scheme == "quasi-random":
+            unrouted_inputs = self.unnormalize_inputs(
+                sp.stats.qmc.Sobol(d=self.n_dof, scramble=True).random(n=n_init)
             )
+            routing_index, _ = utils.get_routing(self.current_inputs, unrouted_inputs)
+            init_inputs = unrouted_inputs[routing_index]
+            self.table = yield from self.acquire_with_bluesky(init_inputs)
+            init_targets = self.table.loc[:, self.target_names].values
 
         else:
             raise Exception(
@@ -146,10 +142,15 @@ class BayesianOptimizationAgent:
                 "['quasi-random']."
             )
 
+        if (init_inputs is None) or (init_targets is None):
+            raise RuntimeError()
+
+        self.tell(new_inputs=init_inputs, new_targets=init_targets, reuse_hypers=True, verbose=self.verbose)
+
         self._initialized = True
 
     @property
-    def current_X(self):
+    def current_inputs(self):
         return np.array([dof.read()[dof.name]["value"] for dof in self.dofs])
 
     @property
@@ -173,7 +174,7 @@ class BayesianOptimizationAgent:
     def inspect_beam(self, index, border=None):
         im = self.images[index]
 
-        x_min, x_max, y_min, y_max, width_x, width_y = self.data.loc[
+        x_min, x_max, y_min, y_max, width_x, width_y = self.table.loc[
             index, ["x_min", "x_max", "y_min", "y_max", "width_x", "width_y"]
         ]
 
@@ -190,45 +191,75 @@ class BayesianOptimizationAgent:
 
     def save(self, filepath="model.h5"):
         with h5py.File(filepath, "w") as f:
-            f.create_dataset("X", data=self.X)
-        self.data.to_hdf(filepath, key="data")
+            f.create_dataset("inputs", data=self.inputs)
+        self.table.to_hdf(filepath, key="table")
 
-    def tell(self, new_X, new_data, reuse_hypers=True, verbose=False):
-        self.X = np.r_[self.X, new_X]
-        self.data = pd.concat([self.data, new_data])
-        self.data.index = np.arange(len(self.data))
+    def untell(self, n):
+        for task in self.tasks:
+            task.regressor.set_train_data(
+                task.regressor.train_inputs[0][:-n], task.regressor.train_targets[:-n], strict=False
+            )
 
-        for index, entry in self.data.iterrows():
-            total_fitness = 0
-            for task in self.tasks:
-                task_fitness = task.get_fitness(entry)
-                self.data.loc[index, f"{task.name}_fitness"] = task_fitness
-                total_fitness += task_fitness
-            self.data.loc[index, "tasks_sum"] = total_fitness
+    def tell(self, new_inputs, new_targets, **kwargs):
+        self.inputs = np.r_[self.inputs, np.atleast_2d(new_inputs)]
+        self.X = self.normalize_inputs(self.inputs)
+
+        self.targets = np.r_[self.targets, np.atleast_2d(new_targets)]
+        self.normalized_targets = self.normalize_targets(self.targets)
 
         if hasattr(self.experiment, "IMAGE_NAME"):
-            self.images = np.array([im for im in self.data[self.experiment.IMAGE_NAME].values])
+            self.images = np.array([im for im in self.table[self.experiment.IMAGE_NAME].values])
 
-        X = self.X.copy()
-        Y = np.c_[[getattr(self.data, f"{task.name}_fitness").values for task in self.tasks]].T
+        all_targets_valid = ~np.isnan(self.targets).any(axis=1)
 
-        for task in self.tasks:
-            X = self.X.copy()
-            Y = getattr(self.data, f"{task.name}_fitness").values[:, None]
-            c = (~np.isnan(Y).any(axis=-1)).astype(int)
+        for itask, task in enumerate(self.tasks):
+            task.targets = self.targets[:, itask]
+            task.normalized_targets = self.normalized_targets[:, itask]
 
-            task.regressor.set_data(X[c == 1], Y[c == 1])
-            task.regressor.train(step_limit=self.training_iter)
+            task.targets_mean = np.nanmean(task.targets)
+            task.targets_scale = np.nanstd(task.targets)
+            task.classes = (~np.isnan(task.targets)).astype(int)
+
+            regressor_likelihood = gpytorch.likelihoods.GaussianLikelihood(
+                noise_constraint=gpytorch.constraints.Interval(
+                    torch.tensor(task.MIN_NOISE_LEVEL).double(), torch.tensor(task.MAX_NOISE_LEVEL).double()
+                ),
+            ).double()
+
+            task.regressor = models.BoTorchSingleTaskGP(
+                train_inputs=torch.tensor(self.X[task.classes == 1]).double(),
+                train_targets=torch.tensor(task.normalized_targets[task.classes == 1]).double(),
+                likelihood=regressor_likelihood,
+            ).double()
+
+            task.regressor_mll = gpytorch.mlls.ExactMarginalLogLikelihood(
+                task.regressor.likelihood, task.regressor
+            )
+            botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
+
+        classifier_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
+            torch.as_tensor(all_targets_valid).long(), learn_additional_noise=True
+        ).double()
+
+        self.classifier = models.BoTorchClassifier(
+            train_inputs=torch.tensor(self.X).double(),
+            train_targets=classifier_likelihood.transformed_targets,
+            likelihood=classifier_likelihood,
+        ).double()
+
+        self.classifier_mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.classifier.likelihood, self.classifier)
+        botorch.fit.fit_gpytorch_mll(self.classifier_mll, **kwargs)
+
+        self.multimodel = botorch.models.model.ModelList(*[task.regressor for task in self.tasks])
 
         # self.regressor.set_data(X, Y)
         # self.regressor.train(step_limit=self.training_iter)
 
-        c = (~np.isnan(Y).any(axis=-1)).astype(int)
-        self.classifier.set_data(X, c)
-        self.classifier.train(step_limit=self.training_iter)
+        # c = (~np.isnan(Y).any(axis=-1)).astype(int)
+        # self.classifier.set_data(X, c)
+        # self.classifier.train(step_limit=self.training_iter)
 
     def acquire_with_bluesky(self, X, verbose=False):
-        # for _X in ordered_X:
         if verbose:
             print(f"sampling {X}")
 
@@ -237,30 +268,30 @@ class BayesianOptimizationAgent:
                 self.dets, *[_ for items in zip(self.dofs, np.atleast_2d(X).T) for _ in items]
             )
 
-            table = self.db[uid].table(fill=True)
-            table.loc[:, "uid"] = uid
+            new_table = self.db[uid].table(fill=True)
+            new_table.loc[:, "uid"] = uid
 
         except Exception as err:
-            table = pd.DataFrame()
+            new_table = pd.DataFrame()
             logging.warning(repr(err))
 
-        for index, entry in table.iterrows():
-            for k, v in self.experiment.postprocess(entry).items():
-                table.loc[index, k] = v
+        for index in new_table.index:
+            for k, v in self.experiment.postprocess(new_table.loc[index]).items():
+                new_table.loc[index, k] = v
+            for task in self.tasks:
+                new_table.loc[index, f"{task.name}_fitness"] = task.get_fitness(new_table.loc[index])
 
-        return X, table
+        self.table = pd.concat([self.table, new_table])
 
-    def qr_sample(self, n):
-        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-        return sampler.random(n=n) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
+        return new_table
 
     def sample_acqf(self, acqf, n_test=2048, optimize=False):
         def acq_loss(x, *args):
             return -acqf(x, *args)
 
-        acq_args = (self.tasks, self.classifier)
+        acq_args = (self,)
 
-        test_X = self.qr_sample(n=n_test)
+        test_X = sp.stats.qmc.Sobol(d=self.n_dof, scramble=True).random(n=n_test)
         init_X = test_X[acq_loss(test_X, *acq_args).argmin()]
 
         # print(init_X)
@@ -289,13 +320,17 @@ class BayesianOptimizationAgent:
         cost_model=None,
         n_test=1024,
         optimize=True,
+        normalize=False,
     ):
         """
         Recommends the next $n$ points to sample.
         """
 
+        if not self._initialized:
+            raise RuntimeError("The agent is not initialized!")
+
         if route:
-            unrouted_X = self.ask(
+            unrouted_points = self.ask(
                 tasks=tasks,
                 classifier=classifier,
                 strategy=strategy,
@@ -307,19 +342,8 @@ class BayesianOptimizationAgent:
                 n_test=n_test,
             )
 
-            routing_index, _ = utils.get_routing(self.current_X, unrouted_X)
-            return unrouted_X[routing_index]
-
-        sampler = sp.stats.qmc.Halton(d=self.n_dof, scramble=True)
-
-        # this one is easy
-        if strategy.lower() == "quasi-random":
-            # if init and self.sample_center_on_init:
-            #    return np.r_[0.5 * np.ones((1, self.dim)), sampler.random(n=n-1)]
-            return sampler.random(n=n) * self.bounds.ptp(axis=1) + self.bounds.min(axis=1)
-
-        if not self._initialized:
-            raise RuntimeError('An uninitialized agent only accepts the strategy "quasi-random".')
+            routing_index, _ = utils.get_routing(self.current_inputs, unrouted_points)
+            return unrouted_points[routing_index]
 
         if tasks is None:
             tasks = self.tasks
@@ -334,35 +358,39 @@ class BayesianOptimizationAgent:
                 acqf = acquisition.expected_sum_of_tasks
 
             if strategy.lower() == "esti":  # maximize the expected improvement
-                acqf = acquisition.expected_sum_of_tasks_improvement
+                acqf = acquisition.log_expected_sum_of_tasks_improvement
 
             if acqf is None:
                 raise ValueError(f'Unrecognized strategy "{strategy}".')
 
             X, loss = self.sample_acqf(acqf, optimize=optimize)
 
-            return np.atleast_2d(X)
+            return self.unnormalize_inputs(np.atleast_2d(X))
 
         if greedy and (n > 1):
             dummy_tasks = [copy.deepcopy(task) for task in self.tasks]
 
-            X_to_sample = np.zeros((0, self.n_dof))
+            inputs_to_sample = np.zeros((0, self.n_dof))
 
             for i in range(n):
-                _X = self.ask(strategy=strategy, tasks=dummy_tasks, classifier=classifier, greedy=True, n=1)
+                new_input = self.ask(strategy=strategy, tasks=dummy_tasks, classifier=classifier, greedy=True, n=1)
 
-                X_to_sample = np.r_[X_to_sample, _X]
+                inputs_to_sample = np.r_[inputs_to_sample, new_input]
 
-                _y = np.c_[
-                    [task.regressor.mean(_X) - disappointment * task.regressor.sigma(_X) for task in dummy_tasks]
-                ].T
+                if not (i + 1 == n):  # no point if we're on the last iteration
+                    fantasy_multimodel = botorch.models.model.ModelList(*[task.regressor for task in self.tasks])
+                    fantasy_posterior = fantasy_multimodel.posterior(
+                        torch.tensor(self.normalize_inputs(new_input)).double()
+                    )
 
-                if not (i + 1 == n):
-                    for task in dummy_tasks:
-                        _y = task.regressor.mean(_X) - disappointment * task.regressor.sigma(_X)
-                        task.regressor.tell(_X, _y)
+                    fantasy_targets = fantasy_posterior.mean - disappointment * fantasy_posterior.variance.sqrt()
+                    new_targets = self.unnormalize_targets(fantasy_targets.detach().numpy())
 
-            return X_to_sample
+                    self.tell(new_inputs=new_input, new_targets=new_targets)
+
+            self.untell(n=n)  # forget what you saw here
+
+            return inputs_to_sample
 
     def learn(
         self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs
@@ -371,32 +399,31 @@ class BayesianOptimizationAgent:
         print(f'learning with strategy "{strategy}" ...')
 
         for i in range(n_iter):
-            X_to_sample = np.atleast_2d(
+            inputs_to_sample = np.atleast_2d(
                 self.ask(n=n_per_iter, strategy=strategy, **kwargs)
             )  # get point(s) to sample from the strategizer
 
-            n_original = len(X_to_sample)
-            n_upsample = upsample * n_original + 1
+            # n_original = len(X_to_sample)
+            # n_upsample = upsample * n_original + 1
 
-            upsampled_X_to_sample = sp.interpolate.interp1d(
-                np.arange(n_original + 1), np.r_[self.current_X[None], X_to_sample], axis=0
-            )(np.linspace(0, n_original, n_upsample)[1:])
+            # upsampled_X_to_sample = sp.interpolate.interp1d(
+            #     np.arange(n_original + 1), np.r_[self.current_X[None], X_to_sample], axis=0
+            # )(np.linspace(0, n_original, n_upsample)[1:])
 
-            sampled_X, res_table = yield from self.acquire_with_bluesky(
-                upsampled_X_to_sample
-            )  # sample the point(s)
+            new_table = yield from self.acquire_with_bluesky(inputs_to_sample)
+            new_targets = new_table.loc[:, self.target_names].values
 
-            self.tell(new_X=sampled_X, new_data=res_table, reuse_hypers=reuse_hypers)
+            self.tell(new_inputs=inputs_to_sample, new_targets=new_targets, reuse_hypers=reuse_hypers)
 
-            if "state" in plots:
-                self.plot_state(remake=False, gridded=self.gridded_plots)
-            if "fitness" in plots:
-                self.plot_fitness(remake=False)
+            # if "state" in plots:
+            #     self.plot_state(remake=False, gridded=self.gridded_plots)
+            # if "fitness" in plots:
+            #     self.plot_fitness(remake=False)
 
             # if verbose:
             #     n_X = len(sampled_X)
             #     df_to_print = pd.DataFrame(
-            #         np.c_[self.X, self.experiment.HINTED_STATS],
+            #         np.c_[self.inputs, self.experiment.HINTED_STATS],
             #         columns=[*self.dof_names, *self.experiment.HINTED_STATS]
             #     ).iloc[-n_X:]
             #     print(df_to_print)
@@ -420,15 +447,18 @@ class BayesianOptimizationAgent:
 
         if gridded:
             self.class_axes[1].pcolormesh(
-                *self.dim_mids[axes],
-                self.classifier.p(self.test_X_grid),
+                *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
+                np.exp(self.classifier.log_prob(self.test_X_grid).detach().numpy()),
                 shading="nearest",
                 cmap="plasma",
                 vmin=0,
                 vmax=1,
             )
             entropy_ax = self.class_axes[2].pcolormesh(
-                *self.dim_mids[axes], self.classifier.entropy(self.test_X_grid), shading="nearest", cmap="plasma"
+                *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
+                self.classifier.entropy(self.test_X_grid),
+                shading="nearest",
+                cmap="plasma",
             )
 
         else:
@@ -448,9 +478,9 @@ class BayesianOptimizationAgent:
         gridded = self.n_dof == 2
 
         self.task_fig, self.task_axes = plt.subplots(
-            self.num_tasks,
+            self.n_tasks,
             3,
-            figsize=(10, 4 * (self.num_tasks)),
+            figsize=(10, 4 * self.n_tasks),
             sharex=True,
             sharey=True,
             constrained_layout=True,
@@ -461,7 +491,7 @@ class BayesianOptimizationAgent:
         self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
         for itask, task in enumerate(self.tasks):
-            task_norm = mpl.colors.Normalize(*np.nanpercentile(task.regressor.Y, q=[1, 99]))
+            task_norm = mpl.colors.Normalize(*np.nanpercentile(task.targets, q=[1, 99]))
 
             self.task_axes[itask, 0].set_ylabel(task.name)
 
@@ -470,30 +500,40 @@ class BayesianOptimizationAgent:
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
             data_ax = self.task_axes[itask, 0].scatter(
-                *task.regressor.X.T[axes], s=s, c=task.regressor.Y, norm=task_norm, cmap="plasma"
+                *self.inputs.T[axes], s=s, c=task.targets, norm=task_norm, cmap="plasma"
             )
 
             if gridded:
+                x = torch.tensor(self.test_X_grid.reshape(-1, self.n_dof)).double()
+                task_posterior = task.regressor.posterior(x)
+                task_mean = task_posterior.mean.detach().numpy() * task.targets_scale + task.targets_mean
+                task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
+
                 self.task_axes[itask, 1].pcolormesh(
-                    *self.dim_mids[axes],
-                    task.regressor.mean(self.test_X_grid)[..., 0],
+                    *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
+                    task_mean.reshape(self.test_X_grid.shape[:-1]),
                     shading="nearest",
                     cmap="plasma",
                     norm=task_norm,
                 )
                 sigma_ax = self.task_axes[itask, 2].pcolormesh(
-                    *self.dim_mids[axes],
-                    task.regressor.sigma(self.test_X_grid)[..., 0],
+                    *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
+                    task_sigma.reshape(self.test_X_grid.shape[:-1]),
                     shading="nearest",
                     cmap="plasma",
                 )
 
             else:
+                x = torch.tensor(self.test_X).double()
+                task_posterior = task.regressor.posterior(x)
+                task_mean = task_posterior.mean.detach().numpy() * task.targets_scale + task.targets_mean
+                task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
+
                 self.task_axes[itask, 1].scatter(
-                    *self.test_X.T[axes], s=s, c=task.regressor.mean(self.test_X), norm=task_norm, cmap="plasma"
+                    *self.test_inputs.T[axes], s=s, c=task_mean, norm=task_norm, cmap="plasma"
                 )
                 sigma_ax = self.task_axes[itask, 2].scatter(
-                    *self.test_X.T[axes], s=s, c=task.regressor.sigma(self.test_X), cmap="plasma"
+                    *self.test_inputs.T[axes], s=s, c=task_sigma, cmap="plasma"
                 )
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
