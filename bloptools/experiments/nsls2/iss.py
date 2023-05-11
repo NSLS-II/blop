@@ -14,6 +14,13 @@ class MaxBeamFlux(BaseTask):
         return getattr(processed_entry, "flux")
 
 
+class MinJohannResolution(BaseTask):
+    name = "min_johann_resolution"
+
+    def get_fitness(processed_entry):
+        return -np.log(getattr(processed_entry, "johann_fwhm"))
+
+
 def postprocess(entry):
     """
     This method eats the output of a Bluesky scan, and returns a dict with inputs for the tasks

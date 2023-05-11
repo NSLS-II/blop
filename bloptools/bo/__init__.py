@@ -28,6 +28,8 @@ class Agent:
         experiment,
         tasks,
         db,
+        acquisition,
+        digestion,
         training_iter=256,
         verbose=True,
         sample_center_on_init=True,
@@ -57,6 +59,10 @@ class Agent:
         self.dets = dets
 
         self.experiment = experiment
+
+        self.acquisition = acquisition
+
+        self.digestion = digestion
 
         self.tasks = tasks
 
@@ -263,7 +269,7 @@ class Agent:
         # self.classifier.set_data(X, c)
         # self.classifier.train(step_limit=self.training_iter)
 
-    def acquire_with_bluesky(self, X, verbose=False):
+    def old_acquire_with_bluesky(self, X, verbose=False):
         if verbose:
             print(f"sampling {X}")
 
@@ -289,6 +295,28 @@ class Agent:
         self.table.index = np.arange(len(self.table))
 
         return new_table
+
+
+    def acquire_with_bluesky(self, inputs, verbose=False):
+        if verbose:
+            print(f"sampling {inputs}")
+
+        # try:
+        #
+        #
+        # except Exception as err:
+        #     new_table = pd.DataFrame()
+        #     logging.warning(repr(err))
+
+        uids = yield from self.acquisition(self.dofs, inputs)
+
+        table = pd.DataFrame()
+        for uid in uids:
+            products = self.digestion(self.db, uid)
+            for k, v in products.items():
+                table.loc[uid, k] = v
+
+        return table
 
     def sample_acqf(self, acqf, n_test=2048, optimize=False):
         def acq_loss(x, *args):
