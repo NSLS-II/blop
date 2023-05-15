@@ -263,13 +263,13 @@ class Agent:
         # self.classifier.set_data(X, c)
         # self.classifier.train(step_limit=self.training_iter)
 
-    def acquire_with_bluesky(self, X, verbose=False):
+    def acquire_with_bluesky(self, inputs, verbose=False):
         if verbose:
-            print(f"sampling {X}")
+            print(f"sampling {inputs}")
 
         try:
             uid = yield from bp.list_scan(
-                self.dets, *[_ for items in zip(self.dofs, np.atleast_2d(X).T) for _ in items]
+                self.dets, *[_ for items in zip(self.dofs, np.atleast_2d(inputs).T) for _ in items]
             )
 
             new_table = self.db[uid].table(fill=True)
@@ -289,6 +289,29 @@ class Agent:
         self.table.index = np.arange(len(self.table))
 
         return new_table
+
+    # def new_acquire_with_bluesky(self, inputs, plan, digestion_function):
+    #     self.go_to(inputs)
+
+    #     try:
+    #         uid = yield from plan
+
+    #     except Exception as err:
+    #         new_table = pd.DataFrame()
+    #         logging.warning(repr(err))
+
+    #     products = digestion_function(self.db, uid)
+
+    #     for index in new_table.index:
+    #         for k, v in self.experiment.postprocess(new_table.loc[index]).items():
+    #             new_table.loc[index, k] = v
+    #         for task in self.tasks:
+    #             new_table.loc[index, f"{task.name}_fitness"] = task.get_fitness(new_table.loc[index])
+
+    #     self.table = pd.concat([self.table, new_table])
+    #     self.table.index = np.arange(len(self.table))
+
+    #     return new_table
 
     def sample_acqf(self, acqf, n_test=2048, optimize=False):
         def acq_loss(x, *args):
