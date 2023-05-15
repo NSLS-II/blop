@@ -31,9 +31,14 @@ def postprocess(entry):
     Simulating a misaligned Gaussian beam. The optimum is at (1, 1, 1, 1)
     """
 
-    X = np.array([getattr(entry, dof.name) for dof in dofs])
+    products = {}
 
-    sigma_x = np.sqrt(1 + 0.25 * (X[1] - X[0]) ** 2 + 16 * (X[0] + X[1] - 2) ** 2)
-    sigma_y = np.sqrt(1 + 0.25 * (X[2] - X[3]) ** 2 + 16 * (X[2] + X[3] - 2) ** 2)
+    if np.isin(["x1", "x2"], entry.index).all():
+        sigma_x = np.sqrt(1 + 0.25 * (entry.x1 - entry.x2) ** 2 + 16 * (entry.x1 + entry.x2 - 2) ** 2)
+        products["x_width"] = 2 * sigma_x
 
-    return {"x_width": 2 * sigma_x, "y_width": 2 * sigma_y}
+    if np.isin(["x3", "x4"], entry.index).all():
+        sigma_y = np.sqrt(1 + 0.25 * (entry.x3 - entry.x4) ** 2 + 16 * (entry.x3 + entry.x4 - 2) ** 2)
+        products["y_width"] = 2 * sigma_y
+
+    return products
