@@ -3,6 +3,7 @@ import numpy as np
 
 from .. import BaseTask
 
+
 def initialize():
     yield from bps.null()  # do nothing
 
@@ -21,12 +22,12 @@ def postprocess(entry):
 
     # get the ingredient from our dependent variables
 
-    flux = -getattr(entry, "apb_ch4") # lower number is more flux :(
+    flux = -getattr(entry, "apb_ch4")  # lower number is more flux :(
 
     if flux < 100:
         return {
-        "flux": np.nan,
-    }
+            "flux": np.nan,
+        }
 
     return {
         "flux": flux,
