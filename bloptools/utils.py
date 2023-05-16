@@ -32,13 +32,16 @@ def get_routing(origin, points):
     Returns $n-1$ indices, ignoring the zeroeth index (the origin).
     """
 
+    if not len(points) > 1:
+        return np.array([0]), 1.0
+
     _points = np.r_[np.atleast_2d(origin), points]
 
-    rel_points = _points / _points.std(axis=0)
+    rel_points = _points / np.array([std if std > 0 else 1.0 for std in points.std(axis=0)])
 
     # delay_matrix = gpo.delay_estimate(rel_points[:,None,:] - rel_points[None,:,:])
     delay_matrix = np.sqrt(np.square(rel_points[:, None, :] - rel_points[None, :, :]).sum(axis=-1))
-    delay_matrix = (1e6 * delay_matrix).astype(int)  # it likes integers idk
+    delay_matrix = (1e3 * delay_matrix).astype(int)  # it likes integers idk
 
     manager = pywrapcp.RoutingIndexManager(
         len(_points), 1, 0

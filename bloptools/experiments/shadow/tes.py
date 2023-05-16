@@ -1,13 +1,7 @@
-import bluesky.plan_stubs as bps
+import bluesky.plans as bp
 import numpy as np
 
 from .. import BaseTask
-
-IMAGE_NAME = "w9_image"
-
-
-def initialize():
-    yield from bps.null()  # do nothing
 
 
 class MinBeamWidth(BaseTask):
@@ -31,43 +25,62 @@ class MaxBeamFlux(BaseTask):
         return np.log(getattr(processed_entry, "flux"))
 
 
-def postprocess(entry):
+def acquisition(dofs, inputs, dets):
+    uid = yield from bp.list_scan(dets, *[_ for items in zip(dofs, np.atleast_2d(inputs).T) for _ in items])
+    return uid
+
+
+def digestion(db, uid):
     """
-    This method eats the output of a Bluesky scan, and returns a dict with inputs for the
+    Simulating a misaligned Gaussian beam. The optimum is at (1, 1, 1, 1)
     """
 
-    # get the ingredient from our dependent variables
-    image = getattr(entry, "w9_image")
-    horizontal_extent = getattr(entry, "w9_horizontal_extent")
-    vertical_extent = getattr(entry, "w9_vertical_extent")
+    table = db[uid].table(fill=True)
 
-    flux = image.sum()
-    n_y, n_x = image.shape
+    products_keys = [
+        "image",
+        "vertical_extent",
+        "horizontal_extent",
+        "flux",
+        "x_pos",
+        "y_pos",
+        "x_width",
+        "y_width",
+    ]
+    products = {key: [] for key in products_keys}
 
-    if not flux > 0:
-        image = np.random.uniform(size=image.shape)
-        horizontal_extent = [np.nan, np.nan]
-        vertical_extent = [np.nan, np.nan]
+    for index, entry in table.iterrows():
+        image = getattr(entry, "w9_image")
+        horizontal_extent = getattr(entry, "w9_horizontal_extent")
+        vertical_extent = getattr(entry, "w9_vertical_extent")
 
-    X, Y = np.meshgrid(np.linspace(*horizontal_extent, n_x), np.linspace(*vertical_extent, n_y))
+        products["image"].append(entry.w9_image)
+        products["vertical_extent"].append(entry.w9_vertical_extent)
+        products["horizontal_extent"].append(entry.w9_horizontal_extent)
 
-    mean_x = np.sum(X * image) / np.sum(image)
-    mean_y = np.sum(Y * image) / np.sum(image)
+        flux = image.sum()
+        n_y, n_x = image.shape
 
-    sigma_x = np.sqrt(np.sum((X - mean_x) ** 2 * image) / np.sum(image))
-    sigma_y = np.sqrt(np.sum((Y - mean_y) ** 2 * image) / np.sum(image))
+        X, Y = np.meshgrid(np.linspace(*horizontal_extent, n_x), np.linspace(*vertical_extent, n_y))
 
-    bad = False
-    bad |= ~(flux > 0)
-    bad |= np.isnan([mean_x, mean_y, sigma_x, sigma_y]).any()
+        mean_x = np.sum(X * image) / np.sum(image)
+        mean_y = np.sum(Y * image) / np.sum(image)
 
-    if bad:
-        return {"flux": np.nan, "x_pos": np.nan, "y_pos": np.nan, "x_width": np.nan, "y_width": np.nan}
+        sigma_x = np.sqrt(np.sum((X - mean_x) ** 2 * image) / np.sum(image))
+        sigma_y = np.sqrt(np.sum((Y - mean_y) ** 2 * image) / np.sum(image))
 
-    return {
-        "flux": flux,
-        "x_pos": mean_x,
-        "y_pos": mean_y,
-        "x_width": 2 * sigma_x,
-        "y_width": 2 * sigma_y,
-    }
+        bad = False
+        bad |= ~(flux > 0)
+        bad |= np.isnan([mean_x, mean_y, sigma_x, sigma_y]).any()
+
+        if bad:
+            for key in ["flux", "x_pos", "y_pos", "x_width", "y_width"]:
+                products[key].append(np.nan)
+        else:
+            products["flux"].append(flux)
+            products["x_pos"].append(mean_x)
+            products["y_pos"].append(mean_y)
+            products["x_width"].append(2 * sigma_x)
+            products["y_width"].append(2 * sigma_y)
+
+    return products

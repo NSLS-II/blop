@@ -1,32 +1,44 @@
 import bluesky.plan_stubs as bps
+import bluesky.plans as bp
 import numpy as np
 
 from .. import BaseTask
 from . import get_dofs
 
 dofs = get_dofs(n=2)
-bounds = np.array([[-8.0, +8.0], [-8.0, +8.0]])
+bounds = np.array([[-10.0, +10.0], [-10.0, +10.0]])
 
 
 class MinHimmelblau(BaseTask):
     name = "minimize_himmelblau"
 
     def get_fitness(processed_entry):
-        return -np.log(1 + 1e-1 * getattr(processed_entry, "himmelblau"))
+        return -np.log(1 + 1e-2 * getattr(processed_entry, "himmelblau"))
 
 
 def initialize():
     yield from bps.null()  # do nothing
 
 
-def postprocess(entry):
-    """
-    Himmelblau's function (https://en.wikipedia.org/wiki/Himmelblau%27s_function)
-    """
-    X = np.array([getattr(entry, dof.name) for dof in dofs])
+def acquisition(dofs, inputs, dets):
+    uid = yield from bp.list_scan(dets, *[_ for items in zip(dofs, np.atleast_2d(inputs).T) for _ in items])
+    return uid
 
-    if np.sqrt(np.square(X).sum()) > 5 * np.sqrt(2):
-        return {"himmelblau": np.nan}
 
-    himmelblau = (X[0] ** 2 + X[1] - 11) ** 2 + (X[0] + X[1] ** 2 - 7) ** 2
-    return {"himmelblau": himmelblau}
+def digestion(db, uid):
+    """
+    Evaluates Himmelblau's function (https://en.wikipedia.org/wiki/Himmelblau%27s_function) on the inputs.
+    """
+
+    table = db[uid].table()
+    products = {"himmelblau": []}
+
+    for index, entry in table.iterrows():
+        if np.sqrt(entry.x1**2 + entry.x2**2) > 8:
+            himmelblau = np.nan
+        else:
+            himmelblau = (entry.x1**2 + entry.x2 - 11) ** 2 + (entry.x1 + entry.x2**2 - 7) ** 2
+
+        products["himmelblau"].append(himmelblau)
+
+    return products
