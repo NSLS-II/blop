@@ -120,25 +120,23 @@ class Agent:
         subset = np.random.choice(power_of_two, size=n, replace=False)
         return sp.stats.qmc.Sobol(d=self.n_dof, scramble=True).random(n=power_of_two)[subset]
 
-    # def load(filepath, **kwargs):
-    # with h5py.File(filepath, "r") as f:
-    #     X = f["X"][:]
-    # table = pd.read_hdf(filepath, key="table")
-    # return BayesianOptimizationAgent(init_X=X, init_table=table, **kwargs)
-
     def initialize(
         self,
         filepath=None,
         init_scheme=None,
         n_init=4,
     ):
+        """
+        An initialization plan for the agent.
+        This must be run before the agent can learn.
+        It should be passed to a Bluesky RunEngine.
+        """
+
         if filepath is not None:
             with h5py.File(filepath, "r") as f:
-                inputs = f["inputs"][:]
+                init_inputs = f["inputs"][:]
             self.table = pd.read_hdf(filepath, key="table")
-            targets = self.table.loc[:, self.target_names].values
-            self.tell(new_inputs=inputs, new_targets=targets)
-            return
+            init_targets = self.table.loc[:, self.target_names].values
 
         # experiment-specific stuff
         if self.initialization is not None:
@@ -201,7 +199,7 @@ class Agent:
             plt.xlim(x_min - border * width_x, x_min + border * width_x)
             plt.ylim(y_min - border * width_y, y_min + border * width_y)
 
-    def save(self, filepath="model.h5"):
+    def save(self, filepath="./agent_data.h5"):
         with h5py.File(filepath, "w") as f:
             f.create_dataset("inputs", data=self.inputs)
         self.table.to_hdf(filepath, key="table")
@@ -212,6 +210,9 @@ class Agent:
         self.tell(new_inputs=self.inputs[:-n], new_targets=self.targets[:-n], append=False)
 
     def tell(self, new_inputs, new_targets, append=True, **kwargs):
+        """
+        Inform the agent about new inputs and targets for the model.
+        """
         if append:
             self.inputs = np.r_[self.inputs, np.atleast_2d(new_inputs)]
             self.targets = np.r_[self.targets, np.atleast_2d(new_targets)]
@@ -280,6 +281,10 @@ class Agent:
         self.multimodel = botorch.models.model.ModelList(*[task.regressor for task in self.tasks])
 
     def sample_acqf(self, acqf, n_test=256, optimize=False):
+        """
+        Return the point that optimizes a given acqusition function.
+        """
+
         def acq_loss(x, *args):
             return -acqf(x, *args).detach().numpy()
 
@@ -319,7 +324,7 @@ class Agent:
         optimize=True,
     ):
         """
-        Recommends the next $n$ points to sample.
+        The next $n$ points to sample, recommended by the agent.
         """
 
         if route:
@@ -388,46 +393,12 @@ class Agent:
 
             return inputs_to_sample
 
-    def learn(
-        self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs
-    ):
-        # ip.display.clear_output(wait=True)
-        print(f'learning with strategy "{strategy}" ...')
-
-        for i in range(n_iter):
-            inputs_to_sample = np.atleast_2d(
-                self.ask(n=n_per_iter, strategy=strategy, **kwargs)
-            )  # get point(s) to sample from the strategizer
-
-            # n_original = len(X_to_sample)
-            # n_upsample = upsample * n_original + 1
-
-            # upsampled_X_to_sample = sp.interpolate.interp1d(
-            #     np.arange(n_original + 1), np.r_[self.current_X[None], X_to_sample], axis=0
-            # )(np.linspace(0, n_original, n_upsample)[1:])
-
-            new_table = yield from self.acquire(self.dofs, inputs_to_sample, self.dets)
-
-            self.table = pd.concat([self.table, new_table])
-            self.table.index = np.arange(len(self.table))
-            new_targets = new_table.loc[:, self.target_names].values
-
-            self.tell(new_inputs=inputs_to_sample, new_targets=new_targets, reuse_hypers=reuse_hypers)
-
-            # if "state" in plots:
-            #     self.plot_state(remake=False, gridded=self.gridded_plots)
-            # if "fitness" in plots:
-            #     self.plot_fitness(remake=False)
-
-            # if verbose:
-            #     n_X = len(sampled_X)
-            #     df_to_print = pd.DataFrame(
-            #         np.c_[self.inputs, self.experiment.HINTED_STATS],
-            #         columns=[*self.dof_names, *self.experiment.HINTED_STATS]
-            #     ).iloc[-n_X:]
-            #     print(df_to_print)
-
     def acquire(self, dofs, inputs, dets):
+        """
+        Acquire and digest according to the agent's acquisition and digestion plans.
+
+        This should yield a table of sampled tasks with the same length as the sampled inputs.
+        """
         try:
             uid = yield from self.acquisition(dofs, inputs, dets)
             products = self.digestion(self.db, uid)
@@ -446,9 +417,33 @@ class Agent:
             acq_table = pd.DataFrame()
             logging.warning(repr(err))
 
+        if not len(inputs) == len(acq_table):
+            raise ValueError("The resulting table must be the same length as the sampled inputs!")
+
         return acq_table
 
-    def plot_constraints(self, axes=[0, 1]):
+    def learn(
+        self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs
+    ):
+        """
+        This iterates the learning algorithm, looping over ask -> acquire -> tell.
+        It should be passed to a Bluesky RunEngine.
+        """
+
+        print(f'learning with strategy "{strategy}" ...')
+
+        for i in range(n_iter):
+            inputs_to_sample = np.atleast_2d(self.ask(n=n_per_iter, strategy=strategy, **kwargs))
+
+            new_table = yield from self.acquire(self.dofs, inputs_to_sample, self.dets)
+
+            self.table = pd.concat([self.table, new_table])
+            self.table.index = np.arange(len(self.table))
+            new_targets = new_table.loc[:, self.target_names].values
+
+            self.tell(new_inputs=inputs_to_sample, new_targets=new_targets, reuse_hypers=reuse_hypers)
+
+    def plot_constraints(self, axes=[0, 1], shading="nearest", cmap="inferno"):
         s = 32
 
         gridded = self.n_dof == 2
@@ -462,7 +457,7 @@ class Agent:
             ax.set_ylabel(self.dofs[axes[1]].name)
 
         data_ax = self.class_axes[0].scatter(
-            *self.inputs.T[:2], s=s, c=~np.isnan(self.targets).any(axis=1), vmin=0, vmax=1, cmap="plasma"
+            *self.inputs.T[:2], s=s, c=~np.isnan(self.targets).any(axis=1), vmin=0, vmax=1, cmap=cmap
         )
 
         if gridded:
@@ -473,8 +468,8 @@ class Agent:
             self.class_axes[1].pcolormesh(
                 *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
                 np.exp(log_prob),
-                shading="nearest",
-                cmap="plasma",
+                shading=shading,
+                cmap=cmap,
                 vmin=0,
                 vmax=1,
             )
@@ -482,8 +477,8 @@ class Agent:
             entropy_ax = self.class_axes[2].pcolormesh(
                 *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
                 entropy,
-                shading="nearest",
-                cmap="plasma",
+                shading=shading,
+                cmap=cmap,
             )
 
         else:
@@ -491,15 +486,13 @@ class Agent:
             log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy()
             entropy = -log_prob * np.exp(log_prob) - (1 - log_prob) * np.exp(1 - log_prob)
 
-            self.class_axes[1].scatter(
-                *self.test_X.T[axes], s=s, c=np.exp(log_prob), vmin=0, vmax=1, cmap="plasma"
-            )
-            entropy_ax = self.class_axes[2].scatter(*self.test_X.T[axes], s=s, c=entropy, cmap="plasma")
+            self.class_axes[1].scatter(*self.test_X.T[axes], s=s, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap)
+            entropy_ax = self.class_axes[2].scatter(*self.test_X.T[axes], s=s, c=entropy, cmap=cmap)
 
         self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
         self.class_fig.colorbar(entropy_ax, ax=self.class_axes[2], location="bottom", aspect=32, shrink=0.8)
 
-    def plot_tasks(self, axes=[0, 1]):
+    def plot_tasks(self, axes=[0, 1], shading="nearest", cmap="inferno"):
         s = 32
 
         gridded = self.n_dof == 2
@@ -527,7 +520,7 @@ class Agent:
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
             data_ax = self.task_axes[itask, 0].scatter(
-                *self.inputs.T[axes], s=s, c=task.targets, norm=task_norm, cmap="plasma"
+                *self.inputs.T[axes], s=s, c=task.targets, norm=task_norm, cmap=cmap
             )
 
             if gridded:
@@ -539,15 +532,15 @@ class Agent:
                 self.task_axes[itask, 1].pcolormesh(
                     *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
                     task_mean.reshape(self.test_X_grid.shape[:-1]),
-                    shading="nearest",
-                    cmap="plasma",
+                    shading=shading,
+                    cmap=cmap,
                     norm=task_norm,
                 )
                 sigma_ax = self.task_axes[itask, 2].pcolormesh(
                     *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
                     task_sigma.reshape(self.test_X_grid.shape[:-1]),
-                    shading="nearest",
-                    cmap="plasma",
+                    shading=shading,
+                    cmap=cmap,
                 )
 
             else:
@@ -557,10 +550,10 @@ class Agent:
                 task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
 
                 self.task_axes[itask, 1].scatter(
-                    *self.test_inputs.T[axes], s=s, c=task_mean, norm=task_norm, cmap="plasma"
+                    *self.test_inputs.T[axes], s=s, c=task_mean, norm=task_norm, cmap=cmap
                 )
                 sigma_ax = self.task_axes[itask, 2].scatter(
-                    *self.test_inputs.T[axes], s=s, c=task_sigma, cmap="plasma"
+                    *self.test_inputs.T[axes], s=s, c=task_sigma, cmap=cmap
                 )
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
