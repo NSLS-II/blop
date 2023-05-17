@@ -140,8 +140,8 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         # https://en.wikipedia.org/wiki/Matern_covariance_function
 
         # C = torch.exp(-d_eff) # Matern_0.5 (exponential)
-        # C = (1 + d_eff) * torch.exp(-d_eff) # Matern_1.5
-        C = (1 + d_eff + 1 / 3 * torch.square(d_eff)) * torch.exp(-d_eff)  # Matern_2.5
+        C = (1 + d_eff) * torch.exp(-d_eff)  # Matern_1.5
+        # C = (1 + d_eff + 1 / 3 * torch.square(d_eff)) * torch.exp(-d_eff)  # Matern_2.5
         # C = torch.exp(-0.5 * np.square(d_eff)) # Matern_infinity (RBF)
 
         # C = torch.square(self.output_scale[0]) * torch.exp(-torch.square(d_eff))
