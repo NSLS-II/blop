@@ -12,8 +12,8 @@ bounds = np.array([[-10.0, +10.0], [-10.0, +10.0]])
 class MinHimmelblau(BaseTask):
     name = "minimize_himmelblau"
 
-    def get_fitness(processed_entry):
-        return -np.log(1 + 1e-2 * getattr(processed_entry, "himmelblau"))
+    def get_fitness(entry):
+        return -np.log(1 + 1e-2 * getattr(entry, "himmelblau"))
 
 
 def initialize():
@@ -34,6 +34,10 @@ def digestion(db, uid):
     products = {"himmelblau": []}
 
     for index, entry in table.iterrows():
+        for param in ["x1", "x2"]:
+            if not hasattr(entry, param):
+                setattr(entry, param, 0)
+
         if np.sqrt(entry.x1**2 + entry.x2**2) > 8:
             himmelblau = np.nan
         else:

@@ -7,15 +7,15 @@ from .. import BaseTask
 class MinBeamWidth(BaseTask):
     name = "min_beam_width"
 
-    def get_fitness(processed_entry):
-        return -np.log(getattr(processed_entry, "x_width"))
+    def get_fitness(entry):
+        return -np.log(getattr(entry, "x_width"))
 
 
 class MinBeamHeight(BaseTask):
     name = "min_beam_height"
 
-    def get_fitness(processed_entry):
-        return -np.log(getattr(processed_entry, "y_width"))
+    def get_fitness(entry):
+        return -np.log(getattr(entry, "y_width"))
 
 
 class MaxBeamFlux(BaseTask):

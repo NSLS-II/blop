@@ -12,15 +12,15 @@ bounds = np.array([[-5.0, +5.0], [-5.0, +5.0], [-5.0, +5.0], [-5.0, +5.0]])
 class MinBeamWidth(BaseTask):
     name = "min_beam_width"
 
-    def get_fitness(processed_entry):
-        return -np.log(1 + 1e-1 * getattr(processed_entry, "x_width"))
+    def get_fitness(entry):
+        return -np.log(getattr(entry, "x_width"))
 
 
 class MinBeamHeight(BaseTask):
     name = "min_beam_height"
 
-    def get_fitness(processed_entry):
-        return -np.log(1 + 1e-1 * getattr(processed_entry, "y_width"))
+    def get_fitness(entry):
+        return -np.log(getattr(entry, "y_width"))
 
 
 def initialize():
@@ -41,6 +41,10 @@ def digestion(db, uid):
     products = {"x_width": [], "y_width": []}
 
     for index, entry in table.iterrows():
+        for param in ["x1", "x2", "x3", "x4"]:
+            if not hasattr(entry, param):
+                setattr(entry, param, 1)
+
         sigma_x = np.sqrt(1 + 0.25 * (entry.x1 - entry.x2) ** 2 + 16 * (entry.x1 + entry.x2 - 2) ** 2)
         sigma_y = np.sqrt(1 + 0.25 * (entry.x3 - entry.x4) ** 2 + 16 * (entry.x3 + entry.x4 - 2) ** 2)
 

@@ -18,6 +18,8 @@ from . import acquisition, models
 
 mpl.rc("image", cmap="coolwarm")
 
+COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen"]
+
 
 class Agent:
     def __init__(
@@ -34,21 +36,29 @@ class Agent:
         verbose=True,
     ):
         """
-        A Bayesian optimizer object.
+        A Bayesian optimization agent.
 
-        detector (Detector)
-        detector_type (str)
-        dofs (list of Devices)
-        bounds (list of bounds)
-        fitness_model (str)
-
-        training_iter (int)
-
-
+        Parameters
+        ----------
+        dofs : iterable of ophyd objects
+            The degrees of freedom that the agent can control, which determine the output of the model.
+        bounds : iterable of lower and upper bounds
+            The bounds on each degree of freedom. This should be an array of shape (n_dof, 2).
+        tasks : iterable of tasks
+            The tasks which the agent will try to optimize.
+        acquisition : Bluesky plan generator that takes arguments (dofs, inputs, dets)
+            A plan that samples the beamline for some given inputs.
+        digestion : function that takes arguments (db, uid)
+            A function to digest the output of the acquisition.
+        db : A databroker instance.
         """
 
-        self.dofs, self.bounds, self.tasks = dofs, bounds, tasks
-        self.initialization, self.acquisition, self.digestion = initialization, acquisition, digestion
+        self.dofs = dofs
+        self.bounds = bounds
+        self.tasks = tasks
+        self.initialization = initialization
+        self.acquisition = acquisition
+        self.digestion = digestion
         self.db = db
 
         for dof in self.dofs:
@@ -62,7 +72,6 @@ class Agent:
         self.n_dof = len(dofs)
         self.target_names = [f"{task.name}_fitness" for task in tasks]
         self.n_tasks = len(tasks)
-        self._initialized = False
 
         self.training_iter = training_iter
         self.verbose = verbose
@@ -70,16 +79,19 @@ class Agent:
         MAX_TEST_POINTS = 2**10
 
         self.test_X = self.sampler(n=MAX_TEST_POINTS)
+
         self.test_inputs = self.unnormalize_inputs(self.test_X)
 
         n_per_dim = int(np.power(MAX_TEST_POINTS, 1 / self.n_dof))
         self.X_samples = np.linspace(0, 1, n_per_dim)
         self.test_X_grid = np.swapaxes(np.r_[np.meshgrid(*self.n_dof * [self.X_samples], indexing="ij")], 0, -1)
-        self.test_inputs_grid = self.unnormalize_inputs(self.test_X)
+        self.test_inputs_grid = self.unnormalize_inputs(self.test_X_grid)
 
         self.inputs = np.empty((0, self.n_dof))
         self.targets = np.empty((0, self.n_tasks))
         self.table = pd.DataFrame()
+
+        self._initialized = False
 
     def normalize_inputs(self, inputs):
         return (inputs - self.bounds.min(axis=1)) / self.bounds.ptp(axis=1)
@@ -109,13 +121,64 @@ class Agent:
     def normalized_targets(self):
         return self.normalize_targets(self.targets)
 
-    def measurement_plan(self):
-        yield from bp.count(detectors=self.dets)
+    @property
+    def current_inputs(self):
+        return np.array([dof.read()[dof.name]["value"] for dof in self.dofs])
 
-    def unpack_run(self):
-        return None
+    @property
+    def dof_names(self):
+        return [dof.name for dof in self.dofs]
+
+    @property
+    def det_names(self):
+        return [det.name for det in self.dets]
+
+    @property
+    def best_sum_of_tasks(self):
+        return [det.name for det in self.dets]
+
+    @property
+    def optimum(self):
+        return self.regressor.X[np.argmax(self.regressor.Y)]
+
+    def go_to_optimum(self):
+        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items])
+
+    def go_to(self, x):
+        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(x).T) for _ in items])
+
+    def inspect_beam(self, index, border=None):
+        im = self.images[index]
+
+        x_min, x_max, y_min, y_max, width_x, width_y = self.table.loc[
+            index, ["x_min", "x_max", "y_min", "y_max", "width_x", "width_y"]
+        ]
+
+        bbx = np.array([x_min, x_max])[[0, 0, 1, 1, 0]]
+        bby = np.array([y_min, y_max])[[0, 1, 1, 0, 0]]
+
+        plt.figure()
+        plt.imshow(im, cmap="gray_r")
+        plt.plot(bbx, bby, lw=4e0, c="r")
+
+        if border is not None:
+            plt.xlim(x_min - border * width_x, x_min + border * width_x)
+            plt.ylim(y_min - border * width_y, y_min + border * width_y)
+
+    def save(self, filepath="./agent_data.h5"):
+        with h5py.File(filepath, "w") as f:
+            f.create_dataset("inputs", data=self.inputs)
+        self.table.to_hdf(filepath, key="table")
+
+    def forget(self, n):
+        if n >= len(self.inputs):
+            raise ValueError(f"Cannot forget last {n} points (the agent only has {len(self.inputs)} points).")
+        self.tell(new_inputs=self.inputs[:-n], new_targets=self.targets[:-n], append=False)
 
     def sampler(self, n):
+        """
+        Returns $n$ quasi-randomly sampled points on the [0,1] ^ n_dof hypercube using Sobol sampling.
+        """
         power_of_two = 2 ** int(np.ceil(np.log(n) / np.log(2)))
         subset = np.random.choice(power_of_two, size=n, replace=False)
         return sp.stats.qmc.Sobol(d=self.n_dof, scramble=True).random(n=power_of_two)[subset]
@@ -163,52 +226,6 @@ class Agent:
 
         self._initialized = True
 
-    @property
-    def current_inputs(self):
-        return np.array([dof.read()[dof.name]["value"] for dof in self.dofs])
-
-    @property
-    def dof_names(self):
-        return [dof.name for dof in self.dofs]
-
-    @property
-    def optimum(self):
-        return self.regressor.X[np.argmax(self.regressor.Y)]
-
-    def go_to_optimum(self):
-        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items])
-
-    def go_to(self, x):
-        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(x).T) for _ in items])
-
-    def inspect_beam(self, index, border=None):
-        im = self.images[index]
-
-        x_min, x_max, y_min, y_max, width_x, width_y = self.table.loc[
-            index, ["x_min", "x_max", "y_min", "y_max", "width_x", "width_y"]
-        ]
-
-        bbx = np.array([x_min, x_max])[[0, 0, 1, 1, 0]]
-        bby = np.array([y_min, y_max])[[0, 1, 1, 0, 0]]
-
-        plt.figure()
-        plt.imshow(im, cmap="gray_r")
-        plt.plot(bbx, bby, lw=4e0, c="r")
-
-        if border is not None:
-            plt.xlim(x_min - border * width_x, x_min + border * width_x)
-            plt.ylim(y_min - border * width_y, y_min + border * width_y)
-
-    def save(self, filepath="./agent_data.h5"):
-        with h5py.File(filepath, "w") as f:
-            f.create_dataset("inputs", data=self.inputs)
-        self.table.to_hdf(filepath, key="table")
-
-    def forget(self, n):
-        if n >= len(self.inputs):
-            raise ValueError(f"Cannot forget last {n} points (the agent only has {len(self.inputs)} points).")
-        self.tell(new_inputs=self.inputs[:-n], new_targets=self.targets[:-n], append=False)
-
     def tell(self, new_inputs, new_targets, append=True, **kwargs):
         """
         Inform the agent about new inputs and targets for the model.
@@ -225,7 +242,7 @@ class Agent:
         # if hasattr(self.experiment, "IMAGE_NAME"):
         #     self.images = np.array([im for im in self.table[self.experiment.IMAGE_NAME].values])
 
-        all_targets_valid = ~np.isnan(self.targets).any(axis=1)
+        self.all_targets_valid = ~np.isnan(self.targets).any(axis=1)
 
         for task in self.tasks:
             task.targets = self.targets[:, task.index]
@@ -234,7 +251,7 @@ class Agent:
             task.targets_mean = np.nanmean(task.targets)
             task.targets_scale = np.nanstd(task.targets)
 
-            task.classes = all_targets_valid.astype(int)
+            task.classes = self.all_targets_valid.astype(int)
 
             regressor_likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
@@ -260,7 +277,7 @@ class Agent:
         )
 
         dirichlet_classifier_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            torch.as_tensor(all_targets_valid).long(), learn_additional_noise=True
+            torch.as_tensor(self.all_targets_valid).long(), learn_additional_noise=True
         ).double()
 
         self.dirichlet_classifier = models.BoTorchDirichletClassifier(
@@ -443,9 +460,31 @@ class Agent:
 
             self.tell(new_inputs=inputs_to_sample, new_targets=new_targets, reuse_hypers=reuse_hypers)
 
-    def plot_constraints(self, axes=[0, 1], shading="nearest", cmap="inferno"):
-        s = 32
+    def plot_tasks(self, **kwargs):
+        if self.n_dof == 1:
+            self._plot_tasks_one_dof(**kwargs)
 
+        else:
+            self._plot_tasks_many_dofs(**kwargs)
+
+    def plot_constraints(self, **kwargs):
+        if self.n_dof == 1:
+            self._plot_constraints_one_dof(**kwargs)
+
+        else:
+            self._plot_constraints_many_dofs(**kwargs)
+
+    def _plot_constraints_one_dof(self, size=32):
+        self.class_fig, self.class_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
+
+        self.class_ax.scatter(self.inputs, self.all_targets_valid.astype(int), s=size)
+
+        x = torch.tensor(self.test_X_grid.reshape(-1, self.n_dof)).double()
+        log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_X_grid.shape[:-1])
+
+        self.class_ax.plot(self.test_inputs_grid.ravel(), np.exp(log_prob))
+
+    def _plot_constraints_many_dofs(self, axes=[0, 1], shading="nearest", cmap="inferno", size=32):
         gridded = self.n_dof == 2
 
         self.class_fig, self.class_axes = plt.subplots(
@@ -457,7 +496,7 @@ class Agent:
             ax.set_ylabel(self.dofs[axes[1]].name)
 
         data_ax = self.class_axes[0].scatter(
-            *self.inputs.T[:2], s=s, c=~np.isnan(self.targets).any(axis=1), vmin=0, vmax=1, cmap=cmap
+            *self.inputs.T[:2], s=size, c=self.all_targets_valid.astype(int), vmin=0, vmax=1, cmap=cmap
         )
 
         if gridded:
@@ -486,16 +525,51 @@ class Agent:
             log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy()
             entropy = -log_prob * np.exp(log_prob) - (1 - log_prob) * np.exp(1 - log_prob)
 
-            self.class_axes[1].scatter(*self.test_X.T[axes], s=s, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap)
-            entropy_ax = self.class_axes[2].scatter(*self.test_X.T[axes], s=s, c=entropy, cmap=cmap)
+            self.class_axes[1].scatter(*self.test_X.T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap)
+            entropy_ax = self.class_axes[2].scatter(*self.test_X.T[axes], s=size, c=entropy, cmap=cmap)
 
         self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
         self.class_fig.colorbar(entropy_ax, ax=self.class_axes[2], location="bottom", aspect=32, shrink=0.8)
 
-    def plot_tasks(self, axes=[0, 1], shading="nearest", cmap="inferno"):
-        s = 32
+    def _plot_tasks_one_dof(self, size=32, lw=1e0):
+        self.task_fig, self.task_axes = plt.subplots(
+            self.n_tasks,
+            1,
+            figsize=(6, 4 * self.n_tasks),
+            sharex=True,
+            constrained_layout=True,
+        )
 
-        gridded = self.n_dof == 2
+        self.task_axes = np.atleast_1d(self.task_axes)
+
+        for itask, task in enumerate(self.tasks):
+            color = COLOR_LIST[itask]
+
+            self.task_axes[itask].set_ylabel(task.name)
+
+            x = torch.tensor(self.test_X_grid).double()
+            task_posterior = task.regressor.posterior(x)
+            task_mean = task_posterior.mean.detach().numpy() * task.targets_scale + task.targets_mean
+            task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
+
+            self.task_axes[itask].scatter(self.inputs, task.targets, s=size, color=color)
+            self.task_axes[itask].plot(self.test_inputs_grid.ravel(), task_mean, lw=lw, color=color)
+
+            for z in [1, 2]:
+                self.task_axes[itask].fill_between(
+                    self.test_inputs_grid.ravel(),
+                    (task_mean - z * task_sigma).ravel(),
+                    (task_mean + z * task_sigma).ravel(),
+                    lw=lw,
+                    color=color,
+                    alpha=0.5**z,
+                )
+
+            self.task_axes[itask].set_xlim(*self.bounds[0])
+
+    def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap="inferno", gridded=None, size=32):
+        if gridded is None:
+            gridded = self.n_dof == 2
 
         self.task_fig, self.task_axes = plt.subplots(
             self.n_tasks,
@@ -507,7 +581,6 @@ class Agent:
         )
 
         self.task_axes = np.atleast_2d(self.task_axes)
-
         self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
         for itask, task in enumerate(self.tasks):
@@ -520,15 +593,19 @@ class Agent:
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
             data_ax = self.task_axes[itask, 0].scatter(
-                *self.inputs.T[axes], s=s, c=task.targets, norm=task_norm, cmap=cmap
+                *self.inputs.T[axes], s=size, c=task.targets, norm=task_norm, cmap=cmap
             )
 
             if gridded:
-                x = torch.tensor(self.test_X_grid.reshape(-1, self.n_dof)).double()
-                task_posterior = task.regressor.posterior(x)
-                task_mean = task_posterior.mean.detach().numpy() * task.targets_scale + task.targets_mean
-                task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
+                x = torch.tensor(self.test_X_grid).double()
+            else:
+                x = torch.tensor(self.test_X).double()
 
+            task_posterior = task.regressor.posterior(x)
+            task_mean = task_posterior.mean.detach().numpy() * task.targets_scale + task.targets_mean
+            task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
+
+            if gridded:
                 self.task_axes[itask, 1].pcolormesh(
                     *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
                     task_mean.reshape(self.test_X_grid.shape[:-1]),
@@ -544,16 +621,11 @@ class Agent:
                 )
 
             else:
-                x = torch.tensor(self.test_X).double()
-                task_posterior = task.regressor.posterior(x)
-                task_mean = task_posterior.mean.detach().numpy() * task.targets_scale + task.targets_mean
-                task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
-
                 self.task_axes[itask, 1].scatter(
-                    *self.test_inputs.T[axes], s=s, c=task_mean, norm=task_norm, cmap=cmap
+                    *self.test_inputs.T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap
                 )
                 sigma_ax = self.task_axes[itask, 2].scatter(
-                    *self.test_inputs.T[axes], s=s, c=task_sigma, cmap=cmap
+                    *self.test_inputs.T[axes], s=size, c=task_sigma, cmap=cmap
                 )
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
