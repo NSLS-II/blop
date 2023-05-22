@@ -30,7 +30,7 @@ def acquisition(dofs, inputs, dets):
     return uid
 
 
-def digestion(db, uid):
+def digestion(db, uid, image_name="w9"):
     """
     Simulating a misaligned Gaussian beam. The optimum is at (1, 1, 1, 1)
     """
@@ -47,16 +47,17 @@ def digestion(db, uid):
         "x_width",
         "y_width",
     ]
+
     products = {key: [] for key in products_keys}
 
     for index, entry in table.iterrows():
-        image = getattr(entry, "w9_image")
-        horizontal_extent = getattr(entry, "w9_horizontal_extent")
-        vertical_extent = getattr(entry, "w9_vertical_extent")
+        image = getattr(entry, f"{image_name}_image")
+        horizontal_extent = getattr(entry, f"{image_name}_horizontal_extent")
+        vertical_extent = getattr(entry, f"{image_name}_vertical_extent")
 
-        products["image"].append(entry.w9_image)
-        products["vertical_extent"].append(entry.w9_vertical_extent)
-        products["horizontal_extent"].append(entry.w9_horizontal_extent)
+        products["image"].append(image)
+        products["vertical_extent"].append(vertical_extent)
+        products["horizontal_extent"].append(horizontal_extent)
 
         flux = image.sum()
         n_y, n_x = image.shape
@@ -69,6 +70,7 @@ def digestion(db, uid):
         sigma_x = np.sqrt(np.sum((X - mean_x) ** 2 * image) / np.sum(image))
         sigma_y = np.sqrt(np.sum((Y - mean_y) ** 2 * image) / np.sum(image))
 
+        # reject if there is no flux, or we can't estimate the position and size of the beam
         bad = False
         bad |= ~(flux > 0)
         bad |= np.isnan([mean_x, mean_y, sigma_x, sigma_y]).any()

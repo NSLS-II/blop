@@ -76,7 +76,7 @@ class Agent:
         self.training_iter = training_iter
         self.verbose = verbose
 
-        MAX_TEST_POINTS = 2**10
+        MAX_TEST_POINTS = 2**11
 
         self.test_X = self.sampler(n=MAX_TEST_POINTS)
 
@@ -135,17 +135,19 @@ class Agent:
 
     @property
     def best_sum_of_tasks(self):
-        return [det.name for det in self.dets]
+        return np.nanmax(self.targets.sum(axis=1))
 
     @property
-    def optimum(self):
-        return self.regressor.X[np.argmax(self.regressor.Y)]
+    def best_sum_of_tasks_inputs(self):
+        return self.inputs[np.nanargmax(self.targets.sum(axis=1))]
 
-    def go_to_optimum(self):
-        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(self.optimum).T) for _ in items])
+    @property
+    def go_to(self, inputs):
+        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(inputs).T) for _ in items])
 
-    def go_to(self, x):
-        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(x).T) for _ in items])
+    @property
+    def go_to_best_sum_of_tasks(self):
+        yield from self.go_to(self.best_sum_of_tasks_inputs)
 
     def inspect_beam(self, index, border=None):
         im = self.images[index]
@@ -166,6 +168,10 @@ class Agent:
             plt.ylim(y_min - border * width_y, y_min + border * width_y)
 
     def save(self, filepath="./agent_data.h5"):
+        """
+        Save the sampled inputs and targets of the agent to a file, which can be used
+        to initialize a future agent.
+        """
         with h5py.File(filepath, "w") as f:
             f.create_dataset("inputs", data=self.inputs)
         self.table.to_hdf(filepath, key="table")
@@ -484,11 +490,14 @@ class Agent:
 
         self.class_ax.plot(self.test_inputs_grid.ravel(), np.exp(log_prob))
 
-    def _plot_constraints_many_dofs(self, axes=[0, 1], shading="nearest", cmap="inferno", size=32):
-        gridded = self.n_dof == 2
+        self.class_ax.set_xlim(*self.bounds[0])
+
+    def _plot_constraints_many_dofs(self, axes=[0, 1], shading="nearest", cmap="inferno", size=32, gridded=None):
+        if gridded is None:
+            gridded = self.n_dof == 2
 
         self.class_fig, self.class_axes = plt.subplots(
-            1, 3, figsize=(10, 4), sharex=True, sharey=True, constrained_layout=True
+            1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True
         )
 
         for ax in self.class_axes.ravel():
@@ -502,7 +511,6 @@ class Agent:
         if gridded:
             x = torch.tensor(self.test_X_grid.reshape(-1, self.n_dof)).double()
             log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_X_grid.shape[:-1])
-            entropy = -log_prob * np.exp(log_prob) - (1 - log_prob) * np.exp(1 - log_prob)
 
             self.class_axes[1].pcolormesh(
                 *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
@@ -513,23 +521,17 @@ class Agent:
                 vmax=1,
             )
 
-            entropy_ax = self.class_axes[2].pcolormesh(
-                *(self.bounds[axes].ptp(axis=1) * self.X_samples[:, None] + self.bounds[axes].min(axis=1)).T,
-                entropy,
-                shading=shading,
-                cmap=cmap,
-            )
-
         else:
             x = torch.tensor(self.test_X).double()
             log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy()
-            entropy = -log_prob * np.exp(log_prob) - (1 - log_prob) * np.exp(1 - log_prob)
 
             self.class_axes[1].scatter(*self.test_X.T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap)
-            entropy_ax = self.class_axes[2].scatter(*self.test_X.T[axes], s=size, c=entropy, cmap=cmap)
 
         self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
-        self.class_fig.colorbar(entropy_ax, ax=self.class_axes[2], location="bottom", aspect=32, shrink=0.8)
+
+        for ax in self.task_axes.ravel():
+            ax.set_xlim(*self.bounds[axes[0]])
+            ax.set_ylim(*self.bounds[axes[1]])
 
     def _plot_tasks_one_dof(self, size=32, lw=1e0):
         self.task_fig, self.task_axes = plt.subplots(
@@ -630,3 +632,7 @@ class Agent:
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
             self.task_fig.colorbar(sigma_ax, ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
+
+        for ax in self.task_axes.ravel():
+            ax.set_xlim(*self.bounds[axes[0]])
+            ax.set_ylim(*self.bounds[axes[1]])
