@@ -38,6 +38,7 @@ def digestion(db, uid):
             if not hasattr(entry, param):
                 setattr(entry, param, 0)
 
+        # reject if the inputs are farther than some distance from the origin
         if np.sqrt(entry.x1**2 + entry.x2**2) > 8:
             himmelblau = np.nan
         else:
