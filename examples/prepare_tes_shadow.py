@@ -13,8 +13,8 @@ data, schema = connection.auth("shadow", "00000002")
 classes, objects = create_classes(connection.data, connection=connection)
 globals().update(**objects)
 
-data["models"]["simulation"]["npoint"] = 100000
-data["models"]["watchpointReport12"]["histogramBins"] = 16
+data["models"]["simulation"]["npoint"] = 200000
+data["models"]["watchpointReport12"]["histogramBins"] = 32
 # w9.duration.kind = "hinted"
 
 bec.disable_baseline()
