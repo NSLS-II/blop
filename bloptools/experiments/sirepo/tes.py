@@ -72,17 +72,17 @@ def digestion(db, uid, image_name="w9"):
 
         # reject if there is no flux, or we can't estimate the position and size of the beam
         bad = False
-        bad |= ~(flux > 0)
-        bad |= np.isnan([mean_x, mean_y, sigma_x, sigma_y]).any()
+        bad |= not (flux > 0)
+        bad |= any(np.isnan([mean_x, mean_y, sigma_x, sigma_y]))
 
-        if bad:
-            for key in ["flux", "x_pos", "y_pos", "x_width", "y_width"]:
-                products[key].append(np.nan)
-        else:
+        if not bad:
             products["flux"].append(flux)
             products["x_pos"].append(mean_x)
             products["y_pos"].append(mean_y)
             products["x_width"].append(2 * sigma_x)
             products["y_width"].append(2 * sigma_y)
+        else:
+            for key in ["flux", "x_pos", "y_pos", "x_width", "y_width"]:
+                products[key].append(np.nan)
 
     return products

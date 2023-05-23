@@ -3,7 +3,7 @@ import pytest
 from sirepo_bluesky.sirepo_ophyd import create_classes
 
 from bloptools.bayesian import Agent
-from bloptools.experiments.shadow import tes
+from bloptools.experiments.sirepo import tes
 
 
 @pytest.mark.shadow
