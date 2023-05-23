@@ -6,18 +6,19 @@ import torch
 class LatentMaternKernel(gpytorch.kernels.Kernel):
     def __init__(
         self,
-        n_dof,
-        off_diag=True,
+        n_dim,
+        off_diag=False,
+        diagonal_prior=False,
         **kwargs,
     ):
         super(LatentMaternKernel, self).__init__()
 
-        self.n_dof = n_dof
-        self.n_off_diag = int(n_dof * (n_dof - 1) / 2)
+        self.n_dim = n_dim
+        self.n_off_diag = int(n_dim * (n_dim - 1) / 2)
         self.off_diag = off_diag
 
         # output_scale_constraint = gpytorch.constraints.Positive()
-        trans_diagonal_constraint = gpytorch.constraints.Interval(2e0, 2e1)
+        trans_diagonal_constraint = gpytorch.constraints.Interval(1e0, 1e2)
         trans_off_diag_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
 
         trans_diagonal_initial = np.sqrt(
@@ -31,12 +32,20 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         self.register_parameter(
             name="raw_trans_diagonal",
             parameter=torch.nn.Parameter(
-                raw_trans_diagonal_initial * torch.ones(*self.batch_shape, self.n_dof).double()
+                raw_trans_diagonal_initial * torch.ones(*self.batch_shape, self.n_dim).double()
             ),
         )
 
         # self.register_constraint("raw_output_scale", output_scale_constraint)
         self.register_constraint("raw_trans_diagonal", trans_diagonal_constraint)
+
+        if diagonal_prior:
+            self.register_prior(
+                name="trans_diagonal_prior",
+                prior=gpytorch.priors.GammaPrior(concentration=1, rate=0.2),
+                param_or_closure=lambda m: m.trans_diagonal,
+                setting_closure=lambda m, v: m._set_trans_diagonal(v),
+            )
 
         if self.off_diag:
             self.register_parameter(
@@ -88,12 +97,12 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
     def trans_matrix(self):
         # no rotations
         if not self.off_diag:
-            T = torch.eye(self.n_dof).double()
+            T = torch.eye(self.n_dim).double()
 
         # construct an orthogonal matrix. fun fact: exp(skew(N)) is the generator of SO(N)
         else:
-            A = torch.zeros((self.n_dof, self.n_dof)).double()
-            A[np.triu_indices(self.n_dof, k=1)] = self.trans_off_diag
+            A = torch.zeros((self.n_dim, self.n_dim)).double()
+            A[np.triu_indices(self.n_dim, k=1)] = self.trans_off_diag
             A += -A.T
             T = torch.linalg.matrix_exp(A)
 
@@ -111,10 +120,12 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         if auto:
             x2 = x1
 
-        # x1 and x2 are arrays of shape (..., n_1, n_dof) and (..., n_2, n_dof)
+        # print(x1, x2)
+
+        # x1 and x2 are arrays of shape (..., n_1, n_dim) and (..., n_2, n_dim)
         _x1, _x2 = torch.as_tensor(x1).double(), torch.as_tensor(x2).double()
 
-        # dx has shape (..., n_1, n_2, n_dof)
+        # dx has shape (..., n_1, n_2, n_dim)
         dx = _x1.unsqueeze(-2) - _x2.unsqueeze(-3)
 
         # transform coordinates with hyperparameters (this applies lengthscale and rotations)
@@ -127,7 +138,11 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         # nu=3/2 is a special case and has a concise closed-form expression
         # In general, this is something between an exponential (n=1/2) and a Gaussian (n=infinity)
         # https://en.wikipedia.org/wiki/Matern_covariance_function
-        C = (1 + d_eff) * torch.exp(-d_eff)
+
+        # C = torch.exp(-d_eff) # Matern_0.5 (exponential)
+        C = (1 + d_eff) * torch.exp(-d_eff)  # Matern_1.5
+        # C = (1 + d_eff + 1 / 3 * torch.square(d_eff)) * torch.exp(-d_eff)  # Matern_2.5
+        # C = torch.exp(-0.5 * np.square(d_eff)) # Matern_infinity (RBF)
 
         # C = torch.square(self.output_scale[0]) * torch.exp(-torch.square(d_eff))
 
