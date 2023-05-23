@@ -38,11 +38,17 @@ def digestion(db, uid):
             if not hasattr(entry, param):
                 setattr(entry, param, 0)
 
+        x1_squared = entry.x1**2
+        x2_squared = entry.x2**2
+
         # reject if the inputs are farther than some distance from the origin
-        if np.sqrt(entry.x1**2 + entry.x2**2) > 8:
-            himmelblau = np.nan
+        bad = False
+        bad |= np.sqrt(x1_squared + x2_squared) > 8
+
+        if not bad:
+            himmelblau = (x1_squared + entry.x2 - 11) ** 2 + (entry.x1 + x2_squared - 7) ** 2
         else:
-            himmelblau = (entry.x1**2 + entry.x2 - 11) ** 2 + (entry.x1 + entry.x2**2 - 7) ** 2
+            himmelblau = np.nan
 
         products["himmelblau"].append(himmelblau)
 

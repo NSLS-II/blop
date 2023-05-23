@@ -226,7 +226,14 @@ class Agent:
             )
 
         if (init_inputs is None) or (init_targets is None):
-            raise RuntimeError()
+            raise RuntimeError("Unhandled initialization error.")
+
+        no_good_samples_tasks = np.isnan(init_targets).all(axis=0)
+        if no_good_samples_tasks.any():
+            raise ValueError(
+                f"The tasks {[self.tasks[i].name for i in np.where(no_good_samples_tasks)[0]]} "
+                f"don't have any good samples."
+            )
 
         self.tell(new_inputs=init_inputs, new_targets=init_targets, reuse_hypers=True, verbose=self.verbose)
 
