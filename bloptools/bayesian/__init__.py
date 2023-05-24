@@ -21,15 +21,20 @@ mpl.rc("image", cmap="coolwarm")
 COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen"]
 
 
+def default_acquisition_plan(dofs, inputs, dets):
+    uid = yield from bp.list_scan(dets, *[_ for items in zip(dofs, np.atleast_2d(inputs).T) for _ in items])
+    return uid
+
+
 class Agent:
     def __init__(
         self,
         dofs,
         bounds,
         tasks,
-        acquisition,
         digestion,
         db,
+        acquisition=None,
         detectors=None,
         initialization=None,
         training_iter=256,
@@ -53,11 +58,11 @@ class Agent:
         db : A databroker instance.
         """
 
-        self.dofs = dofs
-        self.bounds = bounds
-        self.tasks = tasks
+        self.dofs = np.atleast_1d(dofs)
+        self.bounds = np.atleast_2d(bounds)
+        self.tasks = np.atleast_1d(tasks)
         self.initialization = initialization
-        self.acquisition = acquisition
+        self.acquisition = acquisition if acquisition is not None else default_acquisition_plan
         self.digestion = digestion
         self.db = db
 
@@ -67,11 +72,11 @@ class Agent:
         for i, task in enumerate(self.tasks):
             task.index = i
 
-        self.dets = detectors if detectors is not None else dofs
+        self.dets = detectors if detectors is not None else np.array([])
 
-        self.n_dof = len(dofs)
-        self.target_names = [f"{task.name}_fitness" for task in tasks]
-        self.n_tasks = len(tasks)
+        self.n_dof = len(self.dofs)
+        self.target_names = [f"{task.name}_fitness" for task in self.tasks]
+        self.n_tasks = len(self.tasks)
 
         self.training_iter = training_iter
         self.verbose = verbose
