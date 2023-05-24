@@ -4,6 +4,7 @@ from sirepo_bluesky.sirepo_ophyd import create_classes
 
 from bloptools.bayesian import Agent
 from bloptools.experiments.sirepo import tes
+from bloptools.tasks import Task
 
 
 @pytest.mark.shadow
@@ -21,14 +22,17 @@ def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
     for dof in kb_dofs:
         dof.kind = "hinted"
 
+    beam_flux_task = Task(key="flux", kind="max", transform=lambda x: np.log(x))
+    beam_width_task = Task(key="x_width", kind="min", transform=lambda x: np.log(x))
+    beam_height_task = Task(key="y_width", kind="min", transform=lambda x: np.log(x))
+
     boa = Agent(
-        dofs=kb_dofs,  # things which we move around
-        bounds=kb_bounds,  # how much we can move them
+        dofs=kb_dofs,
+        bounds=kb_bounds,
         detectors=[w9],
-        tasks=[tes.MinBeamWidth, tes.MinBeamHeight, tes.MaxBeamFlux],  # tasks for the optimizer
-        acquisition=tes.acquisition,
+        tasks=[beam_flux_task, beam_width_task, beam_height_task],
         digestion=tes.digestion,
-        db=db,  # a databroker instance
+        db=db,
     )
 
     RE(boa.initialize(init_scheme="quasi-random", n_init=4))
