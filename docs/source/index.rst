@@ -11,6 +11,6 @@ bloptools Documentation
 
    installation
    usage
-   notebooks
+   tutorials
    release-history
    min_versions
