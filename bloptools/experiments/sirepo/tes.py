@@ -1,33 +1,4 @@
-import bluesky.plans as bp
 import numpy as np
-
-from .. import BaseTask
-
-
-class MinBeamWidth(BaseTask):
-    name = "min_beam_width"
-
-    def get_fitness(entry):
-        return -np.log(getattr(entry, "x_width"))
-
-
-class MinBeamHeight(BaseTask):
-    name = "min_beam_height"
-
-    def get_fitness(entry):
-        return -np.log(getattr(entry, "y_width"))
-
-
-class MaxBeamFlux(BaseTask):
-    name = "max_beam_flux"
-
-    def get_fitness(processed_entry):
-        return np.log(getattr(processed_entry, "flux"))
-
-
-def acquisition(dofs, inputs, dets):
-    uid = yield from bp.list_scan(dets, *[_ for items in zip(dofs, np.atleast_2d(inputs).T) for _ in items])
-    return uid
 
 
 def digestion(db, uid, image_name="w9"):

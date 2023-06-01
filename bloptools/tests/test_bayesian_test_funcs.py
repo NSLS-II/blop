@@ -1,18 +1,22 @@
 import pytest
 
 import bloptools
-from bloptools.experiments.tests import himmelblau, mock_kbs
+from bloptools.experiments.tests import himmelblau_digestion, mock_kbs_digestion
+from bloptools.tasks import Task
 
 
 @pytest.mark.test_func
 def test_bayesian_agent_himmelblau(RE, db):
+    dofs = bloptools.experiments.tests.get_dummy_dofs(n=2)  # get a list of two DOFs
+    bounds = [(-5.0, +5.0), (-5.0, +5.0)]
+    task = Task(key="himmelblau", kind="min")
+
     boa = bloptools.bayesian.Agent(
-        dofs=himmelblau.dofs,  # things which we move around
-        bounds=himmelblau.bounds,  # how much we can move them
-        tasks=[himmelblau.MinHimmelblau],  # tasks for the optimizer
-        acquisition=himmelblau.acquisition,  # what experiment we're working on
-        digestion=himmelblau.digestion,
-        db=db,  # a databroker instance
+        dofs=dofs,
+        bounds=bounds,
+        tasks=task,
+        digestion=himmelblau_digestion,
+        db=db,
     )
 
     RE(boa.initialize(init_scheme="quasi-random", n_init=16))
@@ -24,13 +28,17 @@ def test_bayesian_agent_himmelblau(RE, db):
 
 @pytest.mark.test_func
 def test_bayesian_agent_mock_kbs(RE, db):
+    dofs = bloptools.experiments.tests.get_dummy_dofs(n=4)  # get a list of two DOFs
+    bounds = [(-4.0, +4.0), (-4.0, +4.0), (-4.0, +4.0), (-4.0, +4.0)]
+
+    tasks = [Task(key="x_width", kind="min"), Task(key="y_width", kind="min")]
+
     boa = bloptools.bayesian.Agent(
-        dofs=mock_kbs.dofs,  # things which we move around
-        bounds=mock_kbs.bounds,  # how much we can move them
-        tasks=[mock_kbs.MinBeamWidth, mock_kbs.MinBeamHeight],  # tasks for the optimizer
-        acquisition=mock_kbs.acquisition,  # what experiment we're working on
-        digestion=mock_kbs.digestion,
-        db=db,  # a databroker instance
+        dofs=dofs,
+        bounds=bounds,
+        tasks=tasks,
+        digestion=mock_kbs_digestion,
+        db=db,
     )
 
     RE(boa.initialize(init_scheme="quasi-random", n_init=16))
