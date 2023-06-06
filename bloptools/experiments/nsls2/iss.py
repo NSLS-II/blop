@@ -2,14 +2,14 @@ import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 import numpy as np
 
-from .. import BaseTask
+from bloptools.tasks import Task
 
 
 def initialize():
     yield from bps.null()  # do nothing
 
 
-class MaxBeamFlux(BaseTask):
+class MaxBeamFlux(Task):
     name = "max_flux"
 
     def get_fitness(processed_entry):
