@@ -2,11 +2,12 @@ class Task:
     MIN_NOISE_LEVEL = 1e-4
     MAX_NOISE_LEVEL = 1e-2
 
-    def __init__(self, key, kind="max", name=None, transform=None, **kwargs):
+    def __init__(self, key, kind="max", name=None, transform=None, weight=1., **kwargs):
         self.key = key
         self.kind = kind
         self.name = name if name is not None else f"{kind}_{key}"
         self.transform = transform if transform is not None else lambda x: x
+        self.weight = weight
 
         if kind.lower() in ["min", "minimum", "minimize"]:
             self.sign = -1

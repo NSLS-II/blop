@@ -125,6 +125,10 @@ class Agent:
         return np.nanstd(self.targets, axis=0)
 
     @property
+    def tasks_weight(self):
+        return np.array([task.weight for task in self.tasks])
+
+    @property
     def normalized_targets(self):
         return self.normalize_targets(self.targets)
 
@@ -154,6 +158,9 @@ class Agent:
 
     def go_to(self, inputs):
         yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(inputs).T) for _ in items])
+
+    def go_to_center(self):
+        yield from self.go_to(self.bounds.mean(axis=1))
 
     def go_to_best_sum_of_tasks(self):
         yield from self.go_to(self.best_sum_of_tasks_inputs)
@@ -264,7 +271,7 @@ class Agent:
         # if hasattr(self.experiment, "IMAGE_NAME"):
         #     self.images = np.array([im for im in self.table[self.experiment.IMAGE_NAME].values])
 
-        self.all_targets_valid = ~np.isnan(self.targets).any(axis=1)
+        self.targets_valid = ~self.table.rejected.values
 
         for task in self.tasks:
             task.targets = self.targets[:, task.index]
@@ -273,7 +280,7 @@ class Agent:
             task.targets_mean = np.nanmean(task.targets)
             task.targets_scale = np.nanstd(task.targets)
 
-            task.classes = self.all_targets_valid.astype(int)
+            task.classes = self.targets_valid.astype(int)
 
             regressor_likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
@@ -294,12 +301,12 @@ class Agent:
             botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
 
         self.scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-            weights=torch.tensor(self.targets_scale).double(),
+            weights=torch.tensor(self.tasks_weight * self.targets_scale).double(),
             offset=self.targets_mean.sum(),
         )
 
         dirichlet_classifier_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            torch.as_tensor(self.all_targets_valid).long(), learn_additional_noise=True
+            torch.as_tensor(self.targets_valid).long(), learn_additional_noise=True
         ).double()
 
         self.dirichlet_classifier = models.BoTorchDirichletClassifier(
@@ -438,24 +445,20 @@ class Agent:
 
         This should yield a table of sampled tasks with the same length as the sampled inputs.
         """
-        try:
-            uid = yield from self.acquisition(dofs, inputs, dets)
-            products = self.digestion(self.db, uid)
-            acq_table = pd.DataFrame(inputs, columns=[dof.name for dof in dofs])
-            acq_table.insert(0, "timestamp", pd.Timestamp.now())
 
-            for key, values in products.items():
-                acq_table.loc[:, key] = values
+        uid = yield from self.acquisition(dofs, inputs, dets)
+        products = self.digestion(self.db, uid)
+        acq_table = pd.DataFrame(inputs, columns=[dof.name for dof in dofs])
+        acq_table.insert(0, "timestamp", pd.Timestamp.now())
 
-            # compute the fitness for each task
-            for index, entry in acq_table.iterrows():
-                for task in self.tasks:
-                    acq_table.loc[index, f"{task.name}_fitness"] = task.get_fitness(entry)
+        for key, values in products.items():
+            acq_table.loc[:, key] = values
 
-        except Exception as err:
-            acq_table = pd.DataFrame()
-            print(repr(err))
-            logging.warning(repr(err))
+        # compute the fitness for each task
+        for index, entry in acq_table.iterrows():
+            for task in self.tasks:
+                f = task.get_fitness(entry)
+                acq_table.loc[index, f"{task.name}_fitness"] = f if np.isfinite(f) else np.nan
 
         if not len(inputs) == len(acq_table):
             raise ValueError("The resulting table must be the same length as the sampled inputs!")
@@ -500,7 +503,7 @@ class Agent:
     def _plot_constraints_one_dof(self, size=32):
         self.class_fig, self.class_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
 
-        self.class_ax.scatter(self.inputs, self.all_targets_valid.astype(int), s=size)
+        self.class_ax.scatter(self.inputs, self.targets_valid.astype(int), s=size)
 
         x = torch.tensor(self.test_X_grid.reshape(-1, self.n_dof)).double()
         log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_X_grid.shape[:-1])
@@ -522,7 +525,7 @@ class Agent:
             ax.set_ylabel(self.dofs[axes[1]].name)
 
         data_ax = self.class_axes[0].scatter(
-            *self.inputs.T[:2], s=size, c=self.all_targets_valid.astype(int), vmin=0, vmax=1, cmap=cmap
+            *self.inputs.T[:2], s=size, c=self.targets_valid.astype(int), vmin=0, vmax=1, cmap=cmap
         )
 
         if gridded:
@@ -603,7 +606,8 @@ class Agent:
         self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
         for itask, task in enumerate(self.tasks):
-            task_norm = mpl.colors.Normalize(*np.nanpercentile(task.targets, q=[1, 99]))
+
+            task_norm = mpl.colors.Normalize(*np.nanpercentile(task.targets[task.classes==1], q=[1, 99]))
 
             self.task_axes[itask, 0].set_ylabel(task.name)
 
@@ -612,7 +616,9 @@ class Agent:
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
             data_ax = self.task_axes[itask, 0].scatter(
-                *self.inputs.T[axes], s=size, c=task.targets, norm=task_norm, cmap=cmap
+                *self.inputs[task.classes==1].T[axes], 
+                s=size, 
+                c=task.targets[task.classes==1], norm=task_norm, cmap=cmap
             )
 
             if gridded:
