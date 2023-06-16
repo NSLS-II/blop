@@ -20,6 +20,8 @@ mpl.rc("image", cmap="coolwarm")
 
 COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen"]
 
+DEFAULT_COLORMAP = "gnuplot"
+
 
 def default_acquisition_plan(dofs, inputs, dets):
     uid = yield from bp.list_scan(dets, *[_ for items in zip(dofs, np.atleast_2d(inputs).T) for _ in items])
@@ -143,14 +145,16 @@ class Agent:
         return np.nanmax(self.targets.sum(axis=1))
 
     @property
-    def best_sum_of_tasks_inputs(self):
-        return self.inputs[np.nanargmax(self.targets.sum(axis=1))]
+    def arg_best_sum_of_tasks(self):
+        return np.nanargmax(self.targets.sum(axis=1))
 
     @property
+    def best_sum_of_tasks_inputs(self):
+        return self.inputs[self.arg_best_sum_of_tasks]
+
     def go_to(self, inputs):
         yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(inputs).T) for _ in items])
 
-    @property
     def go_to_best_sum_of_tasks(self):
         yield from self.go_to(self.best_sum_of_tasks_inputs)
 
@@ -450,6 +454,7 @@ class Agent:
 
         except Exception as err:
             acq_table = pd.DataFrame()
+            print(repr(err))
             logging.warning(repr(err))
 
         if not len(inputs) == len(acq_table):
@@ -504,7 +509,7 @@ class Agent:
 
         self.class_ax.set_xlim(*self.bounds[0])
 
-    def _plot_constraints_many_dofs(self, axes=[0, 1], shading="nearest", cmap="inferno", size=32, gridded=None):
+    def _plot_constraints_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=32, gridded=None):
         if gridded is None:
             gridded = self.n_dof == 2
 
@@ -581,7 +586,7 @@ class Agent:
 
             self.task_axes[itask].set_xlim(*self.bounds[0])
 
-    def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap="inferno", gridded=None, size=32):
+    def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32):
         if gridded is None:
             gridded = self.n_dof == 2
 
