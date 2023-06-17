@@ -5,9 +5,9 @@ Release History
 v0.3.0 (2023-06-17)
 -------------------
 
-* Implemented multi-task optimization
-* Simplified the syntax on initializing the agent
-* Resolved issues discovered at ISS
+- Implemented multi-task optimization
+- Simplified the syntax on initializing the agent
+- Resolved issues discovered at ISS
 
 
 v0.2.0 (2023-04-25)
