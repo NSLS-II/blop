@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from sirepo_bluesky.sirepo_ophyd import create_classes
 
-from bloptools.bayesian import Agent
+import bloptools
 from bloptools.experiments.sirepo import tes
 from bloptools.tasks import Task
 
@@ -19,24 +19,23 @@ def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
     kb_dofs = [kbv.x_rot, kbv.offz]
     kb_bounds = np.array([[-0.10, +0.10], [-0.50, +0.50]])
 
-    for dof in kb_dofs:
-        dof.kind = "hinted"
-
     beam_flux_task = Task(key="flux", kind="max", transform=lambda x: np.log(x))
     beam_width_task = Task(key="x_width", kind="min", transform=lambda x: np.log(x))
     beam_height_task = Task(key="y_width", kind="min", transform=lambda x: np.log(x))
 
-    boa = Agent(
-        dofs=kb_dofs,
-        bounds=kb_bounds,
+    agent = bloptools.bayesian.Agent(
+        active_dofs=kb_dofs,
+        passive_dofs=[],
         detectors=[w9],
+        active_dof_bounds=kb_bounds,
         tasks=[beam_flux_task, beam_width_task, beam_height_task],
         digestion=tes.digestion,
         db=db,
     )
 
-    RE(boa.initialize(init_scheme="quasi-random", n_init=4))
+    RE(agent.initialize(init_scheme="quasi-random", n_init=4))
 
-    RE(boa.learn(strategy="esti", n_iter=2, n_per_iter=2))
+    RE(agent.learn(strategy="ei", n_iter=2))
+    RE(agent.learn(strategy="pi", n_iter=2))
 
-    boa.plot_tasks()
+    agent.plot_tasks()
