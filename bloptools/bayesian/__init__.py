@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
-from botorch.acquisition.analytic import LogExpectedImprovement, LogProbabilityOfImprovement
 from matplotlib import pyplot as plt
 
 from .. import utils
@@ -38,7 +37,7 @@ def default_digestion_plan(db, uid):
 
 
 class Agent:
-    MAX_TEST_POINTS = 2**10
+    MAX_TEST_POINTS = 2**11
 
     def __init__(
         self,
@@ -275,125 +274,39 @@ class Agent:
 
         self.task_model = botorch.models.model.ModelList(*[task.regressor for task in self.tasks], self.feas_model)
 
-    # def sample_acqf(self, acqf, n_test=256, optimize=False):
-    #     """
-    #     Return the point that optimizes a given acqusition function.
-    #     """
+    def get_acquisition_function(self, strategy="ei", return_metadata=False, acqf_args={}, **kwargs):
+        if strategy.lower() == "ei":
+            acqf = botorch.acquisition.analytic.LogExpectedImprovement(
+                self.task_model,
+                best_f=self.best_sum_of_tasks,
+                posterior_transform=self.task_scalarization,
+                **kwargs,
+            )
+            acqf_meta = {"name": "Expected Improvement", "args": {}}
 
-    #     def acq_loss(x, *args):
-    #         return -acqf(x, *args)
+        elif strategy.lower() == "pi":
+            acqf = botorch.acquisition.analytic.LogProbabilityOfImprovement(
+                self.task_model,
+                best_f=self.best_sum_of_tasks,
+                posterior_transform=self.task_scalarization,
+                **kwargs,
+            )
+            acqf_meta = {"name": "Probability of Improvement", "args": {}}
 
-    #     acq_args = (self,)
+        elif strategy.lower() == "ucb":
+            beta = acqf_args.get("beta", 0.1)
+            acqf = botorch.acquisition.analytic.UpperConfidenceBound(
+                self.task_model,
+                beta=beta,
+                posterior_transform=self.task_scalarization,
+                **kwargs,
+            )
+            acqf_meta = {"name": "Upper Confidence Bound", "args": {"beta": beta}}
 
-    #     test_inputs = self.unnormalize_active_inputs(self.sampler(n=n_test))
-    #     init_inputs = test_inputs[acq_loss(test_inputs, *acq_args).argmin()]
+        else:
+            raise ValueError(f'Unrecognized acquisition strategy "{strategy}".')
 
-    #     if optimize:
-    #         res = sp.optimize.minimize(
-    #             fun=acq_loss,
-    #             args=acq_args,
-    #             x0=init_inputs,
-    #             bounds=self.active_dof_bounds,
-    #             method="SLSQP",
-    #             options={"maxiter": 256},
-    #         )
-    #         acq_inputs = res.x
-    #     else:
-    #         acq_inputs = init_inputs
-
-    #     return acq_inputs, acq_loss(acq_inputs, *acq_args)
-
-    # def ask(
-    #     self,
-    #     tasks=None,
-    #     classifier=None,
-    #     strategy=None,
-    #     greedy=True,
-    #     n=1,
-    #     disappointment=0,
-    #     route=True,
-    #     cost_model=None,
-    #     n_test=1024,
-    #     optimize=True,
-    # ):
-    #     """
-    #     The next $n$ points to sample, recommended by the agent.
-    #     """
-
-    #     if route:
-    #         unrouted_points = self.ask(
-    #             tasks=tasks,
-    #             classifier=classifier,
-    #             strategy=strategy,
-    #             greedy=greedy,
-    #             n=n,
-    #             disappointment=disappointment,
-    #             route=False,
-    #             cost_model=cost_model,
-    #             n_test=n_test,
-    #         )
-
-    #         routing_index, _ = utils.get_routing(self.read_active_dofs, unrouted_points)
-    #         return unrouted_points[routing_index]
-
-    #     if strategy.lower() == "quasi-random":
-    #         return self.unnormalize_active_inputs(self.sampler(n=n))
-
-    #     if not self._initialized:
-    #         raise RuntimeError("The agent is not initialized!")
-
-    #     if tasks is None:
-    #         tasks = self.tasks
-
-    #     if classifier is None:
-    #         classifier = self.feas_model
-
-    #     if (not greedy) or (n == 1):
-    #         acqf = None
-
-    #         if strategy.lower() == "ei":  # maximize the expected improvement
-
-    #             acq_func = LogExpectedImprovement(agent.task_model,
-    #                                         best_f=agent.best_sum_of_tasks,
-    #                                         posterior_transform=agent.scalarization)
-
-    #             acqf = self.acquisition.log_expected_improvement
-
-    #         if strategy.lower() == "pi":  # maximize the probability improvement
-    #             acqf = self.acquisition.log_probability_of_improvement
-
-    #         if acqf is None:
-    #             raise ValueError(f'Unrecognized strategy "{strategy}".')
-
-    #         inputs_to_sample, loss = self.sample_acqf(acqf, optimize=optimize)
-
-    #         return np.atleast_2d(inputs_to_sample)
-
-    #     if greedy and (n > 1):
-    #         dummy_tasks = [copy.deepcopy(task) for task in self.tasks]
-
-    #         inputs_to_sample = np.zeros((0, self.n_dof))
-
-    #         for i in range(n):
-
-    #             new_input = self.ask(strategy=strategy, tasks=dummy_tasks, classifier=classifier, greedy=True, n=1)
-
-    #             inputs_to_sample = np.r_[inputs_to_sample, new_input]
-
-    #             if not (i + 1 == n):  # no point if we're on the last iteration
-    #                 fantasy_model = botorch.models.model.ModelList(*[task.regressor for task in self.tasks])
-    #                 fantasy_posterior = fantasy_model.posterior(
-    #                     torch.tensor(self.normalize_inputs(new_input)).double()
-    #                 )
-
-    #                 fantasy_targets = fantasy_posterior.mean - disappointment * fantasy_posterior.variance.sqrt()
-    #                 new_targets = self.unnormalize_targets(fantasy_targets.detach().numpy())
-
-    #                 self.tell(new_table=new_table)
-
-    #         self.forget(index=self.table.index[-n:])  # forget what you saw here
-
-    #         return np.atleast_2d(inputs_to_sample)
+        return (acqf, acqf_meta) if return_metadata else acqf
 
     def ask(
         self,
@@ -434,20 +347,7 @@ class Agent:
         if not self._initialized:
             raise RuntimeError("The agent is not initialized!")
 
-        self.acqf = None
-
-        if strategy.lower() == "ei":  # maximize the expected improvement
-            self.acqf = LogExpectedImprovement(
-                self.task_model, best_f=self.best_sum_of_tasks, posterior_transform=self.task_scalarization
-            )
-
-        if strategy.lower() == "pi":  # maximize the expected improvement
-            self.acqf = LogProbabilityOfImprovement(
-                self.task_model, best_f=self.best_sum_of_tasks, posterior_transform=self.task_scalarization
-            )
-
-        if self.acqf is None:
-            raise ValueError(f'Unrecognized strategy "{strategy}".')
+        self.acqf = self.get_acquisition_function(strategy=strategy)
 
         BATCH_SIZE = 1
         NUM_RESTARTS = 7
@@ -455,14 +355,14 @@ class Agent:
 
         candidates, _ = botorch.optim.optimize_acqf(
             acq_function=self.acqf,
-            bounds=torch.tensor(self.active_dof_bounds).T,
+            bounds=torch.tensor(self.dof_bounds).T,
             q=BATCH_SIZE,
             num_restarts=NUM_RESTARTS,
             raw_samples=RAW_SAMPLES,  # used for intialization heuristic
             options={"batch_limit": 5, "maxiter": 200},
         )
 
-        return candidates.detach().numpy()
+        return candidates.detach().numpy()[..., self.dof_is_active_mask]
 
     def acquire(self, dof_inputs):
         """
@@ -508,21 +408,180 @@ class Agent:
 
             self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
 
+    def normalize_active_inputs(self, inputs):
+        return (inputs - self.active_dof_bounds.min(axis=1)) / self.active_dof_bounds.ptp(axis=1)
+
+    def unnormalize_active_inputs(self, X):
+        return X * self.active_dof_bounds.ptp(axis=1) + self.active_dof_bounds.min(axis=1)
+
+    def normalize_inputs(self, inputs):
+        return (inputs - self.input_bounds.min(axis=1)) / self.input_bounds.ptp(axis=1)
+
+    def unnormalize_inputs(self, X):
+        return X * self.input_bounds.ptp(axis=1) + self.input_bounds.min(axis=1)
+
+    def normalize_targets(self, targets):
+        return (targets - self.targets_mean) / (1e-20 + self.targets_scale)
+
+    def unnormalize_targets(self, targets):
+        return targets * self.targets_scale + self.targets_mean
+
+    @property
+    def test_inputs(self):
+        test_passive_inputs = (
+            self.passive_inputs.values[-1][None] * np.ones(len(self.test_active_inputs))[..., None]
+        )
+        return np.concatenate([self.test_active_inputs, test_passive_inputs], axis=-1)
+
+    @property
+    def test_inputs_grid(self):
+        test_passive_inputs_grid = self.passive_inputs.values[-1] * np.ones(
+            (*self.test_active_inputs_grid.shape[:-1], self.n_passive_dof)
+        )
+        return np.concatenate([self.test_active_inputs_grid, test_passive_inputs_grid], axis=-1)
+
+    @property
+    def inputs(self):
+        return self.table.loc[:, self.dof_names].astype(float)
+
+    @property
+    def active_inputs(self):
+        return self.inputs.loc[:, self.active_dof_names]
+
+    @property
+    def passive_inputs(self):
+        return self.inputs.loc[:, self.passive_dof_names]
+
+    @property
+    def targets(self):
+        return self.table.loc[:, self.task_names].astype(float)
+
+    @property
+    def feasible(self):
+        with pd.option_context("mode.use_inf_as_null", True):
+            feasible = ~self.targets.isna()
+        return feasible
+
+    # @property
+    # def input_bounds(self):
+    #     lower_bound = np.r_[
+    #         self.active_dof_bounds[:, 0], np.nanmin(self.passive_inputs.astype(float).values, axis=0)
+    #     ]
+    #     upper_bound = np.r_[
+    #         self.active_dof_bounds[:, 1], np.nanmax(self.passive_inputs.astype(float).values, axis=0)
+    #     ]
+    #     return np.c_[lower_bound, upper_bound]
+
+    @property
+    def targets_mean(self):
+        return np.nanmean(self.targets, axis=0)
+
+    @property
+    def targets_scale(self):
+        return np.nanstd(self.targets, axis=0)
+
+    @property
+    def normalized_targets(self):
+        return self.normalize_targets(self.targets)
+
+    @property
+    def latest_passive_dof_values(self):
+        passive_inputs = self.passive_inputs
+        return [passive_inputs.loc[passive_inputs.last_valid_index(), col] for col in passive_inputs.columns]
+
+    @property
+    def passive_dof_bounds(self):
+        # food for thought: should this be the current values, or the latest recorded values?
+        # the former leads to weird extrapolation (especially for time), and the latter to some latency.
+        # let's go with the first way for now
+        return np.outer(self.latest_passive_dof_values, [1.0, 1.0])
+
+    @property
+    def dof_is_active_mask(self):
+        return np.r_[np.ones(self.n_active_dof), np.zeros(self.n_passive_dof)].astype(bool)
+
+    @property
+    def dof_bounds(self):
+        return np.r_[self.active_dof_bounds, self.passive_dof_bounds]
+
+    @property
+    def read_active_dofs(self):
+        return np.array([dof.read()[dof.name]["value"] for dof in self.active_dofs])
+
+    @property
+    def read_passive_dofs(self):
+        return np.array([dof.read()[dof.name]["value"] for dof in self.passive_dofs])
+
+    @property
+    def read_dofs(self):
+        return np.r_[self.read_active_dofs, self.read_passive_dofs]
+
+    @property
+    def active_dof_names(self):
+        return [dof.name for dof in self.active_dofs]
+
+    @property
+    def passive_dof_names(self):
+        return [dof.name for dof in self.passive_dofs]
+
+    @property
+    def dof_names(self):
+        return [dof.name for dof in self.dofs]
+
+    @property
+    def det_names(self):
+        return [det.name for det in self.dets]
+
+    @property
+    def target_names(self):
+        return [task.name for task in self.tasks]
+
+    @property
+    def task_names(self):
+        return [task.name for task in self.tasks]
+
+    @property
+    def task_weights(self):
+        return np.array([task.weight for task in self.tasks])
+
+    @property
+    def best_sum_of_tasks(self):
+        return self.targets.fillna(-np.inf).sum(axis=1).max()
+
+    @property
+    def best_sum_of_tasks_inputs(self):
+        return self.inputs[np.nanargmax(self.targets.sum(axis=1))]
+
+    @property
+    def go_to(self, inputs):
+        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(inputs).T) for _ in items])
+
+    @property
+    def go_to_best_sum_of_tasks(self):
+        yield from self.go_to(self.best_sum_of_tasks_inputs)
+
     def plot_tasks(self, **kwargs):
-        if self.n_dof == 1:
+        if self.n_active_dof == 1:
             self._plot_tasks_one_dof(**kwargs)
 
         else:
             self._plot_tasks_many_dofs(**kwargs)
 
     def plot_feasibility(self, **kwargs):
-        if self.n_dof == 1:
-            self._plot_feasibility_one_dof(**kwargs)
+        if self.n_active_dof == 1:
+            self._plot_feas_one_dof(**kwargs)
 
         else:
-            self._plot_feasibility_many_dofs(**kwargs)
+            self._plot_feas_many_dofs(**kwargs)
 
-    def _plot_feasibility_one_dof(self, size=32):
+    def plot_acquisition(self, **kwargs):
+        if self.n_active_dof == 1:
+            self._plot_acq_one_dof(**kwargs)
+
+        else:
+            self._plot_acq_many_dofs(**kwargs)
+
+    def _plot_feas_one_dof(self, size=32):
         self.class_fig, self.class_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
 
         self.class_ax.scatter(self.inputs.values, self.all_targets_valid.astype(int), s=size)
@@ -534,9 +593,7 @@ class Agent:
 
         self.class_ax.set_xlim(*self.active_dof_bounds[0])
 
-    def _plot_feasibility_many_dofs(
-        self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=32, gridded=None
-    ):
+    def _plot_feas_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=32, gridded=None):
         if gridded is None:
             gridded = self.n_dof == 2
 
@@ -568,7 +625,7 @@ class Agent:
             )
 
         else:
-            x = torch.tensor(self.normalize_inputs(self.test_inputs)).double()
+            x = torch.tensor(self.test_inputs).double()
             log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy()
 
             self.class_axes[1].scatter(
@@ -597,11 +654,9 @@ class Agent:
 
             self.task_axes[itask].set_ylabel(task.name)
 
-            task_posterior = task.regressor.posterior(
-                torch.tensor(self.normalize_inputs(self.test_inputs_grid)).double()
-            )
-            task_mean = task_posterior.mean.detach().numpy() * task.targets_scale + task.targets_mean
-            task_sigma = task_posterior.variance.sqrt().detach().numpy() * task.targets_scale
+            task_posterior = task.regressor.posterior(torch.tensor(self.test_inputs_grid).double())
+            task_mean = task_posterior.mean.detach().numpy().ravel()
+            task_sigma = task_posterior.variance.sqrt().detach().numpy().ravel()
 
             self.task_axes[itask].scatter(self.inputs.values, task.targets, s=size, color=color)
             self.task_axes[itask].plot(self.test_active_inputs_grid.ravel(), task_mean, lw=lw, color=color)
@@ -667,7 +722,7 @@ class Agent:
                 )
                 sigma_ax = self.task_axes[itask, 2].pcolormesh(
                     *np.swapaxes(self.test_inputs_grid, 0, -1),
-                    task_sigma.reshape(self.normalize_inputs(self.test_inputs_grid).shape[:-1]).T,
+                    task_sigma.reshape(self.test_inputs_grid.shape[:-1]).T,
                     shading=shading,
                     cmap=cmap,
                 )
@@ -687,137 +742,82 @@ class Agent:
             ax.set_xlim(*self.active_dof_bounds[axes[0]])
             ax.set_ylim(*self.active_dof_bounds[axes[1]])
 
-    def normalize_active_inputs(self, inputs):
-        return (inputs - self.active_dof_bounds.min(axis=1)) / self.active_dof_bounds.ptp(axis=1)
+    def _plot_acq_one_dof(self, size=32, lw=1e0, **kwargs):
+        strategies = np.atleast_1d(kwargs.get("strategy", "ei"))
 
-    def unnormalize_active_inputs(self, X):
-        return X * self.active_dof_bounds.ptp(axis=1) + self.active_dof_bounds.min(axis=1)
-
-    def normalize_inputs(self, inputs):
-        return (inputs - self.input_bounds.min(axis=1)) / self.input_bounds.ptp(axis=1)
-
-    def unnormalize_inputs(self, X):
-        return X * self.input_bounds.ptp(axis=1) + self.input_bounds.min(axis=1)
-
-    def normalize_targets(self, targets):
-        return (targets - self.targets_mean) / (1e-20 + self.targets_scale)
-
-    def unnormalize_targets(self, targets):
-        return targets * self.targets_scale + self.targets_mean
-
-    @property
-    def test_inputs(self):
-        test_passive_inputs = (
-            self.passive_inputs.values[-1][None] * np.ones(len(self.test_active_inputs))[..., None]
+        self.acq_fig, self.acq_axes = plt.subplots(
+            1,
+            len(strategies),
+            figsize=(6 * len(strategies), 6),
+            sharex=True,
+            constrained_layout=True,
         )
-        return np.concatenate([self.test_active_inputs, test_passive_inputs], axis=-1)
 
-    @property
-    def test_inputs_grid(self):
-        test_passive_inputs_grid = self.passive_inputs.values[-1] * np.ones(
-            (*self.test_active_inputs_grid.shape[:-1], self.n_passive_dof)
+        self.acq_axes = np.atleast_1d(self.acq_axes)
+
+        for istrat, strategy in enumerate(strategies):
+            color = DEFAULT_COLOR_LIST[0]
+
+            acqf, acqf_meta = self.get_acquisition_function(strategy, return_metadata=True)
+
+            *grid_shape, dim = self.test_inputs_grid.shape
+            x = torch.tensor(self.test_inputs_grid.reshape(-1, 1, dim)).double()
+            obj = acqf.forward(x)
+
+            if strategy in ["ei", "pi"]:
+                obj = obj.exp()
+
+            self.acq_axes[istrat].set_title(acqf_meta["name"])
+            self.acq_axes[istrat].plot(
+                self.test_active_inputs_grid.ravel(), obj.detach().numpy().ravel(), lw=lw, color=color
+            )
+
+            self.acq_axes[istrat].set_xlim(*self.active_dof_bounds[0])
+
+    def _plot_acq_many_dofs(
+        self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, **kwargs
+    ):
+        strategies = np.atleast_1d(kwargs.get("strategy", "ei"))
+
+        self.acq_fig, self.acq_axes = plt.subplots(
+            1,
+            len(strategies),
+            figsize=(4 * len(strategies), 5),
+            sharex=True,
+            sharey=True,
+            constrained_layout=True,
         )
-        return np.concatenate([self.test_active_inputs_grid, test_passive_inputs_grid], axis=-1)
 
-    @property
-    def inputs(self):
-        return self.table.loc[:, self.dof_names].astype(float)
+        if gridded is None:
+            gridded = self.n_active_dof == 2
 
-    @property
-    def active_inputs(self):
-        return self.inputs.loc[:, self.active_dof_names]
+        self.acq_axes = np.atleast_1d(self.acq_axes)
+        self.acq_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-    @property
-    def passive_inputs(self):
-        return self.inputs.loc[:, self.passive_dof_names]
+        for istrat, strategy in enumerate(strategies):
+            acqf, acqf_meta = self.get_acquisition_function(strategy, return_metadata=True)
 
-    @property
-    def targets(self):
-        return self.table.loc[:, self.task_names].astype(float)
+            if gridded:
+                *grid_shape, dim = self.test_inputs_grid.shape
+                x = torch.tensor(self.test_inputs_grid.reshape(-1, 1, dim)).double()
+                obj = acqf.forward(x)
 
-    @property
-    def feasible(self):
-        with pd.option_context("mode.use_inf_as_null", True):
-            feasible = ~self.targets.isna()
-        return feasible
+                if strategy in ["ei", "pi"]:
+                    obj = obj.exp()
 
-    @property
-    def input_bounds(self):
-        lower_bound = np.r_[
-            self.active_dof_bounds[:, 0], np.nanmin(self.passive_inputs.astype(float).values, axis=0)
-        ]
-        upper_bound = np.r_[
-            self.active_dof_bounds[:, 1], np.nanmax(self.passive_inputs.astype(float).values, axis=0)
-        ]
-        return np.c_[lower_bound, upper_bound]
+                self.acq_axes[istrat].set_title(acqf_meta["name"])
+                obj_ax = self.acq_axes[istrat].pcolormesh(
+                    *np.swapaxes(self.test_inputs_grid, 0, -1),
+                    obj.detach().numpy().reshape(grid_shape).T,
+                    shading=shading,
+                    cmap=cmap,
+                )
 
-    @property
-    def targets_mean(self):
-        return np.nanmean(self.targets, axis=0)
+                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[istrat], location="bottom", aspect=32, shrink=0.8)
 
-    @property
-    def targets_scale(self):
-        return np.nanstd(self.targets, axis=0)
-
-    @property
-    def normalized_targets(self):
-        return self.normalize_targets(self.targets)
-
-    @property
-    def read_active_dofs(self):
-        return np.array([dof.read()[dof.name]["value"] for dof in self.active_dofs])
-
-    @property
-    def read_passive_dofs(self):
-        return np.array([dof.read()[dof.name]["value"] for dof in self.passive_dofs])
-
-    @property
-    def read_dofs(self):
-        return np.r_[self.read_active_dofs, self.read_passive_dofs]
-
-    @property
-    def active_dof_names(self):
-        return [dof.name for dof in self.active_dofs]
-
-    @property
-    def passive_dof_names(self):
-        return [dof.name for dof in self.passive_dofs]
-
-    @property
-    def dof_names(self):
-        return [dof.name for dof in self.dofs]
-
-    @property
-    def det_names(self):
-        return [det.name for det in self.dets]
-
-    @property
-    def target_names(self):
-        return [task.name for task in self.tasks]
-
-    @property
-    def task_names(self):
-        return [task.name for task in self.tasks]
-
-    @property
-    def task_weights(self):
-        return np.array([task.weight for task in self.tasks])
-
-    @property
-    def best_sum_of_tasks(self):
-        return self.targets.fillna(-np.inf).sum(axis=1).max()
-
-    @property
-    def best_sum_of_tasks_inputs(self):
-        return self.inputs[np.nanargmax(self.targets.sum(axis=1))]
-
-    @property
-    def go_to(self, inputs):
-        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(inputs).T) for _ in items])
-
-    @property
-    def go_to_best_sum_of_tasks(self):
-        yield from self.go_to(self.best_sum_of_tasks_inputs)
+        for ax in self.acq_axes.ravel():
+            ax.set_xlim(*self.active_dof_bounds[axes[0]])
+            ax.set_ylim(*self.active_dof_bounds[axes[1]])
 
     def inspect_beam(self, index, border=None):
         im = self.images[index]
