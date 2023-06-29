@@ -9,6 +9,11 @@ def himmelblau(x1, x2):
     return (x1**2 + x2 - 11) ** 2 + (x1 + x2**2 - 7) ** 2
 
 
+def rastrigin(*x):
+    X = np.c_[x]
+    return 10 * X.shape[-1] + (X**2 - 10 * np.cos(2 * np.pi * X)).sum(axis=1)
+
+
 def gaussian_beam_waist(x1, x2):
     return np.sqrt(1 + 0.25 * (x1 - x2) ** 2 + 16 * (x1 + x2 - 2) ** 2)
 
