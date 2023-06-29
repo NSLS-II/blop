@@ -1,4 +1,4 @@
-from . import bayesian, experiments, tasks  # noqa F401
+from . import bayesian, devices, experiments, tasks  # noqa F401
 from ._version import get_versions
 
 __version__ = get_versions()["version"]

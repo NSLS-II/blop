@@ -9,6 +9,6 @@ exclude =
     examples/*.py,
     bloptools/tests/test_bayesian_shadow.py,
     versioneer.py,
-max-line-length = 115
+max-line-length = 125
 # Ignore some style 'errors' produced while formatting by 'black'
 ignore = E203, W503

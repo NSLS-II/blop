@@ -6,29 +6,12 @@ def digestion(db, uid, image_name="w9"):
     Simulating a misaligned Gaussian beam. The optimum is at (1, 1, 1, 1)
     """
 
-    table = db[uid].table(fill=True)
+    products = db[uid].table(fill=True)
 
-    products_keys = [
-        "image",
-        "vertical_extent",
-        "horizontal_extent",
-        "flux",
-        "x_pos",
-        "y_pos",
-        "x_width",
-        "y_width",
-    ]
-
-    products = {key: [] for key in products_keys}
-
-    for index, entry in table.iterrows():
+    for index, entry in products.iterrows():
         image = getattr(entry, f"{image_name}_image")
         horizontal_extent = getattr(entry, f"{image_name}_horizontal_extent")
         vertical_extent = getattr(entry, f"{image_name}_vertical_extent")
-
-        products["image"].append(image)
-        products["vertical_extent"].append(vertical_extent)
-        products["horizontal_extent"].append(horizontal_extent)
 
         flux = image.sum()
         n_y, n_x = image.shape
@@ -47,13 +30,15 @@ def digestion(db, uid, image_name="w9"):
         bad |= any(np.isnan([mean_x, mean_y, sigma_x, sigma_y]))
 
         if not bad:
-            products["flux"].append(flux)
-            products["x_pos"].append(mean_x)
-            products["y_pos"].append(mean_y)
-            products["x_width"].append(2 * sigma_x)
-            products["y_width"].append(2 * sigma_y)
+            products.loc[index, ["flux", "x_pos", "y_pos", "x_width", "y_width"]] = (
+                flux,
+                mean_x,
+                mean_y,
+                2 * sigma_x,
+                2 * sigma_y,
+            )
         else:
-            for key in ["flux", "x_pos", "y_pos", "x_width", "y_width"]:
-                products[key].append(np.nan)
+            for col in ["flux", "x_pos", "y_pos", "x_width", "y_width"]:
+                products.loc[index, col] = np.nan
 
     return products

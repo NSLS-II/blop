@@ -1,6 +1,132 @@
+import math
+
 import gpytorch
 import numpy as np
 import torch
+
+
+class MultiOutputLatentKernel(gpytorch.kernels.Kernel):
+    is_stationary = True
+
+    def __init__(
+        self,
+        num_inputs=1,
+        num_outputs=1,
+        off_diag=False,
+        diag_prior=False,
+        **kwargs,
+    ):
+        super(MultiOutputLatentKernel, self).__init__()
+
+        self.num_inputs = num_inputs
+        self.num_outputs = num_outputs
+        self.n_off_diag = int(num_inputs * (num_inputs - 1) / 2)
+        self.off_diag = off_diag
+
+        self.nu = kwargs.get("nu", 1.5)
+
+        # self.batch_shape = torch.Size([num_outputs])
+
+        # output_scale_constraint = gpytorch.constraints.Positive()
+        diag_params_constraint = gpytorch.constraints.Interval(1e0, 1e2)
+        skew_params_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
+
+        diag_params_initial = np.sqrt(diag_params_constraint.lower_bound * diag_params_constraint.upper_bound)
+        raw_diag_params_initial = diag_params_constraint.inverse_transform(diag_params_initial)
+
+        self.register_parameter(
+            name="raw_diag_params",
+            parameter=torch.nn.Parameter(
+                raw_diag_params_initial * torch.ones(self.num_outputs, self.num_inputs).double()
+            ),
+        )
+
+        # self.register_constraint("raw_output_scale", output_scale_constraint)
+        self.register_constraint("raw_diag_params", diag_params_constraint)
+
+        if diag_prior:
+            self.register_prior(
+                name="diag_params_prior",
+                prior=gpytorch.priors.GammaPrior(concentration=0.5, rate=0.2),
+                param_or_closure=lambda m: m.diag_params,
+                setting_closure=lambda m, v: m._set_diag_params(v),
+            )
+
+        if self.off_diag:
+            self.register_parameter(
+                name="raw_skew_params",
+                parameter=torch.nn.Parameter(torch.zeros(self.num_outputs, self.n_off_diag).double()),
+            )
+            self.register_constraint("raw_skew_params", skew_params_constraint)
+
+    @property
+    def diag_params(self):
+        return self.raw_diag_params_constraint.transform(self.raw_diag_params)
+
+    @property
+    def skew_params(self):
+        return self.raw_skew_params_constraint.transform(self.raw_skew_params)
+
+    @diag_params.setter
+    def diag_params(self, value):
+        self._set_diag_params(value)
+
+    @skew_params.setter
+    def skew_params(self, value):
+        self._set_skew_params(value)
+
+    def _set_skew_params(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_skew_params)
+        self.initialize(raw_skew_params=self.raw_skew_params_constraint.inverse_transform(value))
+
+    def _set_diag_params(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_diag_params)
+        self.initialize(raw_diag_params=self.raw_diag_params_constraint.inverse_transform(value))
+
+    @property
+    def dimension_transform(self):
+        # no rotations
+        if not self.off_diag:
+            T = torch.eye(self.num_inputs, dtype=torch.float64)
+
+        # construct an orthogonal matrix. fun fact: exp(skew(N)) is the generator of SO(N)
+        else:
+            A = torch.zeros((self.num_outputs, self.num_inputs, self.num_inputs), dtype=torch.float64)
+            upper_indices = np.triu_indices(self.num_inputs, k=1)
+            for output_index in range(self.num_outputs):
+                A[(output_index, *upper_indices)] = self.skew_params[output_index]
+            A += -A.transpose(-1, -2)
+            T = torch.linalg.matrix_exp(A)
+
+        diagonal_transform = torch.cat([torch.diag(_values).unsqueeze(0) for _values in self.diag_params], dim=0)
+        T = torch.matmul(diagonal_transform, T)
+
+        return T
+
+    def forward(self, x1, x2, diag=False, **params):
+        # adapted from the Matern kernel
+        mean = x1.reshape(-1, x1.size(-1)).mean(0)[(None,) * (x1.dim() - 1)]
+
+        trans_x1 = torch.matmul(self.dimension_transform.unsqueeze(1), (x1 - mean).unsqueeze(-1)).squeeze(-1)
+        trans_x2 = torch.matmul(self.dimension_transform.unsqueeze(1), (x2 - mean).unsqueeze(-1)).squeeze(-1)
+
+        distance = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
+
+        # if distance.shape[0] == 1:
+        #     distance = distance.squeeze(0)  # this is extremely necessary
+
+        exp_component = torch.exp(-math.sqrt(self.nu * 2) * distance)
+
+        if self.nu == 0.5:
+            constant_component = 1
+        elif self.nu == 1.5:
+            constant_component = (math.sqrt(3) * distance).add(1)
+        elif self.nu == 2.5:
+            constant_component = (math.sqrt(5) * distance).add(1).add(5.0 / 3.0 * distance**2)
+
+        return constant_component * exp_component
 
 
 class LatentMaternKernel(gpytorch.kernels.Kernel):
@@ -18,80 +144,78 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         self.off_diag = off_diag
 
         # output_scale_constraint = gpytorch.constraints.Positive()
-        trans_diagonal_constraint = gpytorch.constraints.Interval(1e0, 1e2)
-        trans_off_diag_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
+        diag_params_constraint = gpytorch.constraints.Interval(1e-1, 1e2)
+        skew_params_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
 
-        trans_diagonal_initial = np.sqrt(
-            trans_diagonal_constraint.lower_bound * trans_diagonal_constraint.upper_bound
-        )
-        raw_trans_diagonal_initial = trans_diagonal_constraint.inverse_transform(trans_diagonal_initial)
+        diag_params_initial = np.sqrt(diag_params_constraint.lower_bound * diag_params_constraint.upper_bound)
+        raw_diag_params_initial = diag_params_constraint.inverse_transform(diag_params_initial)
 
         # self.register_parameter(
         #    name="raw_output_scale", parameter=torch.nn.Parameter(torch.ones(*self.batch_shape, 1).double())
         # )
         self.register_parameter(
-            name="raw_trans_diagonal",
+            name="raw_diag_params",
             parameter=torch.nn.Parameter(
-                raw_trans_diagonal_initial * torch.ones(*self.batch_shape, self.n_dim).double()
+                raw_diag_params_initial * torch.ones(*self.batch_shape, self.n_dim).double()
             ),
         )
 
         # self.register_constraint("raw_output_scale", output_scale_constraint)
-        self.register_constraint("raw_trans_diagonal", trans_diagonal_constraint)
+        self.register_constraint("raw_diag_params", diag_params_constraint)
 
         if diagonal_prior:
             self.register_prior(
-                name="trans_diagonal_prior",
-                prior=gpytorch.priors.GammaPrior(concentration=1, rate=0.2),
-                param_or_closure=lambda m: m.trans_diagonal,
-                setting_closure=lambda m, v: m._set_trans_diagonal(v),
+                name="diag_params_prior",
+                prior=gpytorch.priors.GammaPrior(concentration=0.5, rate=0.2),
+                param_or_closure=lambda m: m.diag_params,
+                setting_closure=lambda m, v: m._set_diag_params(v),
             )
 
         if self.off_diag:
             self.register_parameter(
-                name="raw_trans_off_diag",
+                name="raw_skew_params",
                 parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, self.n_off_diag).double()),
             )
-            self.register_constraint("raw_trans_off_diag", trans_off_diag_constraint)
+            self.register_constraint("raw_skew_params", skew_params_constraint)
 
     # @property
     # def output_scale(self):
     #     return self.raw_output_scale_constraint.transform(self.raw_output_scale)
 
     @property
-    def trans_diagonal(self):
-        return self.raw_trans_diagonal_constraint.transform(self.raw_trans_diagonal)
+    def diag_params(self):
+        return self.raw_diag_params_constraint.transform(self.raw_diag_params)
 
     @property
-    def trans_off_diag(self):
-        return self.raw_trans_off_diag_constraint.transform(self.raw_trans_off_diag)
+    def skew_params(self):
+        return self.raw_skew_params_constraint.transform(self.raw_skew_params)
 
     # @output_scale.setter
     # def output_scale(self, value):
     #     self._set_output_scale(value)
 
-    @trans_diagonal.setter
-    def trans_diagonal(self, value):
-        self._set_trans_diagonal(value)
+    @diag_params.setter
+    def diag_params(self, value):
+        self._set_diag_params(value)
 
-    @trans_off_diag.setter
-    def trans_off_diag(self, value):
-        self._set_trans_off_diag(value)
+    @skew_params.setter
+    def skew_params(self, value):
+        self._set_skew_params(value)
 
-    def _set_trans_off_diag(self, value):
+    def _set_skew_params(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_trans_off_diag)
-        self.initialize(raw_trans_off_diag=self.raw_trans_off_diag_constraint.inverse_transform(value))
+            value = torch.as_tensor(value).to(self.raw_skew_params)
+        self.initialize(raw_skew_params=self.raw_skew_params_constraint.inverse_transform(value))
 
     # def _set_output_scale(self, value):
     #     if not torch.is_tensor(value):
     #         value = torch.as_tensor(value).to(self.raw_output_scale)
     #     self.initialize(raw_output_scale=self.raw_output_scale_constraint.inverse_transform(value))
 
-    def _set_trans_diagonal(self, value):
+    def _set_diag_params(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_trans_diagonal)
-        self.initialize(raw_trans_diagonal=self.raw_trans_diagonal_constraint.inverse_transform(value))
+            value = torch.as_tensor(value).to(self.raw_diag_params)
+        self.initialize(raw_diag_params=self.raw_diag_params_constraint.inverse_transform(value))
 
     @property
     def trans_matrix(self):
@@ -102,11 +226,11 @@ class LatentMaternKernel(gpytorch.kernels.Kernel):
         # construct an orthogonal matrix. fun fact: exp(skew(N)) is the generator of SO(N)
         else:
             A = torch.zeros((self.n_dim, self.n_dim)).double()
-            A[np.triu_indices(self.n_dim, k=1)] = self.trans_off_diag
+            A[np.triu_indices(self.n_dim, k=1)] = self.skew_params
             A += -A.T
             T = torch.linalg.matrix_exp(A)
 
-        T = torch.matmul(torch.diag(self.trans_diagonal), T)
+        T = torch.matmul(torch.diag(self.diag_params), T)
 
         return T
 
