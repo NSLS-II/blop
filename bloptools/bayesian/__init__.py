@@ -243,8 +243,10 @@ class Agent:
             )
             botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
 
+        log_feas_prob_weight = np.sqrt(np.sum(np.nanvar(self.targets.values, axis=0) * self.task_weights**2))
+
         self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-            weights=torch.tensor([*[task.weight for task in self.tasks], 1]).double(),
+            weights=torch.tensor([*[task.weight for task in self.tasks], log_feas_prob_weight]).double(),
             offset=0,
         )
 
