@@ -5,6 +5,10 @@ def booth(x1, x2):
     return (x1 + 2 * x2 - 7) ** 2 + (2 * x1 + x2 - 5) ** 2
 
 
+def matyas(x1, x2):
+    return 0.26 * (x1**2 + x2**2) - 0.48 * x1 * x2
+
+
 def himmelblau(x1, x2):
     return (x1**2 + x2 - 11) ** 2 + (x1 + x2**2 - 7) ** 2
 

@@ -3,7 +3,7 @@ import pytest
 from sirepo_bluesky.sirepo_ophyd import create_classes
 
 import bloptools
-from bloptools.experiments.sirepo import tes
+from bloptools.experiments.sirepo.tes import w9_digestion
 from bloptools.tasks import Task
 
 
@@ -29,13 +29,13 @@ def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
         detectors=[w9],
         active_dof_bounds=kb_bounds,
         tasks=[beam_flux_task, beam_width_task, beam_height_task],
-        digestion=tes.digestion,
+        digestion=w9_digestion,
         db=db,
     )
 
-    RE(agent.initialize(init_scheme="quasi-random", n_init=4))
+    RE(agent.initialize(acqf="qr", n_init=4))
 
-    RE(agent.learn(strategy="ei", n_iter=2))
-    RE(agent.learn(strategy="pi", n_iter=2))
+    RE(agent.learn(acqf="ei", n_iter=2))
+    RE(agent.learn(acqf="pi", n_iter=2))
 
     agent.plot_tasks()
