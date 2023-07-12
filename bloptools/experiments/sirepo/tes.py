@@ -1,11 +1,15 @@
 import numpy as np
 
 
-def digestion(db, uid, image_name="w9"):
-    """
-    Simulating a misaligned Gaussian beam. The optimum is at (1, 1, 1, 1)
-    """
+def w8_digestion(db, uid):
+    return image_digestion(db, uid, image_name="w8")
 
+
+def w9_digestion(db, uid):
+    return image_digestion(db, uid, image_name="w9")
+
+
+def image_digestion(db, uid, image_name):
     products = db[uid].table(fill=True)
 
     for index, entry in products.iterrows():

@@ -1,3 +1,5 @@
+import logging
+
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp  # noqa F401
 import botorch
@@ -15,8 +17,8 @@ from . import acquisition, models
 
 mpl.rc("image", cmap="coolwarm")
 
-DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen"]
-DEFAULT_COLORMAP = "inferno"
+DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
+DEFAULT_COLORMAP = "turbo"
 
 
 def default_acquisition_plan(dofs, inputs, dets):
@@ -35,10 +37,10 @@ def default_digestion_plan(db, uid):
 # targets: these are what our model tries to predict from the inputs
 # tasks: these are quantities that our agent will try to optimize over
 
+MAX_TEST_INPUTS = 2**11
+
 
 class Agent:
-    MAX_TEST_POINTS = 2**11
-
     def __init__(
         self,
         active_dofs,
@@ -65,8 +67,11 @@ class Agent:
         db : A databroker instance.
         """
 
+        for dof in active_dofs:
+            dof.kind = "hinted"
+
         self.active_dofs = np.atleast_1d(active_dofs)
-        self.active_dof_bounds = np.atleast_2d(active_dof_bounds)
+        self.active_dof_bounds = np.atleast_2d(active_dof_bounds).astype(float)
         self.tasks = np.atleast_1d(tasks)
         self.db = db
 
@@ -76,6 +81,8 @@ class Agent:
         self.initialization = kwargs.get("initialization", None)
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
         self.digestion = kwargs.get("digestion", default_digestion_plan)
+
+        self.tolerate_acquisition_errors = kwargs.get("tolerate_acquisition_errors", True)
 
         self.acquisition = acquisition.Acquisition()
 
@@ -96,28 +103,59 @@ class Agent:
 
         self.training_iter = kwargs.get("training_iter", 256)
 
-        # self.test_normalized_active_inputs = self.sampler(n=self.MAX_TEST_POINTS)
-        self.test_active_inputs = self.unnormalize_active_inputs(self.sampler(n=self.MAX_TEST_POINTS))
+        # self.test_normalized_active_inputs = self.sampler(n=self.MAX_TEST_INPUTS)
 
-        n_per_active_dim = int(np.power(self.MAX_TEST_POINTS, 1 / self.n_active_dof))
+        # make some test points for sampling
 
-        test_normalized_active_inputs_grid = np.swapaxes(
+        self.normalized_test_active_inputs = utils.normalized_sobol_sampler(n=MAX_TEST_INPUTS, d=self.n_active_dof)
+
+        n_per_active_dim = int(np.power(MAX_TEST_INPUTS, 1 / self.n_active_dof))
+
+        self.normalized_test_active_inputs_grid = np.swapaxes(
             np.r_[np.meshgrid(*self.n_active_dof * [np.linspace(0, 1, n_per_active_dim)])], 0, -1
         )
-
-        self.test_active_inputs_grid = self.unnormalize_active_inputs(test_normalized_active_inputs_grid)
 
         self.table = pd.DataFrame()
 
         self._initialized = False
 
+    def normalize_active_inputs(self, x):
+        return (x - self.active_dof_bounds.min(axis=1)) / self.active_dof_bounds.ptp(axis=1)
+
+    def unnormalize_active_inputs(self, x):
+        return x * self.active_dof_bounds.ptp(axis=1) + self.active_dof_bounds.min(axis=1)
+
+    def active_inputs_sampler(self, n=MAX_TEST_INPUTS):
+        """
+        Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
+        """
+        return self.unnormalize_active_inputs(utils.normalized_sobol_sampler(n, self.n_active_dof))
+
+    @property
+    def test_active_inputs(self):
+        """
+        A static, quasi-randomly sampled set of test active inputs.
+        """
+        return self.unnormalize_active_inputs(self.normalized_test_active_inputs)
+
+    @property
+    def test_active_inputs_grid(self):
+        """
+        A static, gridded set of test active inputs.
+        """
+        return self.unnormalize_active_inputs(self.normalized_test_active_inputs_grid)
+
+    # @property
+    # def input_transform(self):
+    #     coefficient = torch.tensor(self.inputs.values.ptp(axis=0))
+    #     offset = torch.tensor(self.inputs.values.min(axis=0))
+    #     return botorch.models.transforms.input.AffineInputTransform(
+    #         d=self.n_dof, coefficient=coefficient, offset=offset
+    #     )
+
     @property
     def input_transform(self):
-        coefficient = torch.tensor(self.inputs.values.ptp(axis=0))
-        offset = torch.tensor(self.inputs.values.min(axis=0))
-        return botorch.models.transforms.input.AffineInputTransform(
-            d=self.n_dof, coefficient=coefficient, offset=offset
-        )
+        return botorch.models.transforms.input.Normalize(d=self.n_dof)
 
     def save(self, filepath="./agent_data.h5"):
         """
@@ -139,13 +177,10 @@ class Agent:
         subset = np.random.choice(min_power_of_two, size=n, replace=False)
         return sp.stats.qmc.Sobol(d=self.n_active_dof, scramble=True).random(n=min_power_of_two)[subset]
 
-    def active_dof_sampler(self, n, q=1):
-        return botorch.utils.sampling.draw_sobol_samples(torch.tensor(self.active_dof_bounds.T), n=n, q=q)
-
     def initialize(
         self,
         filepath=None,
-        init_scheme=None,
+        acqf=None,
         n_init=4,
     ):
         """
@@ -154,37 +189,33 @@ class Agent:
         It should be passed to a Bluesky RunEngine.
         """
 
-        init_table = None
-
-        if filepath is not None:
-            init_table = pd.read_hdf(filepath, key="table")
-
         # experiment-specific stuff
         if self.initialization is not None:
             yield from self.initialization()
 
+        if filepath is not None:
+            self.tell(new_table=pd.read_hdf(filepath, key="table"))
+
         # now let's get bayesian
-        if init_scheme == "quasi-random":
-            init_dof_inputs = self.ask(strategy="quasi-random", n=n_init, route=True)
-            init_table = yield from self.acquire(dof_inputs=init_dof_inputs)
+        elif acqf in ["qr"]:
+            yield from self.learn(acqf=acqf, n_iter=1, n_per_iter=n_init, route=True)
 
         else:
             raise Exception(
-                "Could not initialize model! Either pass initial X and data, or specify one of:"
-                "['quasi-random']."
+                """Could not initialize model! Either load a table, or specify an acqf from:
+['qr']."""
             )
 
-        if init_table is None:
-            raise RuntimeError("Unhandled initialization error.")
+        # if init_table is None:
+        #    raise RuntimeError("Unhandled initialization error.")
 
-        no_good_samples_tasks = np.isnan(init_table.loc[:, self.target_names]).all(axis=0)
+        no_good_samples_tasks = np.isnan(self.table.loc[:, self.target_names]).all(axis=0)
         if no_good_samples_tasks.any():
             raise ValueError(
                 f"The tasks {[self.tasks[i].name for i in np.where(no_good_samples_tasks)[0]]} "
                 f"don't have any good samples."
             )
 
-        self.tell(new_table=init_table, verbose=self.verbose)
         self._initialized = True
 
     def tell(self, new_table=None, append=True, **kwargs):
@@ -230,7 +261,7 @@ class Agent:
                 ),
             ).double()
 
-            task.regressor = models.BoTorchSingleTaskGP(
+            task.regressor = models.LatentGP(
                 train_inputs=train_inputs,
                 train_targets=train_targets,
                 likelihood=likelihood,
@@ -241,9 +272,10 @@ class Agent:
             task.regressor_mll = gpytorch.mlls.ExactMarginalLogLikelihood(
                 task.regressor.likelihood, task.regressor
             )
-            botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
 
-        log_feas_prob_weight = np.sqrt(np.sum(np.nanvar(self.targets.values, axis=0) * self.task_weights**2))
+        log_feas_prob_weight = np.sqrt(
+            np.sum(np.nanvar(self.targets.values, axis=0) * np.square(self.task_weights))
+        )
 
         self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
             weights=torch.tensor([*[task.weight for task in self.tasks], log_feas_prob_weight]).double(),
@@ -254,7 +286,7 @@ class Agent:
             torch.as_tensor(self.all_targets_valid).long(), learn_additional_noise=True
         ).double()
 
-        self.dirichlet_classifier = models.BoTorchDirichletClassifier(
+        self.dirichlet_classifier = models.LatentDirichletClassifier(
             train_inputs=torch.tensor(self.inputs.values).double(),
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             likelihood=dirichlet_likelihood,
@@ -264,11 +296,12 @@ class Agent:
         self.dirichlet_classifier_mll = gpytorch.mlls.ExactMarginalLogLikelihood(
             self.dirichlet_classifier.likelihood, self.dirichlet_classifier
         )
-        botorch.fit.fit_gpytorch_mll(self.dirichlet_classifier_mll, **kwargs)
 
         self.feas_model = botorch.models.deterministic.GenericDeterministicModel(
-            f=lambda X: self.dirichlet_classifier.log_prob(X)
+            f=lambda X: -self.dirichlet_classifier.log_prob(X).square()
         )
+
+        self.fit_models()
 
         self.targets_model = botorch.models.model_list_gp_regression.ModelListGP(
             *[task.regressor for task in self.tasks]
@@ -276,26 +309,36 @@ class Agent:
 
         self.task_model = botorch.models.model.ModelList(*[task.regressor for task in self.tasks], self.feas_model)
 
-    def get_acquisition_function(self, strategy="ei", return_metadata=False, acqf_args={}, **kwargs):
-        if strategy.lower() == "ei":
+    def fit_models(self, **kwargs):
+        for task in self.tasks:
+            botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
+        botorch.fit.fit_gpytorch_mll(self.dirichlet_classifier_mll, **kwargs)
+
+    def get_acquisition_function(self, acqf_name="ei", return_metadata=False, acqf_args={}, **kwargs):
+        if not self._initialized:
+            raise RuntimeError(
+                f'Can\'t construct acquisition function "{acqf_name}" (the agent is not initialized!)'
+            )
+
+        if acqf_name.lower() == "ei":
             acqf = botorch.acquisition.analytic.LogExpectedImprovement(
                 self.task_model,
                 best_f=self.best_sum_of_tasks,
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
-            acqf_meta = {"name": "Expected Improvement", "args": {}}
+            acqf_meta = {"name": "expected improvement", "args": {}}
 
-        elif strategy.lower() == "pi":
+        elif acqf_name.lower() == "pi":
             acqf = botorch.acquisition.analytic.LogProbabilityOfImprovement(
                 self.task_model,
                 best_f=self.best_sum_of_tasks,
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
-            acqf_meta = {"name": "Probability of Improvement", "args": {}}
+            acqf_meta = {"name": "probability of improvement", "args": {}}
 
-        elif strategy.lower() == "ucb":
+        elif acqf_name.lower() == "ucb":
             beta = acqf_args.get("beta", 0.1)
             acqf = botorch.acquisition.analytic.UpperConfidenceBound(
                 self.task_model,
@@ -303,10 +346,10 @@ class Agent:
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
-            acqf_meta = {"name": "Upper Confidence Bound", "args": {"beta": beta}}
+            acqf_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
 
         else:
-            raise ValueError(f'Unrecognized acquisition strategy "{strategy}".')
+            raise ValueError(f'Unrecognized acquisition acqf_name "{acqf_name}".')
 
         return (acqf, acqf_meta) if return_metadata else acqf
 
@@ -314,59 +357,61 @@ class Agent:
         self,
         tasks=None,
         classifier=None,
-        strategy="ei",
+        acqf_name="ei",
         greedy=True,
         n=1,
         disappointment=0,
-        route=True,
+        route=False,
         cost_model=None,
         n_test=1024,
         optimize=True,
+        return_metadata=False,
     ):
         """
         The next $n$ points to sample, recommended by the agent.
         """
 
-        if route:
-            unrouted_points = self.ask(
-                tasks=tasks,
-                classifier=classifier,
-                strategy=strategy,
-                greedy=greedy,
-                n=n,
-                disappointment=disappointment,
-                route=False,
-                cost_model=cost_model,
-                n_test=n_test,
+        # if route:
+        #     unrouted_points = self.ask(
+        #         tasks=tasks,
+        #         classifier=classifier,
+        #         strategy=strategy,
+        #         greedy=greedy,
+        #         n=n,
+        #         disappointment=disappointment,
+        #         route=False,
+        #         cost_model=cost_model,
+        #         n_test=n_test,
+        #     )
+
+        #     routing_index, _ = utils.get_routing(self.read_active_dofs, unrouted_points)
+        #     x = unrouted_points[routing_index]
+
+        if acqf_name.lower() == "qr":
+            x = self.active_inputs_sampler(n=n)
+            acqf_meta = {"name": "quasi-random", "args": {}}
+
+        else:
+            acqf, acqf_meta = self.get_acquisition_function(acqf_name=acqf_name, return_metadata=True)
+
+            BATCH_SIZE = 1
+            NUM_RESTARTS = 7
+            RAW_SAMPLES = 512
+
+            candidates, _ = botorch.optim.optimize_acqf(
+                acq_function=acqf,
+                bounds=torch.tensor(self.dof_bounds).T,
+                q=BATCH_SIZE,
+                num_restarts=NUM_RESTARTS,
+                raw_samples=RAW_SAMPLES,  # used for intialization heuristic
+                options={"batch_limit": 3, "maxiter": 1024},
             )
 
-            routing_index, _ = utils.get_routing(self.read_active_dofs, unrouted_points)
-            return unrouted_points[routing_index]
+            x = candidates.detach().numpy()[..., self.dof_is_active_mask]
 
-        if strategy.lower() == "quasi-random":
-            return self.unnormalize_active_inputs(self.sampler(n=n))
+        return (x, acqf_meta) if return_metadata else x
 
-        if not self._initialized:
-            raise RuntimeError("The agent is not initialized!")
-
-        self.acqf = self.get_acquisition_function(strategy=strategy)
-
-        BATCH_SIZE = 1
-        NUM_RESTARTS = 7
-        RAW_SAMPLES = 512
-
-        candidates, _ = botorch.optim.optimize_acqf(
-            acq_function=self.acqf,
-            bounds=torch.tensor(self.dof_bounds).T,
-            q=BATCH_SIZE,
-            num_restarts=NUM_RESTARTS,
-            raw_samples=RAW_SAMPLES,  # used for intialization heuristic
-            options={"batch_limit": 5, "maxiter": 200},
-        )
-
-        return candidates.detach().numpy()[..., self.dof_is_active_mask]
-
-    def acquire(self, dof_inputs):
+    def acquire(self, active_inputs):
         """
         Acquire and digest according to the agent's acquisition and digestion plans.
 
@@ -374,47 +419,43 @@ class Agent:
         """
         try:
             uid = yield from self.acquisition_plan(
-                self.dofs, dof_inputs, [*self.dets, *self.dofs, *self.passive_dofs]
+                self.dofs, active_inputs, [*self.dets, *self.dofs, *self.passive_dofs]
             )
+
             products = self.digestion(self.db, uid)
-            if "rejected" not in products.keys():
-                products["rejected"] = False
 
             # compute the fitness for each task
             for index, entry in products.iterrows():
                 for task in self.tasks:
                     products.loc[index, task.name] = task.get_fitness(entry)
 
-        except Exception as err:
-            raise err
+        except Exception as error:
+            if not self.tolerate_acquisition_errors:
+                raise error
+            logging.warning(f"Error in acquisition/digestion: {repr(error)}")
+            products = pd.DataFrame(active_inputs, columns=self.active_dof_names)
+            for task in self.tasks:
+                products.loc[:, task.name] = np.nan
 
-        if not len(dof_inputs) == len(products):
-            raise ValueError("The resulting table must be the same length as the sampled inputs!")
+        if not len(active_inputs) == len(products):
+            raise ValueError("The table returned by the digestion must be the same length as the sampled inputs!")
 
         return products
 
-    def learn(
-        self, strategy, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs
-    ):
+    def learn(self, acqf, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs):
         """
         This iterates the learning algorithm, looping over ask -> acquire -> tell.
         It should be passed to a Bluesky RunEngine.
         """
 
-        print(f'learning with strategy "{strategy}" ...')
-
         for i in range(n_iter):
-            inputs_to_sample = np.atleast_2d(self.ask(n=n_per_iter, strategy=strategy, **kwargs))
+            x, acqf_meta = self.ask(n=n_per_iter, acqf_name=acqf, return_metadata=True, **kwargs)
 
-            new_table = yield from self.acquire(inputs_to_sample)
+            new_table = yield from self.acquire(x)
+
+            new_table.loc[:, "acqf"] = acqf_meta["name"]
 
             self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
-
-    def normalize_active_inputs(self, inputs):
-        return (inputs - self.active_dof_bounds.min(axis=1)) / self.active_dof_bounds.ptp(axis=1)
-
-    def unnormalize_active_inputs(self, X):
-        return X * self.active_dof_bounds.ptp(axis=1) + self.active_dof_bounds.min(axis=1)
 
     def normalize_inputs(self, inputs):
         return (inputs - self.input_bounds.min(axis=1)) / self.input_bounds.ptp(axis=1)
@@ -631,7 +672,7 @@ class Agent:
             log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy()
 
             self.class_axes[1].scatter(
-                *self.test_inputs.T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap
+                *x.detach().numpy().T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap
             )
 
         self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
@@ -731,10 +772,10 @@ class Agent:
 
             else:
                 self.task_axes[itask, 1].scatter(
-                    *self.test_inputs.T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap
+                    *x.detach().numpy().T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap
                 )
                 sigma_ax = self.task_axes[itask, 2].scatter(
-                    *self.test_inputs.T[axes], s=size, c=task_sigma, cmap=cmap
+                    *x.detach().numpy().T[axes], s=size, c=task_sigma, cmap=cmap
                 )
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
@@ -745,46 +786,46 @@ class Agent:
             ax.set_ylim(*self.active_dof_bounds[axes[1]])
 
     def _plot_acq_one_dof(self, size=32, lw=1e0, **kwargs):
-        strategies = np.atleast_1d(kwargs.get("strategy", "ei"))
+        acqf_names = np.atleast_1d(kwargs.get("acqf", "ei"))
 
         self.acq_fig, self.acq_axes = plt.subplots(
             1,
-            len(strategies),
-            figsize=(6 * len(strategies), 6),
+            len(acqf_names),
+            figsize=(6 * len(acqf_names), 6),
             sharex=True,
             constrained_layout=True,
         )
 
         self.acq_axes = np.atleast_1d(self.acq_axes)
 
-        for istrat, strategy in enumerate(strategies):
+        for iacqf, acqf_name in enumerate(acqf_names):
             color = DEFAULT_COLOR_LIST[0]
 
-            acqf, acqf_meta = self.get_acquisition_function(strategy, return_metadata=True)
+            acqf, acqf_meta = self.get_acquisition_function(acqf_name, return_metadata=True)
 
             *grid_shape, dim = self.test_inputs_grid.shape
             x = torch.tensor(self.test_inputs_grid.reshape(-1, 1, dim)).double()
             obj = acqf.forward(x)
 
-            if strategy in ["ei", "pi"]:
+            if acqf_name in ["ei", "pi"]:
                 obj = obj.exp()
 
-            self.acq_axes[istrat].set_title(acqf_meta["name"])
-            self.acq_axes[istrat].plot(
+            self.acq_axes[iacqf].set_title(acqf_meta["name"])
+            self.acq_axes[iacqf].plot(
                 self.test_active_inputs_grid.ravel(), obj.detach().numpy().ravel(), lw=lw, color=color
             )
 
-            self.acq_axes[istrat].set_xlim(*self.active_dof_bounds[0])
+            self.acq_axes[iacqf].set_xlim(*self.active_dof_bounds[0])
 
     def _plot_acq_many_dofs(
         self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, **kwargs
     ):
-        strategies = np.atleast_1d(kwargs.get("strategy", "ei"))
+        acqf_names = np.atleast_1d(kwargs.get("acqf", "ei"))
 
         self.acq_fig, self.acq_axes = plt.subplots(
             1,
-            len(strategies),
-            figsize=(4 * len(strategies), 5),
+            len(acqf_names),
+            figsize=(4 * len(acqf_names), 5),
             sharex=True,
             sharey=True,
             constrained_layout=True,
@@ -796,26 +837,43 @@ class Agent:
         self.acq_axes = np.atleast_1d(self.acq_axes)
         self.acq_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        for istrat, strategy in enumerate(strategies):
-            acqf, acqf_meta = self.get_acquisition_function(strategy, return_metadata=True)
+        for iacqf, acqf_name in enumerate(acqf_names):
+            acqf, acqf_meta = self.get_acquisition_function(acqf_name, return_metadata=True)
 
             if gridded:
                 *grid_shape, dim = self.test_inputs_grid.shape
                 x = torch.tensor(self.test_inputs_grid.reshape(-1, 1, dim)).double()
                 obj = acqf.forward(x)
 
-                if strategy in ["ei", "pi"]:
+                if acqf_name in ["ei", "pi"]:
                     obj = obj.exp()
 
-                self.acq_axes[istrat].set_title(acqf_meta["name"])
-                obj_ax = self.acq_axes[istrat].pcolormesh(
+                self.acq_axes[iacqf].set_title(acqf_meta["name"])
+                obj_ax = self.acq_axes[iacqf].pcolormesh(
                     *np.swapaxes(self.test_inputs_grid, 0, -1),
                     obj.detach().numpy().reshape(grid_shape).T,
                     shading=shading,
                     cmap=cmap,
                 )
 
-                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[istrat], location="bottom", aspect=32, shrink=0.8)
+                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
+
+            else:
+                *inputs_shape, dim = self.test_inputs.shape
+                x = torch.tensor(self.test_inputs.reshape(-1, 1, dim)).double()
+                obj = acqf.forward(x)
+
+                if acqf_name in ["ei", "pi"]:
+                    obj = obj.exp()
+
+                self.acq_axes[iacqf].set_title(acqf_meta["name"])
+                obj_ax = self.acq_axes[iacqf].scatter(
+                    x.detach().numpy()[..., axes[0]],
+                    x.detach().numpy()[..., axes[1]],
+                    c=obj.detach().numpy().reshape(inputs_shape),
+                )
+
+                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
         for ax in self.acq_axes.ravel():
             ax.set_xlim(*self.active_dof_bounds[axes[0]])

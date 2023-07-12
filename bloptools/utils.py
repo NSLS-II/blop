@@ -1,6 +1,16 @@
+import botorch
 import numpy as np
 import scipy as sp
+import torch
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
+
+def normalized_sobol_sampler(n, d):
+    """
+    Returns $n$ quasi-randomly sampled points in the [0,1]^d hypercube
+    """
+    x = botorch.utils.sampling.draw_sobol_samples(torch.outer(torch.tensor([0, 1]), torch.ones(d)), n=n, q=1)
+    return x.squeeze(1).detach().numpy()
 
 
 def estimate_root_indices(x):
