@@ -1,5 +1,5 @@
 class Task:
-    MIN_NOISE_LEVEL = 1e-4
+    MIN_NOISE_LEVEL = 1e-6
     MAX_NOISE_LEVEL = 1e-2
 
     def __init__(self, key, kind="max", name=None, transform=None, **kwargs):
