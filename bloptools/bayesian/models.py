@@ -17,7 +17,7 @@ class LatentDirichletClassifier(botorch.models.gp_regression.SingleTaskGP):
             num_outputs=train_targets.shape[-1],
             off_diag=True,
             diag_prior=True,
-            scale_output=True,
+            scale=True,
             **kwargs
         )
 
@@ -38,7 +38,7 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
             num_outputs=train_targets.shape[-1],
             off_diag=True,
             diag_prior=True,
-            scale_output=True,
+            scale=True,
             **kwargs
         )
 

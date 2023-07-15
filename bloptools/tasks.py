@@ -5,7 +5,7 @@ class Task:
     def __init__(self, key, kind="max", name=None, transform=None, **kwargs):
         self.key = key
         self.kind = kind
-        self.name = name if name is not None else f"{kind}_{key}_fitness"
+        self.name = name if name is not None else f"{key}_fitness"
         self.transform = transform if transform is not None else lambda x: x
         self.weight = 1.0
 

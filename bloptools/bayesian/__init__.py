@@ -12,7 +12,7 @@ import scipy as sp
 import torch
 from matplotlib import pyplot as plt
 
-from .. import utils
+from .. import devices, utils
 from . import acquisition, models
 
 mpl.rc("image", cmap="coolwarm")
@@ -57,7 +57,7 @@ class Agent:
         dofs : iterable of ophyd objects
             The degrees of freedom that the agent can control, which determine the output of the model.
         bounds : iterable of lower and upper bounds
-            The bounds on each degree of freedom. This should be an array of shape (n_dof, 2).
+            The bounds on each degree of freedom. This should be an array of shape (n_dofs, 2).
         tasks : iterable of tasks
             The tasks which the agent will try to optimize.
         acquisition : Bluesky plan generator that takes arguments (dofs, inputs, dets)
@@ -82,6 +82,8 @@ class Agent:
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
         self.digestion = kwargs.get("digestion", default_digestion_plan)
 
+        self.decoherence = kwargs.get("decoherence", False)
+
         self.tolerate_acquisition_errors = kwargs.get("tolerate_acquisition_errors", True)
 
         self.acquisition = acquisition.Acquisition()
@@ -89,15 +91,11 @@ class Agent:
         self.dets = np.atleast_1d(kwargs.get("detectors", []))
         self.passive_dofs = np.atleast_1d(kwargs.get("passive_dofs", []))
 
+        if self.decoherence:
+            self.passive_dofs = np.append(self.passive_dofs, devices.TimeReadback(name="timestamp"))
+
         for i, task in enumerate(self.tasks):
             task.index = i
-
-        self.n_active_dof = self.active_dofs.size
-        self.n_passive_dof = self.passive_dofs.size
-
-        self.dofs = np.r_[self.active_dofs, self.passive_dofs]
-
-        self.n_dof = self.n_active_dof + self.n_passive_dof
 
         self.n_tasks = len(self.tasks)
 
@@ -107,12 +105,14 @@ class Agent:
 
         # make some test points for sampling
 
-        self.normalized_test_active_inputs = utils.normalized_sobol_sampler(n=MAX_TEST_INPUTS, d=self.n_active_dof)
+        self.normalized_test_active_inputs = utils.normalized_sobol_sampler(
+            n=MAX_TEST_INPUTS, d=self.n_active_dofs
+        )
 
-        n_per_active_dim = int(np.power(MAX_TEST_INPUTS, 1 / self.n_active_dof))
+        n_per_active_dim = int(np.power(MAX_TEST_INPUTS, 1 / self.n_active_dofs))
 
         self.normalized_test_active_inputs_grid = np.swapaxes(
-            np.r_[np.meshgrid(*self.n_active_dof * [np.linspace(0, 1, n_per_active_dim)])], 0, -1
+            np.r_[np.meshgrid(*self.n_active_dofs * [np.linspace(0, 1, n_per_active_dim)])], 0, -1
         )
 
         self.table = pd.DataFrame()
@@ -129,7 +129,23 @@ class Agent:
         """
         Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
         """
-        return self.unnormalize_active_inputs(utils.normalized_sobol_sampler(n, self.n_active_dof))
+        return self.unnormalize_active_inputs(utils.normalized_sobol_sampler(n, self.n_active_dofs))
+
+    @property
+    def dofs(self):
+        return np.append(self.active_dofs, self.passive_dofs)
+
+    @property
+    def n_active_dofs(self):
+        return self.active_dofs.size
+
+    @property
+    def n_passive_dofs(self):
+        return self.passive_dofs.size
+
+    @property
+    def n_dofs(self):
+        return self.n_active_dofs + self.n_passive_dofs
 
     @property
     def test_active_inputs(self):
@@ -155,15 +171,20 @@ class Agent:
 
     @property
     def input_transform(self):
-        return botorch.models.transforms.input.Normalize(d=self.n_dof)
+        return botorch.models.transforms.input.Normalize(d=self.n_dofs)
 
     def save(self, filepath="./agent_data.h5"):
         """
         Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future agent.
         """
+
         with h5py.File(filepath, "w") as f:
-            f.create_dataset("inputs", data=self.inputs)
+            for task in self.tasks:
+                f.create_group(task.name)
+                for key, value in task.regressor.state_dict().items():
+                    f[task.name].create_dataset(key, data=value)
+
         self.table.to_hdf(filepath, key="table")
 
     def forget(self, index):
@@ -175,7 +196,7 @@ class Agent:
         """
         min_power_of_two = 2 ** int(np.ceil(np.log(n) / np.log(2)))
         subset = np.random.choice(min_power_of_two, size=n, replace=False)
-        return sp.stats.qmc.Sobol(d=self.n_active_dof, scramble=True).random(n=min_power_of_two)[subset]
+        return sp.stats.qmc.Sobol(d=self.n_active_dofs, scramble=True).random(n=min_power_of_two)[subset]
 
     def initialize(
         self,
@@ -479,7 +500,7 @@ class Agent:
     @property
     def test_inputs_grid(self):
         test_passive_inputs_grid = self.passive_inputs.values[-1] * np.ones(
-            (*self.test_active_inputs_grid.shape[:-1], self.n_passive_dof)
+            (*self.test_active_inputs_grid.shape[:-1], self.n_passive_dofs)
         )
         return np.concatenate([self.test_active_inputs_grid, test_passive_inputs_grid], axis=-1)
 
@@ -541,7 +562,7 @@ class Agent:
 
     @property
     def dof_is_active_mask(self):
-        return np.r_[np.ones(self.n_active_dof), np.zeros(self.n_passive_dof)].astype(bool)
+        return np.r_[np.ones(self.n_active_dofs), np.zeros(self.n_passive_dofs)].astype(bool)
 
     @property
     def dof_bounds(self):
@@ -604,21 +625,21 @@ class Agent:
         yield from self.go_to(self.best_sum_of_tasks_inputs)
 
     def plot_tasks(self, **kwargs):
-        if self.n_active_dof == 1:
+        if self.n_active_dofs == 1:
             self._plot_tasks_one_dof(**kwargs)
 
         else:
             self._plot_tasks_many_dofs(**kwargs)
 
     def plot_feasibility(self, **kwargs):
-        if self.n_active_dof == 1:
+        if self.n_active_dofs == 1:
             self._plot_feas_one_dof(**kwargs)
 
         else:
             self._plot_feas_many_dofs(**kwargs)
 
     def plot_acquisition(self, **kwargs):
-        if self.n_active_dof == 1:
+        if self.n_active_dofs == 1:
             self._plot_acq_one_dof(**kwargs)
 
         else:
@@ -629,7 +650,7 @@ class Agent:
 
         self.class_ax.scatter(self.inputs.values, self.all_targets_valid.astype(int), s=size)
 
-        x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dof)).double()
+        x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dofs)).double()
         log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
 
         self.class_ax.plot(self.test_inputs_grid.ravel(), np.exp(log_prob))
@@ -638,7 +659,7 @@ class Agent:
 
     def _plot_feas_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=32, gridded=None):
         if gridded is None:
-            gridded = self.n_dof == 2
+            gridded = self.n_dofs == 2
 
         self.class_fig, self.class_axes = plt.subplots(
             1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True
@@ -653,7 +674,7 @@ class Agent:
         )
 
         if gridded:
-            x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dof)).double()
+            x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dofs)).double()
             log_prob = (
                 self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
             )
@@ -718,7 +739,7 @@ class Agent:
 
     def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32):
         if gridded is None:
-            gridded = self.n_dof == 2
+            gridded = self.n_dofs == 2
 
         self.task_fig, self.task_axes = plt.subplots(
             self.n_tasks,
@@ -832,7 +853,7 @@ class Agent:
         )
 
         if gridded is None:
-            gridded = self.n_active_dof == 2
+            gridded = self.n_active_dofs == 2
 
         self.acq_axes = np.atleast_1d(self.acq_axes)
         self.acq_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")

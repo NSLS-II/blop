@@ -11,22 +11,33 @@ class LatentKernel(gpytorch.kernels.Kernel):
     def __init__(
         self,
         num_inputs=1,
-        off_diag=True,
+        skew_dims=True,
         diag_prior=True,
-        scale_kernel=True,
+        scale_output=True,
         **kwargs,
     ):
         super(LatentKernel, self).__init__()
 
         self.num_inputs = num_inputs
-        self.n_off_diag = int(num_inputs * (num_inputs - 1) / 2)
 
-        self.off_diag = off_diag
-        self.scale_kernel = scale_kernel
+        # self.active_dimensions = active_dimensions if active_dimensions is not None else np.arange(self.num_inputs)
+
+        if type(skew_dims) is bool:
+            if skew_dims:
+                self.skew_dims = torch.arange(self.num_inputs)
+            if skew_dims:
+                self.skew_dims = torch.tensor([])
+        elif type(skew_dims) is torch.Tensor:
+            self.skew_dims = skew_dims
+        else:
+            raise ValueError()
+
+        self.off_diag = True if skew_dims else False
+        self.scale_output = scale_output
 
         self.nu = kwargs.get("nu", 1.5)
 
-        # kernel_scale_constraint = gpytorch.constraints.Positive()
+        # output_scale_constraint = gpytorch.constraints.Positive()
         diag_entries_constraint = gpytorch.constraints.Positive()  # gpytorch.constraints.Interval(5e-1, 1e2)
         skew_entries_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
 
@@ -57,23 +68,31 @@ class LatentKernel(gpytorch.kernels.Kernel):
             )
             self.register_constraint("raw_skew_entries", skew_entries_constraint)
 
-        if self.scale_kernel:
-            kernel_scale_constraint = gpytorch.constraints.Positive()
-            kernel_scale_prior = gpytorch.priors.GammaPrior(concentration=2, rate=0.15)
+        if self.scale_output:
+            output_scale_constraint = gpytorch.constraints.Positive()
+            output_scale_prior = gpytorch.priors.GammaPrior(concentration=2, rate=0.15)
 
             self.register_parameter(
-                name="raw_kernel_scale",
+                name="raw_output_scale",
                 parameter=torch.nn.Parameter(torch.ones(1)),
             )
 
-            self.register_constraint("raw_kernel_scale", constraint=kernel_scale_constraint)
+            self.register_constraint("raw_output_scale", constraint=output_scale_constraint)
 
             self.register_prior(
-                name="kernel_scale_prior",
-                prior=kernel_scale_prior,
-                param_or_closure=lambda m: m.kernel_scale,
-                setting_closure=lambda m, v: m._set_kernel_scale(v),
+                name="output_scale_prior",
+                prior=output_scale_prior,
+                param_or_closure=lambda m: m.output_scale,
+                setting_closure=lambda m, v: m._set_output_scale(v),
             )
+
+    @property
+    def n_skew_dims(self):
+        return len(self.skew_dims)
+
+    @property
+    def n_skew_entries(self):
+        return int(self.n_skew_dims * (self.n_skew_dims - 1) / 2)
 
     @property
     def diag_entries(self):
@@ -84,8 +103,8 @@ class LatentKernel(gpytorch.kernels.Kernel):
         return self.raw_skew_entries_constraint.transform(self.raw_skew_entries)
 
     @property
-    def kernel_scale(self):
-        return self.raw_kernel_scale_constraint.transform(self.raw_kernel_scale)
+    def output_scale(self):
+        return self.raw_output_scale_constraint.transform(self.raw_output_scale)
 
     @diag_entries.setter
     def diag_entries(self, value):
@@ -95,9 +114,9 @@ class LatentKernel(gpytorch.kernels.Kernel):
     def skew_entries(self, value):
         self._set_skew_entries(value)
 
-    @kernel_scale.setter
-    def kernel_scale(self, value):
-        self._set_kernel_scale(value)
+    @output_scale.setter
+    def output_scale(self, value):
+        self._set_output_scale(value)
 
     def _set_diag_entries(self, value):
         if not torch.is_tensor(value):
@@ -109,14 +128,10 @@ class LatentKernel(gpytorch.kernels.Kernel):
             value = torch.as_tensor(value).to(self.raw_skew_entries)
         self.initialize(raw_skew_entries=self.raw_skew_entries_constraint.inverse_transform(value))
 
-    def _set_kernel_scale(self, value):
+    def _set_output_scale(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_kernel_scale)
-        self.initialize(raw_kernel_scale=self.raw_kernel_scale_constraint.inverse_transform(value))
-
-    @property
-    def output_scale(self):
-        return self.kernel_scale.sqrt()
+            value = torch.as_tensor(value).to(self.raw_output_scale)
+        self.initialize(raw_output_scale=self.raw_output_scale_constraint.inverse_transform(value))
 
     @property
     def latent_dimensions(self):
@@ -145,4 +160,4 @@ class LatentKernel(gpytorch.kernels.Kernel):
 
         distance = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
 
-        return self.kernel_scale * (1 + distance) * torch.exp(-distance)
+        return (self.output_scale if self.scale_output else 1.0) * (1 + distance) * torch.exp(-distance)
