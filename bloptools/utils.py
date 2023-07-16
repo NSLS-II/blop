@@ -1,6 +1,16 @@
+import botorch
 import numpy as np
 import scipy as sp
+import torch
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+
+
+def normalized_sobol_sampler(n, d):
+    """
+    Returns $n$ quasi-randomly sampled points in the [0,1]^d hypercube
+    """
+    x = botorch.utils.sampling.draw_sobol_samples(torch.outer(torch.tensor([0, 1]), torch.ones(d)), n=n, q=1)
+    return x.squeeze(1).detach().numpy()
 
 
 def estimate_root_indices(x):
@@ -43,9 +53,7 @@ def get_routing(origin, points):
     delay_matrix = np.sqrt(np.square(rel_points[:, None, :] - rel_points[None, :, :]).sum(axis=-1))
     delay_matrix = (1e3 * delay_matrix).astype(int)  # it likes integers idk
 
-    manager = pywrapcp.RoutingIndexManager(
-        len(_points), 1, 0
-    )  # number of depots, number of salesmen, starting index
+    manager = pywrapcp.RoutingIndexManager(len(_points), 1, 0)  # number of depots, number of salesmen, starting index
     routing = pywrapcp.RoutingModel(manager)
 
     def delay_callback(from_index, to_index):

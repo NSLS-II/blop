@@ -1,48 +1,50 @@
 import pytest
 
 import bloptools
-from bloptools.experiments.tests import himmelblau_digestion, mock_kbs_digestion
 from bloptools.tasks import Task
+from bloptools.test_functions import himmelblau_digestion, mock_kbs_digestion
 
 
 @pytest.mark.test_func
 def test_bayesian_agent_himmelblau(RE, db):
-    dofs = bloptools.experiments.tests.get_dummy_dofs(n=2)  # get a list of two DOFs
+    dofs = bloptools.devices.dummy_dofs(n=2)  # get a list of two DOFs
     bounds = [(-5.0, +5.0), (-5.0, +5.0)]
     task = Task(key="himmelblau", kind="min")
 
-    boa = bloptools.bayesian.Agent(
-        dofs=dofs,
-        bounds=bounds,
-        tasks=task,
+    agent = bloptools.bayesian.Agent(
+        active_dofs=dofs,
+        passive_dofs=[],
+        active_dof_bounds=bounds,
+        tasks=[task],
         digestion=himmelblau_digestion,
         db=db,
     )
 
-    RE(boa.initialize(init_scheme="quasi-random", n_init=16))
+    RE(agent.initialize(acqf="qr", n_init=16))
 
-    RE(boa.learn(strategy="esti", n_iter=2, n_per_iter=3))
+    RE(agent.learn(acqf="ei", n_iter=2))
 
-    boa.plot_tasks()
+    agent.plot_tasks()
 
 
 @pytest.mark.test_func
 def test_bayesian_agent_mock_kbs(RE, db):
-    dofs = bloptools.experiments.tests.get_dummy_dofs(n=4)  # get a list of two DOFs
+    dofs = bloptools.devices.dummy_dofs(n=4)  # get a list of two DOFs
     bounds = [(-4.0, +4.0), (-4.0, +4.0), (-4.0, +4.0), (-4.0, +4.0)]
 
     tasks = [Task(key="x_width", kind="min"), Task(key="y_width", kind="min")]
 
-    boa = bloptools.bayesian.Agent(
-        dofs=dofs,
-        bounds=bounds,
+    agent = bloptools.bayesian.Agent(
+        active_dofs=dofs,
+        passive_dofs=[],
+        active_dof_bounds=bounds,
         tasks=tasks,
         digestion=mock_kbs_digestion,
         db=db,
     )
 
-    RE(boa.initialize(init_scheme="quasi-random", n_init=16))
+    RE(agent.initialize(acqf="qr", n_init=16))
 
-    RE(boa.learn(strategy="esti", n_iter=2, n_per_iter=3))
+    RE(agent.learn(acqf="ei", n_iter=4))
 
-    boa.plot_tasks()
+    agent.plot_tasks()
