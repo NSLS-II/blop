@@ -126,9 +126,7 @@ def _run_flyers(flyers):
     return uid_list
 
 
-def run_hardware_fly(
-    motors, detector, population, max_velocity, min_velocity, start_det, read_det, stop_det, watch_func
-):
+def run_hardware_fly(motors, detector, population, max_velocity, min_velocity, start_det, read_det, stop_det, watch_func):
     flyers = generate_hardware_flyers(
         motors=motors,
         detector=detector,
@@ -143,9 +141,7 @@ def run_hardware_fly(
     return _run_flyers(flyers)
 
 
-def run_fly_sim(
-    population, num_interm_vals, num_scans_at_once, sim_id, server_name, root_dir, watch_name, run_parallel
-):
+def run_fly_sim(population, num_interm_vals, num_scans_at_once, sim_id, server_name, root_dir, watch_name, run_parallel):
     flyers = generate_sim_flyers(
         population=population,
         num_between_vals=num_interm_vals,
