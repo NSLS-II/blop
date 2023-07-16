@@ -121,9 +121,7 @@ class HardwareFlyer(BlueskyFlyer):
                     motor_dict.update(
                         {
                             f"{self.name}_{motor_name}_velocity": self.velocities[motor_name],
-                            f"{self.name}_{motor_name}_position": self.watch_positions[motor_name][field_name][
-                                ind
-                            ],
+                            f"{self.name}_{motor_name}_position": self.watch_positions[motor_name][field_name][ind],
                         }
                     )
             data = {f"{self.name}_intensity": self.watch_intensities[ind]}

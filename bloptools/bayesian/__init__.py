@@ -245,9 +245,7 @@ class Agent:
             task.feasibility = self.all_targets_valid.astype(int)
 
             train_inputs = torch.tensor(self.inputs.loc[task.feasibility == 1].values).double().unsqueeze(0)
-            train_targets = (
-                torch.tensor(task.targets.loc[task.feasibility == 1].values).double().unsqueeze(0).unsqueeze(-1)
-            )
+            train_targets = torch.tensor(task.targets.loc[task.feasibility == 1].values).double().unsqueeze(0).unsqueeze(-1)
 
             if train_inputs.ndim == 1:
                 train_inputs = train_inputs.unsqueeze(-1)
@@ -269,13 +267,9 @@ class Agent:
                 outcome_transform=botorch.models.transforms.outcome.Standardize(m=1, batch_shape=torch.Size((1,))),
             ).double()
 
-            task.regressor_mll = gpytorch.mlls.ExactMarginalLogLikelihood(
-                task.regressor.likelihood, task.regressor
-            )
+            task.regressor_mll = gpytorch.mlls.ExactMarginalLogLikelihood(task.regressor.likelihood, task.regressor)
 
-        log_feas_prob_weight = np.sqrt(
-            np.sum(np.nanvar(self.targets.values, axis=0) * np.square(self.task_weights))
-        )
+        log_feas_prob_weight = np.sqrt(np.sum(np.nanvar(self.targets.values, axis=0) * np.square(self.task_weights)))
 
         self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
             weights=torch.tensor([*[task.weight for task in self.tasks], log_feas_prob_weight]).double(),
@@ -303,9 +297,7 @@ class Agent:
 
         self.fit_models()
 
-        self.targets_model = botorch.models.model_list_gp_regression.ModelListGP(
-            *[task.regressor for task in self.tasks]
-        )
+        self.targets_model = botorch.models.model_list_gp_regression.ModelListGP(*[task.regressor for task in self.tasks])
 
         self.task_model = botorch.models.model.ModelList(*[task.regressor for task in self.tasks], self.feas_model)
 
@@ -316,9 +308,7 @@ class Agent:
 
     def get_acquisition_function(self, acqf_name="ei", return_metadata=False, acqf_args={}, **kwargs):
         if not self._initialized:
-            raise RuntimeError(
-                f'Can\'t construct acquisition function "{acqf_name}" (the agent is not initialized!)'
-            )
+            raise RuntimeError(f'Can\'t construct acquisition function "{acqf_name}" (the agent is not initialized!)')
 
         if acqf_name.lower() == "ei":
             acqf = botorch.acquisition.analytic.LogExpectedImprovement(
@@ -418,9 +408,7 @@ class Agent:
         This should yield a table of sampled tasks with the same length as the sampled inputs.
         """
         try:
-            uid = yield from self.acquisition_plan(
-                self.dofs, active_inputs, [*self.dets, *self.dofs, *self.passive_dofs]
-            )
+            uid = yield from self.acquisition_plan(self.dofs, active_inputs, [*self.dets, *self.dofs, *self.passive_dofs])
 
             products = self.digestion(self.db, uid)
 
@@ -471,9 +459,7 @@ class Agent:
 
     @property
     def test_inputs(self):
-        test_passive_inputs = (
-            self.passive_inputs.values[-1][None] * np.ones(len(self.test_active_inputs))[..., None]
-        )
+        test_passive_inputs = self.passive_inputs.values[-1][None] * np.ones(len(self.test_active_inputs))[..., None]
         return np.concatenate([self.test_active_inputs, test_passive_inputs], axis=-1)
 
     @property
@@ -654,9 +640,7 @@ class Agent:
 
         if gridded:
             x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dof)).double()
-            log_prob = (
-                self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
-            )
+            log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
 
             self.class_axes[1].pcolormesh(
                 *np.swapaxes(self.test_inputs_grid, 0, -1),
@@ -671,9 +655,7 @@ class Agent:
             x = torch.tensor(self.test_inputs).double()
             log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy()
 
-            self.class_axes[1].scatter(
-                *x.detach().numpy().T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap
-            )
+            self.class_axes[1].scatter(*x.detach().numpy().T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap)
 
         self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
 
@@ -745,11 +727,7 @@ class Agent:
                 *self.inputs.values.T[axes], s=size, c=task.targets, norm=task_norm, cmap=cmap
             )
 
-            x = (
-                torch.tensor(self.test_inputs_grid).double()
-                if gridded
-                else torch.tensor(self.test_inputs).double()
-            )
+            x = torch.tensor(self.test_inputs_grid).double() if gridded else torch.tensor(self.test_inputs).double()
 
             task_posterior = task.regressor.posterior(x)
             task_mean = task_posterior.mean.detach().numpy()  # * task.targets_scale + task.targets_mean
@@ -771,12 +749,8 @@ class Agent:
                 )
 
             else:
-                self.task_axes[itask, 1].scatter(
-                    *x.detach().numpy().T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap
-                )
-                sigma_ax = self.task_axes[itask, 2].scatter(
-                    *x.detach().numpy().T[axes], s=size, c=task_sigma, cmap=cmap
-                )
+                self.task_axes[itask, 1].scatter(*x.detach().numpy().T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap)
+                sigma_ax = self.task_axes[itask, 2].scatter(*x.detach().numpy().T[axes], s=size, c=task_sigma, cmap=cmap)
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
             self.task_fig.colorbar(sigma_ax, ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
@@ -811,15 +785,11 @@ class Agent:
                 obj = obj.exp()
 
             self.acq_axes[iacqf].set_title(acqf_meta["name"])
-            self.acq_axes[iacqf].plot(
-                self.test_active_inputs_grid.ravel(), obj.detach().numpy().ravel(), lw=lw, color=color
-            )
+            self.acq_axes[iacqf].plot(self.test_active_inputs_grid.ravel(), obj.detach().numpy().ravel(), lw=lw, color=color)
 
             self.acq_axes[iacqf].set_xlim(*self.active_dof_bounds[0])
 
-    def _plot_acq_many_dofs(
-        self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, **kwargs
-    ):
+    def _plot_acq_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, **kwargs):
         acqf_names = np.atleast_1d(kwargs.get("acqf", "ei"))
 
         self.acq_fig, self.acq_axes = plt.subplots(
