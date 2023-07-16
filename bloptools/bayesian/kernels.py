@@ -3,149 +3,144 @@ import numpy as np
 import torch
 
 
-class LatentMaternKernel(gpytorch.kernels.Kernel):
+class LatentKernel(gpytorch.kernels.Kernel):
+    is_stationary = True
+
+    num_outputs = 1
+
     def __init__(
         self,
-        n_dim,
-        off_diag=False,
-        diagonal_prior=False,
+        num_inputs=1,
+        off_diag=True,
+        diag_prior=True,
+        scale_kernel=True,
         **kwargs,
     ):
-        super(LatentMaternKernel, self).__init__()
+        super(LatentKernel, self).__init__()
 
-        self.n_dim = n_dim
-        self.n_off_diag = int(n_dim * (n_dim - 1) / 2)
+        self.num_inputs = num_inputs
+        self.n_off_diag = int(num_inputs * (num_inputs - 1) / 2)
+
         self.off_diag = off_diag
+        self.scale_kernel = scale_kernel
 
-        # output_scale_constraint = gpytorch.constraints.Positive()
-        trans_diagonal_constraint = gpytorch.constraints.Interval(1e0, 1e2)
-        trans_off_diag_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
+        self.nu = kwargs.get("nu", 1.5)
 
-        trans_diagonal_initial = np.sqrt(
-            trans_diagonal_constraint.lower_bound * trans_diagonal_constraint.upper_bound
-        )
-        raw_trans_diagonal_initial = trans_diagonal_constraint.inverse_transform(trans_diagonal_initial)
+        # kernel_scale_constraint = gpytorch.constraints.Positive()
+        diag_entries_constraint = gpytorch.constraints.Positive()  # gpytorch.constraints.Interval(5e-1, 1e2)
+        skew_entries_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
 
-        # self.register_parameter(
-        #    name="raw_output_scale", parameter=torch.nn.Parameter(torch.ones(*self.batch_shape, 1).double())
-        # )
+        # diag_entries_initial = np.ones()
+        # np.sqrt(diag_entries_constraint.lower_bound * diag_entries_constraint.upper_bound)
+        raw_diag_entries_initial = diag_entries_constraint.inverse_transform(torch.tensor(2))
+
         self.register_parameter(
-            name="raw_trans_diagonal",
-            parameter=torch.nn.Parameter(
-                raw_trans_diagonal_initial * torch.ones(*self.batch_shape, self.n_dim).double()
-            ),
+            name="raw_diag_entries",
+            parameter=torch.nn.Parameter(raw_diag_entries_initial * torch.ones(self.num_outputs, self.num_inputs).double()),
         )
+        self.register_constraint("raw_diag_entries", constraint=diag_entries_constraint)
 
-        # self.register_constraint("raw_output_scale", output_scale_constraint)
-        self.register_constraint("raw_trans_diagonal", trans_diagonal_constraint)
-
-        if diagonal_prior:
+        if diag_prior:
             self.register_prior(
-                name="trans_diagonal_prior",
-                prior=gpytorch.priors.GammaPrior(concentration=1, rate=0.2),
-                param_or_closure=lambda m: m.trans_diagonal,
-                setting_closure=lambda m, v: m._set_trans_diagonal(v),
+                name="diag_entries_prior",
+                prior=gpytorch.priors.GammaPrior(concentration=2, rate=1),
+                param_or_closure=lambda m: m.diag_entries,
+                setting_closure=lambda m, v: m._set_diag_entries(v),
             )
 
         if self.off_diag:
             self.register_parameter(
-                name="raw_trans_off_diag",
-                parameter=torch.nn.Parameter(torch.zeros(*self.batch_shape, self.n_off_diag).double()),
+                name="raw_skew_entries",
+                parameter=torch.nn.Parameter(torch.zeros(self.num_outputs, self.n_off_diag).double()),
             )
-            self.register_constraint("raw_trans_off_diag", trans_off_diag_constraint)
+            self.register_constraint("raw_skew_entries", skew_entries_constraint)
 
-    # @property
-    # def output_scale(self):
-    #     return self.raw_output_scale_constraint.transform(self.raw_output_scale)
+        if self.scale_kernel:
+            kernel_scale_constraint = gpytorch.constraints.Positive()
+            kernel_scale_prior = gpytorch.priors.GammaPrior(concentration=2, rate=0.15)
+
+            self.register_parameter(
+                name="raw_kernel_scale",
+                parameter=torch.nn.Parameter(torch.ones(1)),
+            )
+
+            self.register_constraint("raw_kernel_scale", constraint=kernel_scale_constraint)
+
+            self.register_prior(
+                name="kernel_scale_prior",
+                prior=kernel_scale_prior,
+                param_or_closure=lambda m: m.kernel_scale,
+                setting_closure=lambda m, v: m._set_kernel_scale(v),
+            )
 
     @property
-    def trans_diagonal(self):
-        return self.raw_trans_diagonal_constraint.transform(self.raw_trans_diagonal)
+    def diag_entries(self):
+        return self.raw_diag_entries_constraint.transform(self.raw_diag_entries)
 
     @property
-    def trans_off_diag(self):
-        return self.raw_trans_off_diag_constraint.transform(self.raw_trans_off_diag)
+    def skew_entries(self):
+        return self.raw_skew_entries_constraint.transform(self.raw_skew_entries)
 
-    # @output_scale.setter
-    # def output_scale(self, value):
-    #     self._set_output_scale(value)
+    @property
+    def kernel_scale(self):
+        return self.raw_kernel_scale_constraint.transform(self.raw_kernel_scale)
 
-    @trans_diagonal.setter
-    def trans_diagonal(self, value):
-        self._set_trans_diagonal(value)
+    @diag_entries.setter
+    def diag_entries(self, value):
+        self._set_diag_entries(value)
 
-    @trans_off_diag.setter
-    def trans_off_diag(self, value):
-        self._set_trans_off_diag(value)
+    @skew_entries.setter
+    def skew_entries(self, value):
+        self._set_skew_entries(value)
 
-    def _set_trans_off_diag(self, value):
+    @kernel_scale.setter
+    def kernel_scale(self, value):
+        self._set_kernel_scale(value)
+
+    def _set_diag_entries(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_trans_off_diag)
-        self.initialize(raw_trans_off_diag=self.raw_trans_off_diag_constraint.inverse_transform(value))
+            value = torch.as_tensor(value).to(self.raw_diag_entries)
+        self.initialize(raw_diag_entries=self.raw_diag_entries_constraint.inverse_transform(value))
 
-    # def _set_output_scale(self, value):
-    #     if not torch.is_tensor(value):
-    #         value = torch.as_tensor(value).to(self.raw_output_scale)
-    #     self.initialize(raw_output_scale=self.raw_output_scale_constraint.inverse_transform(value))
-
-    def _set_trans_diagonal(self, value):
+    def _set_skew_entries(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_trans_diagonal)
-        self.initialize(raw_trans_diagonal=self.raw_trans_diagonal_constraint.inverse_transform(value))
+            value = torch.as_tensor(value).to(self.raw_skew_entries)
+        self.initialize(raw_skew_entries=self.raw_skew_entries_constraint.inverse_transform(value))
+
+    def _set_kernel_scale(self, value):
+        if not torch.is_tensor(value):
+            value = torch.as_tensor(value).to(self.raw_kernel_scale)
+        self.initialize(raw_kernel_scale=self.raw_kernel_scale_constraint.inverse_transform(value))
 
     @property
-    def trans_matrix(self):
+    def output_scale(self):
+        return self.kernel_scale.sqrt()
+
+    @property
+    def latent_dimensions(self):
         # no rotations
         if not self.off_diag:
-            T = torch.eye(self.n_dim).double()
+            T = torch.eye(self.num_inputs, dtype=torch.float64)
 
         # construct an orthogonal matrix. fun fact: exp(skew(N)) is the generator of SO(N)
         else:
-            A = torch.zeros((self.n_dim, self.n_dim)).double()
-            A[np.triu_indices(self.n_dim, k=1)] = self.trans_off_diag
-            A += -A.T
+            A = torch.zeros((self.num_inputs, self.num_inputs)).double()
+            A[np.triu_indices(self.num_inputs, k=1)] = self.skew_entries
+            A += -A.transpose(-1, -2)
             T = torch.linalg.matrix_exp(A)
 
-        T = torch.matmul(torch.diag(self.trans_diagonal), T)
+        diagonal_transform = torch.cat([torch.diag(entries).unsqueeze(0) for entries in self.diag_entries], dim=0)
+        T = torch.matmul(diagonal_transform, T)
 
         return T
 
-    def forward(self, x1, x2=None, diag=False, auto=False, last_dim_is_batch=False, **params):
-        # returns the homoskedastic diagonal
-        if diag:
-            # return torch.square(self.output_scale[0]) * torch.ones((*self.batch_shape, *x1.shape[:-1]))
-            return torch.ones((*self.batch_shape, *x1.shape[:-1]))
+    def forward(self, x1, x2, diag=False, **params):
+        # adapted from the Matern kernel
+        mean = x1.reshape(-1, x1.size(-1)).mean(0)[(None,) * (x1.dim() - 1)]
 
-        # computes the autocovariance of the process at the parameters
-        if auto:
-            x2 = x1
+        trans_x1 = torch.matmul(self.latent_dimensions.unsqueeze(1), (x1 - mean).unsqueeze(-1)).squeeze(-1)
+        trans_x2 = torch.matmul(self.latent_dimensions.unsqueeze(1), (x2 - mean).unsqueeze(-1)).squeeze(-1)
 
-        # print(x1, x2)
+        distance = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
 
-        # x1 and x2 are arrays of shape (..., n_1, n_dim) and (..., n_2, n_dim)
-        _x1, _x2 = torch.as_tensor(x1).double(), torch.as_tensor(x2).double()
-
-        # dx has shape (..., n_1, n_2, n_dim)
-        dx = _x1.unsqueeze(-2) - _x2.unsqueeze(-3)
-
-        # transform coordinates with hyperparameters (this applies lengthscale and rotations)
-        trans_dx = torch.matmul(self.trans_matrix, dx.unsqueeze(-1))
-
-        # total transformed distance. D has shape (..., n_1, n_2)
-        d_eff = torch.sqrt(torch.matmul(trans_dx.transpose(-1, -2), trans_dx).sum((-1, -2)) + 1e-12)
-
-        # Matern covariance of effective order nu=3/2.
-        # nu=3/2 is a special case and has a concise closed-form expression
-        # In general, this is something between an exponential (n=1/2) and a Gaussian (n=infinity)
-        # https://en.wikipedia.org/wiki/Matern_covariance_function
-
-        # C = torch.exp(-d_eff) # Matern_0.5 (exponential)
-        C = (1 + d_eff) * torch.exp(-d_eff)  # Matern_1.5
-        # C = (1 + d_eff + 1 / 3 * torch.square(d_eff)) * torch.exp(-d_eff)  # Matern_2.5
-        # C = torch.exp(-0.5 * np.square(d_eff)) # Matern_infinity (RBF)
-
-        # C = torch.square(self.output_scale[0]) * torch.exp(-torch.square(d_eff))
-
-        # print(f'{diag = } {C.shape = }')
-
-        return C
+        return self.kernel_scale * (1 + distance) * torch.exp(-distance)
