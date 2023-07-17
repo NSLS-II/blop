@@ -13,6 +13,19 @@ def himmelblau(x1, x2):
     return (x1**2 + x2 - 11) ** 2 + (x1 + x2**2 - 7) ** 2
 
 
+def constrained_himmelblau(x1, x2):
+    if x1**2 + x2**2 > 50:
+        return np.nan
+    return himmelblau(x1, x2)
+
+
+def skewed_himmelblau(x1, x2):
+    _x1 = 2 * x1 + x2
+    _x2 = 0.5 * (x1 - 2 * x2)
+
+    return constrained_himmelblau(_x1, _x2)
+
+
 def rastrigin(*x):
     X = np.c_[x]
     return 10 * X.shape[-1] + (X**2 - 10 * np.cos(2 * np.pi * X)).sum(axis=1)

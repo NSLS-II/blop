@@ -1,4 +1,6 @@
 import logging
+import warnings
+from collections import OrderedDict
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp  # noqa F401
@@ -11,9 +13,12 @@ import pandas as pd
 import scipy as sp
 import torch
 from matplotlib import pyplot as plt
+from matplotlib.patches import Patch
 
-from .. import devices, utils
+from .. import utils
 from . import acquisition, models
+
+warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
 mpl.rc("image", cmap="coolwarm")
 
@@ -38,6 +43,22 @@ def default_digestion_plan(db, uid):
 # tasks: these are quantities that our agent will try to optimize over
 
 MAX_TEST_INPUTS = 2**11
+
+AVAILABLE_ACQFS = {
+    "expected_mean": {
+        "identifiers": ["em", "expected_mean"],
+    },
+    "expected_improvement": {
+        "identifiers": ["ei", "expected_improvement"],
+    },
+    "probability_of_improvement": {
+        "identifiers": ["pi", "probability_of_improvement"],
+    },
+    "upper_confidence_bound": {
+        "identifiers": ["ucb", "upper_confidence_bound"],
+        "default_args": {"beta": 4},
+    },
+}
 
 
 class Agent:
@@ -70,7 +91,9 @@ class Agent:
         for dof in active_dofs:
             dof.kind = "hinted"
 
-        self.active_dofs = np.atleast_1d(active_dofs)
+        self.active_dofs = list(np.atleast_1d(active_dofs))
+        self.passive_dofs = list(np.atleast_1d(kwargs.get("passive_dofs", [])))
+
         self.active_dof_bounds = np.atleast_2d(active_dof_bounds).astype(float)
         self.tasks = np.atleast_1d(tasks)
         self.db = db
@@ -89,10 +112,9 @@ class Agent:
         self.acquisition = acquisition.Acquisition()
 
         self.dets = np.atleast_1d(kwargs.get("detectors", []))
-        self.passive_dofs = np.atleast_1d(kwargs.get("passive_dofs", []))
 
-        if self.decoherence:
-            self.passive_dofs = np.append(self.passive_dofs, devices.TimeReadback(name="timestamp"))
+        # if self.decoherence:
+        #     self.passive_dofs = np.append(self.passive_dofs, devices.TimeReadback(name="timestamp"))
 
         for i, task in enumerate(self.tasks):
             task.index = i
@@ -100,8 +122,6 @@ class Agent:
         self.n_tasks = len(self.tasks)
 
         self.training_iter = kwargs.get("training_iter", 256)
-
-        # self.test_normalized_active_inputs = self.sampler(n=self.MAX_TEST_INPUTS)
 
         # make some test points for sampling
 
@@ -118,6 +138,9 @@ class Agent:
         self.table = pd.DataFrame()
 
         self._initialized = False
+        self._train_models = True
+
+        self.hypers = None
 
     def normalize_active_inputs(self, x):
         return (x - self.active_dof_bounds.min(axis=1)) / self.active_dof_bounds.ptp(axis=1)
@@ -137,11 +160,11 @@ class Agent:
 
     @property
     def n_active_dofs(self):
-        return self.active_dofs.size
+        return len(self.active_dofs)
 
     @property
     def n_passive_dofs(self):
-        return self.passive_dofs.size
+        return len(self.passive_dofs)
 
     @property
     def n_dofs(self):
@@ -169,21 +192,29 @@ class Agent:
     #         d=self.n_dof, coefficient=coefficient, offset=offset
     #     )
 
+    # @property
+    # def input_transform(self):
+    #     return botorch.models.transforms.input.Normalize(d=self.n_dofs)
+
     @property
     def input_transform(self):
-        return botorch.models.transforms.input.Normalize(d=self.n_dofs)
+        coefficient = torch.tensor(self.dof_bounds.ptp(axis=1)).unsqueeze(0)
+        offset = torch.tensor(self.dof_bounds.min(axis=1)).unsqueeze(0)
+        return botorch.models.transforms.input.AffineInputTransform(
+            d=self.n_dofs, coefficient=coefficient, offset=offset
+        )
 
-    def save(self, filepath="./agent_data.h5"):
+    def save_data(self, filepath="./agent_data.h5"):
         """
         Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future agent.
         """
 
-        with h5py.File(filepath, "w") as f:
-            for task in self.tasks:
-                f.create_group(task.name)
-                for key, value in task.regressor.state_dict().items():
-                    f[task.name].create_dataset(key, data=value)
+        # with h5py.File(filepath, "w") as f:
+        #     for task in self.tasks:
+        #         f.create_group(task.name)
+        #         for key, value in task.regressor.state_dict().items():
+        #             f[task.name].create_dataset(key, data=value)
 
         self.table.to_hdf(filepath, key="table")
 
@@ -198,11 +229,34 @@ class Agent:
         subset = np.random.choice(min_power_of_two, size=n, replace=False)
         return sp.stats.qmc.Sobol(d=self.n_active_dofs, scramble=True).random(n=min_power_of_two)[subset]
 
+    def save_hypers(self, filepath):
+        with h5py.File(filepath, "w") as f:
+            for task in self.tasks:
+                f.create_group(task.name)
+                for key, value in task.regressor.state_dict().items():
+                    f[task.name].create_dataset(key, data=value)
+            f.create_group("classifier")
+            for key, value in self.classifier.state_dict().items():
+                f["classifier"].create_dataset(key, data=value)
+
+    @staticmethod
+    def read_hypers(filepath):
+        state_dicts = {}
+        with h5py.File(filepath, "r") as f:
+            print(f.keys())
+            for model_name in f.keys():
+                state_dicts[model_name] = OrderedDict()
+                for key, value in f[model_name].items():
+                    state_dicts[model_name][key] = torch.tensor(np.atleast_1d(value[()]))
+        return state_dicts
+
     def initialize(
         self,
         filepath=None,
         acqf=None,
         n_init=4,
+        decoherence=False,
+        hypers=None,
     ):
         """
         An initialization plan for the agent.
@@ -214,8 +268,21 @@ class Agent:
         if self.initialization is not None:
             yield from self.initialization()
 
+        if hypers is not None:
+            self.hypers = self.read_hypers(hypers)
+
         if filepath is not None:
-            self.tell(new_table=pd.read_hdf(filepath, key="table"))
+            table = pd.read_hdf(filepath, key="table")
+
+            # if decoherence == "batch":
+            #     if "training_batch" in self.table.columns:
+            #         current_training_batch = table.training_batch.max() + 1
+            #     else:
+            #         table.loc[:, "training_batch"] = 1.
+            #         current_training_batch = 2.
+            #     self.passive_dofs.append(devices.ConstantReadback(name="training_batch", constant=current_training_batch))
+
+            self.tell(new_table=table)
 
         # now let's get bayesian
         elif acqf in ["qr"]:
@@ -255,6 +322,8 @@ class Agent:
 
         self.all_targets_valid = ~np.isnan(self.targets).any(axis=1)
 
+        skew_dims = [tuple(np.arange(self.n_active_dofs))]
+
         for task in self.tasks:
             task.targets = self.targets.loc[:, task.name]
             #
@@ -263,11 +332,14 @@ class Agent:
 
             # task.normalized_targets = self.normalized_targets.loc[:, task.name]
 
-            task.feasibility = self.all_targets_valid.astype(int)
+            task.feasibility = self.feasible.loc[:, task.name]
 
-            train_inputs = torch.tensor(self.inputs.loc[task.feasibility == 1].values).double().unsqueeze(0)
+            if not task.feasibility.sum() >= 2:
+                raise ValueError("There must be at least two feasible data points per task!")
+
+            train_inputs = torch.tensor(self.inputs.loc[task.feasibility].values).double().unsqueeze(0)
             train_targets = (
-                torch.tensor(task.targets.loc[task.feasibility == 1].values).double().unsqueeze(0).unsqueeze(-1)
+                torch.tensor(task.targets.loc[task.feasibility].values).double().unsqueeze(0).unsqueeze(-1)
             )
 
             if train_inputs.ndim == 1:
@@ -286,6 +358,8 @@ class Agent:
                 train_inputs=train_inputs,
                 train_targets=train_targets,
                 likelihood=likelihood,
+                skew_dims=skew_dims,
+                batch_dimension=self.batch_dimension,
                 input_transform=self.input_transform,
                 outcome_transform=botorch.models.transforms.outcome.Standardize(m=1, batch_shape=torch.Size((1,))),
             ).double()
@@ -307,22 +381,28 @@ class Agent:
             torch.as_tensor(self.all_targets_valid).long(), learn_additional_noise=True
         ).double()
 
-        self.dirichlet_classifier = models.LatentDirichletClassifier(
+        self.classifier = models.LatentDirichletClassifier(
             train_inputs=torch.tensor(self.inputs.values).double(),
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
+            skew_dims=skew_dims,
+            batch_dimension=self.batch_dimension,
             likelihood=dirichlet_likelihood,
             input_transform=self.input_transform,
         ).double()
 
-        self.dirichlet_classifier_mll = gpytorch.mlls.ExactMarginalLogLikelihood(
-            self.dirichlet_classifier.likelihood, self.dirichlet_classifier
-        )
+        self.classifier_mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.classifier.likelihood, self.classifier)
 
         self.feas_model = botorch.models.deterministic.GenericDeterministicModel(
-            f=lambda X: -self.dirichlet_classifier.log_prob(X).square()
+            f=lambda X: -self.classifier.log_prob(X).square()
         )
 
-        self.fit_models()
+        if self.hypers is None:
+            print("TRAINING")
+            self.train_models()
+        else:
+            for task in self.tasks:
+                task.regressor.load_state_dict(self.hypers[task.name])
+            self.classifier.load_state_dict(self.hypers["classifier"])
 
         self.targets_model = botorch.models.model_list_gp_regression.ModelListGP(
             *[task.regressor for task in self.tasks]
@@ -330,10 +410,10 @@ class Agent:
 
         self.task_model = botorch.models.model.ModelList(*[task.regressor for task in self.tasks], self.feas_model)
 
-    def fit_models(self, **kwargs):
+    def train_models(self, **kwargs):
         for task in self.tasks:
             botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
-        botorch.fit.fit_gpytorch_mll(self.dirichlet_classifier_mll, **kwargs)
+        botorch.fit.fit_gpytorch_mll(self.classifier_mll, **kwargs)
 
     def get_acquisition_function(self, acqf_name="ei", return_metadata=False, acqf_args={}, **kwargs):
         if not self._initialized:
@@ -341,7 +421,7 @@ class Agent:
                 f'Can\'t construct acquisition function "{acqf_name}" (the agent is not initialized!)'
             )
 
-        if acqf_name.lower() == "ei":
+        if acqf_name.lower() in AVAILABLE_ACQFS["expected_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogExpectedImprovement(
                 self.task_model,
                 best_f=self.best_sum_of_tasks,
@@ -350,7 +430,7 @@ class Agent:
             )
             acqf_meta = {"name": "expected improvement", "args": {}}
 
-        elif acqf_name.lower() == "pi":
+        elif acqf_name.lower() in AVAILABLE_ACQFS["probability_of_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogProbabilityOfImprovement(
                 self.task_model,
                 best_f=self.best_sum_of_tasks,
@@ -359,8 +439,17 @@ class Agent:
             )
             acqf_meta = {"name": "probability of improvement", "args": {}}
 
-        elif acqf_name.lower() == "ucb":
-            beta = acqf_args.get("beta", 0.1)
+        elif acqf_name.lower() in AVAILABLE_ACQFS["expected_mean"]["identifiers"]:
+            acqf = botorch.acquisition.analytic.UpperConfidenceBound(
+                self.task_model,
+                beta=0,
+                posterior_transform=self.task_scalarization,
+                **kwargs,
+            )
+            acqf_meta = {"name": "expected mean"}
+
+        elif acqf_name.lower() in AVAILABLE_ACQFS["upper_confidence_bound"]["identifiers"]:
+            beta = AVAILABLE_ACQFS["upper_confidence_bound"]["default_args"]["beta"]
             acqf = botorch.acquisition.analytic.UpperConfidenceBound(
                 self.task_model,
                 beta=beta,
@@ -491,15 +580,17 @@ class Agent:
         return targets * self.targets_scale + self.targets_mean
 
     @property
+    def batch_dimension(self):
+        return self.dof_names.index("training_batch") if "training_batch" in self.dof_names else None
+
+    @property
     def test_inputs(self):
-        test_passive_inputs = (
-            self.passive_inputs.values[-1][None] * np.ones(len(self.test_active_inputs))[..., None]
-        )
+        test_passive_inputs = self.read_passive_dofs[None] * np.ones(len(self.test_active_inputs))[..., None]
         return np.concatenate([self.test_active_inputs, test_passive_inputs], axis=-1)
 
     @property
     def test_inputs_grid(self):
-        test_passive_inputs_grid = self.passive_inputs.values[-1] * np.ones(
+        test_passive_inputs_grid = self.read_passive_dofs * np.ones(
             (*self.test_active_inputs_grid.shape[:-1], self.n_passive_dofs)
         )
         return np.concatenate([self.test_active_inputs_grid, test_passive_inputs_grid], axis=-1)
@@ -557,8 +648,8 @@ class Agent:
     def passive_dof_bounds(self):
         # food for thought: should this be the current values, or the latest recorded values?
         # the former leads to weird extrapolation (especially for time), and the latter to some latency.
-        # let's go with the first way for now
-        return np.outer(self.latest_passive_dof_values, [1.0, 1.0])
+        # let's go with the second way for now
+        return np.outer(self.read_passive_dofs, [1.0, 1.0])
 
     @property
     def dof_is_active_mask(self):
@@ -651,7 +742,7 @@ class Agent:
         self.class_ax.scatter(self.inputs.values, self.all_targets_valid.astype(int), s=size)
 
         x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dofs)).double()
-        log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
+        log_prob = self.classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
 
         self.class_ax.plot(self.test_inputs_grid.ravel(), np.exp(log_prob))
 
@@ -675,9 +766,7 @@ class Agent:
 
         if gridded:
             x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dofs)).double()
-            log_prob = (
-                self.dirichlet_classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
-            )
+            log_prob = self.classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
 
             self.class_axes[1].pcolormesh(
                 *np.swapaxes(self.test_inputs_grid, 0, -1),
@@ -690,7 +779,7 @@ class Agent:
 
         else:
             x = torch.tensor(self.test_inputs).double()
-            log_prob = self.dirichlet_classifier.log_prob(x).detach().numpy()
+            log_prob = self.classifier.log_prob(x).detach().numpy()
 
             self.class_axes[1].scatter(
                 *x.detach().numpy().T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap
@@ -871,7 +960,7 @@ class Agent:
 
                 self.acq_axes[iacqf].set_title(acqf_meta["name"])
                 obj_ax = self.acq_axes[iacqf].pcolormesh(
-                    *np.swapaxes(self.test_inputs_grid, 0, -1),
+                    *np.swapaxes(self.test_inputs_grid, 0, -1)[axes],
                     obj.detach().numpy().reshape(grid_shape).T,
                     shading=shading,
                     cmap=cmap,
@@ -917,3 +1006,53 @@ class Agent:
         if border is not None:
             plt.xlim(x_min - border * width_x, x_min + border * width_x)
             plt.ylim(y_min - border * width_y, y_min + border * width_y)
+
+    def plot_history(self, x_key="index", show_all_tasks=False):
+        x = getattr(self.table, x_key).values
+
+        num_task_plots = 1
+        if show_all_tasks:
+            num_task_plots = self.n_tasks + 1
+
+        self.n_tasks + 1 if self.n_tasks > 1 else 1
+
+        hist_fig, hist_axes = plt.subplots(
+            num_task_plots, 1, figsize=(6, 4 * num_task_plots), sharex=True, constrained_layout=True, dpi=200
+        )
+        hist_axes = np.atleast_1d(hist_axes)
+
+        unique_strategies, acqf_index, acqf_inverse = np.unique(
+            self.table.acqf, return_index=True, return_inverse=True
+        )
+
+        sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
+
+        if show_all_tasks:
+            for itask, task in enumerate(self.tasks):
+                y = task.targets.values
+                hist_axes[itask].scatter(x, y, c=sample_colors)
+                hist_axes[itask].plot(x, y, lw=5e-1, c="k")
+                hist_axes[itask].set_ylabel(task.name)
+
+        y = self.table.total_fitness
+
+        cummax_y = np.array([np.nanmax(y[: i + 1]) for i in range(len(y))])
+
+        hist_axes[-1].scatter(x, y, c=sample_colors)
+        hist_axes[-1].plot(x, y, lw=5e-1, c="k")
+
+        hist_axes[-1].plot(x, cummax_y, lw=5e-1, c="k", ls=":")
+
+        hist_axes[-1].set_ylabel("total_fitness")
+        hist_axes[-1].set_xlabel(x_key)
+
+        handles = []
+        for i_acqf, acqf in enumerate(unique_strategies):
+            #        i_acqf = np.argsort(acqf_index)[i_handle]
+            handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acqf], label=acqf))
+        legend = hist_axes[0].legend(handles=handles, fontsize=8)
+        legend.set_title("acquisition function")
+
+    # plot_history(agent, x_key="time")
+
+    # plt.savefig("bo-history.pdf", dpi=256)

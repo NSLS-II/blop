@@ -8,16 +8,17 @@ from . import kernels
 
 
 class LatentDirichletClassifier(botorch.models.gp_regression.SingleTaskGP):
-    def __init__(self, train_inputs, train_targets, *args, **kwargs):
+    def __init__(self, train_inputs, train_targets, skew_dims=True, batch_dimension=None, *args, **kwargs):
         super().__init__(train_inputs, train_targets, *args, **kwargs)
 
         self.mean_module = gpytorch.means.ConstantMean()
         self.covar_module = kernels.LatentKernel(
             num_inputs=train_inputs.shape[-1],
             num_outputs=train_targets.shape[-1],
-            off_diag=True,
+            skew_dims=skew_dims,
             diag_prior=True,
             scale=True,
+            batch_dimension=batch_dimension,
             **kwargs
         )
 
@@ -28,7 +29,7 @@ class LatentDirichletClassifier(botorch.models.gp_regression.SingleTaskGP):
 
 
 class LatentGP(botorch.models.gp_regression.SingleTaskGP):
-    def __init__(self, train_inputs, train_targets, *args, **kwargs):
+    def __init__(self, train_inputs, train_targets, skew_dims=True, batch_dimension=None, *args, **kwargs):
         super().__init__(train_inputs, train_targets, *args, **kwargs)
 
         self.mean_module = gpytorch.means.ConstantMean(constant_prior=gpytorch.priors.NormalPrior(loc=0, scale=1))
@@ -36,9 +37,10 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
         self.covar_module = kernels.LatentKernel(
             num_inputs=train_inputs.shape[-1],
             num_outputs=train_targets.shape[-1],
-            off_diag=True,
+            skew_dims=skew_dims,
             diag_prior=True,
             scale=True,
+            batch_dimension=batch_dimension,
             **kwargs
         )
 
