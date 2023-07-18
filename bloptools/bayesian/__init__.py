@@ -88,11 +88,11 @@ class Agent:
         db : A databroker instance.
         """
 
-        for dof in active_dofs:
-            dof.kind = "hinted"
-
         self.active_dofs = list(np.atleast_1d(active_dofs))
         self.passive_dofs = list(np.atleast_1d(kwargs.get("passive_dofs", [])))
+
+        for dof in self.dofs:
+            dof.kind = "hinted"
 
         self.active_dof_bounds = np.atleast_2d(active_dof_bounds).astype(float)
         self.tasks = np.atleast_1d(tasks)
@@ -112,9 +112,6 @@ class Agent:
         self.acquisition = acquisition.Acquisition()
 
         self.dets = np.atleast_1d(kwargs.get("detectors", []))
-
-        # if self.decoherence:
-        #     self.passive_dofs = np.append(self.passive_dofs, devices.TimeReadback(name="timestamp"))
 
         for i, task in enumerate(self.tasks):
             task.index = i
@@ -186,14 +183,6 @@ class Agent:
 
     # @property
     # def input_transform(self):
-    #     coefficient = torch.tensor(self.inputs.values.ptp(axis=0))
-    #     offset = torch.tensor(self.inputs.values.min(axis=0))
-    #     return botorch.models.transforms.input.AffineInputTransform(
-    #         d=self.n_dof, coefficient=coefficient, offset=offset
-    #     )
-
-    # @property
-    # def input_transform(self):
     #     return botorch.models.transforms.input.Normalize(d=self.n_dofs)
 
     @property
@@ -209,12 +198,6 @@ class Agent:
         Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future agent.
         """
-
-        # with h5py.File(filepath, "w") as f:
-        #     for task in self.tasks:
-        #         f.create_group(task.name)
-        #         for key, value in task.regressor.state_dict().items():
-        #             f[task.name].create_dataset(key, data=value)
 
         self.table.to_hdf(filepath, key="table")
 
@@ -243,7 +226,6 @@ class Agent:
     def read_hypers(filepath):
         state_dicts = {}
         with h5py.File(filepath, "r") as f:
-            print(f.keys())
             for model_name in f.keys():
                 state_dicts[model_name] = OrderedDict()
                 for key, value in f[model_name].items():
@@ -252,10 +234,9 @@ class Agent:
 
     def initialize(
         self,
-        filepath=None,
         acqf=None,
         n_init=4,
-        decoherence=False,
+        data=None,
         hypers=None,
     ):
         """
@@ -271,18 +252,11 @@ class Agent:
         if hypers is not None:
             self.hypers = self.read_hypers(hypers)
 
-        if filepath is not None:
-            table = pd.read_hdf(filepath, key="table")
-
-            # if decoherence == "batch":
-            #     if "training_batch" in self.table.columns:
-            #         current_training_batch = table.training_batch.max() + 1
-            #     else:
-            #         table.loc[:, "training_batch"] = 1.
-            #         current_training_batch = 2.
-            #     self.passive_dofs.append(devices.ConstantReadback(name="training_batch", constant=current_training_batch))
-
-            self.tell(new_table=table)
+        if data is not None:
+            if type(data) == str:
+                self.tell(new_table=pd.read_hdf(data, key="table"))
+            else:
+                self.tell(new_table=data)
 
         # now let's get bayesian
         elif acqf in ["qr"]:
@@ -292,16 +266,6 @@ class Agent:
             raise Exception(
                 """Could not initialize model! Either load a table, or specify an acqf from:
 ['qr']."""
-            )
-
-        # if init_table is None:
-        #    raise RuntimeError("Unhandled initialization error.")
-
-        no_good_samples_tasks = np.isnan(self.table.loc[:, self.target_names]).all(axis=0)
-        if no_good_samples_tasks.any():
-            raise ValueError(
-                f"The tasks {[self.tasks[i].name for i in np.where(no_good_samples_tasks)[0]]} "
-                f"don't have any good samples."
             )
 
         self._initialized = True
@@ -318,21 +282,12 @@ class Agent:
         self.table.loc[:, "total_fitness"] = self.table.loc[:, self.task_names].fillna(-np.inf).sum(axis=1)
         self.table.index = np.arange(len(self.table))
 
-        # self.normalized_inputs = self.normalize_inputs(self.inputs)
-
-        self.all_targets_valid = ~np.isnan(self.targets).any(axis=1)
-
         skew_dims = [tuple(np.arange(self.n_active_dofs))]
 
         for task in self.tasks:
             task.targets = self.targets.loc[:, task.name]
-            #
-            # task.targets_mean = np.nanmean(task.targets, axis=0)
-            # task.targets_scale = np.nanstd(task.targets, axis=0)
 
-            # task.normalized_targets = self.normalized_targets.loc[:, task.name]
-
-            task.feasibility = self.feasible.loc[:, task.name]
+            task.feasibility = self.feasible_for_all_tasks
 
             if not task.feasibility.sum() >= 2:
                 raise ValueError("There must be at least two feasible data points per task!")
@@ -359,7 +314,6 @@ class Agent:
                 train_targets=train_targets,
                 likelihood=likelihood,
                 skew_dims=skew_dims,
-                batch_dimension=self.batch_dimension,
                 input_transform=self.input_transform,
                 outcome_transform=botorch.models.transforms.outcome.Standardize(m=1, batch_shape=torch.Size((1,))),
             ).double()
@@ -378,14 +332,13 @@ class Agent:
         )
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            torch.as_tensor(self.all_targets_valid).long(), learn_additional_noise=True
+            torch.as_tensor(self.feasible_for_all_tasks.values).long(), learn_additional_noise=True
         ).double()
 
         self.classifier = models.LatentDirichletClassifier(
             train_inputs=torch.tensor(self.inputs.values).double(),
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
-            batch_dimension=self.batch_dimension,
             likelihood=dirichlet_likelihood,
             input_transform=self.input_transform,
         ).double()
@@ -397,7 +350,6 @@ class Agent:
         )
 
         if self.hypers is None:
-            print("TRAINING")
             self.train_models()
         else:
             for task in self.tasks:
@@ -611,10 +563,19 @@ class Agent:
     def targets(self):
         return self.table.loc[:, self.task_names].astype(float)
 
+    # @property
+    # def feasible(self):
+    #     with pd.option_context("mode.use_inf_as_null", True):
+    #         feasible = ~self.targets.isna()
+    #     return feasible
+
     @property
-    def feasible(self):
+    def feasible_for_all_tasks(self):
         with pd.option_context("mode.use_inf_as_null", True):
-            feasible = ~self.targets.isna()
+            feasible = ~self.targets.isna().any(axis=1)
+            for task in self.tasks:
+                if task.min is not None:
+                    feasible &= self.targets.loc[:, task.name].values > task.transform(task.min)
         return feasible
 
     # @property
@@ -739,7 +700,7 @@ class Agent:
     def _plot_feas_one_dof(self, size=32):
         self.class_fig, self.class_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
 
-        self.class_ax.scatter(self.inputs.values, self.all_targets_valid.astype(int), s=size)
+        self.class_ax.scatter(self.inputs.values, self.feasible_for_all_tasks.astype(int), s=size)
 
         x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dofs)).double()
         log_prob = self.classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
@@ -761,7 +722,7 @@ class Agent:
             ax.set_ylabel(self.dofs[axes[1]].name)
 
         data_ax = self.class_axes[0].scatter(
-            *self.inputs.values.T[:2], s=size, c=self.all_targets_valid.astype(int), vmin=0, vmax=1, cmap=cmap
+            *self.inputs.values.T[:2], s=size, c=self.feasible_for_all_tasks.astype(int), vmin=0, vmax=1, cmap=cmap
         )
 
         if gridded:
