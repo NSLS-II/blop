@@ -46,9 +46,7 @@ def route(start_point, points):
     delay_matrix = np.sqrt(np.square(normalized_points[:, None, :] - normalized_points[None, :, :]).sum(axis=-1))
     delay_matrix = (1e4 * delay_matrix).astype(int)  # it likes integers idk
 
-    manager = pywrapcp.RoutingIndexManager(
-        len(total_points), 1, 0
-    )  # number of depots, number of salesmen, starting index
+    manager = pywrapcp.RoutingIndexManager(len(total_points), 1, 0)  # number of depots, number of salesmen, starting index
     routing = pywrapcp.RoutingModel(manager)
 
     def delay_callback(from_index, to_index):
