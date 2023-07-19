@@ -68,7 +68,6 @@ class LatentKernel(gpytorch.kernels.Kernel):
         raw_diag_entries_initial = (
             diag_entries_constraint.inverse_transform(torch.tensor(1e-1))
             * torch.ones(self.num_outputs, self.num_inputs).double()
-        )
 
         self.register_parameter(name="raw_diag_entries", parameter=torch.nn.Parameter(raw_diag_entries_initial))
         self.register_constraint(param_name="raw_diag_entries", constraint=diag_entries_constraint)

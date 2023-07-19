@@ -7,9 +7,7 @@ import numpy as np
 from .de_opt_utils import check_opt_bounds, move_to_optimized_positions
 
 
-def omea_evaluation(
-    motors, bounds, popsize, num_interm_vals, num_scans_at_once, uids, flyer_name, intensity_name, db
-):
+def omea_evaluation(motors, bounds, popsize, num_interm_vals, num_scans_at_once, uids, flyer_name, intensity_name, db):
     if motors is not None:
         # hardware
         # get the data from databroker
@@ -149,9 +147,7 @@ def rand_1(pop, popsize, target_indx, mut, bounds):
     for elem, param in x_1.items():
         v_donor[elem] = {}
         for param_name in param.keys():
-            v_donor[elem][param_name] = x_1[elem][param_name] + mut * (
-                x_2[elem][param_name] - x_3[elem][param_name]
-            )
+            v_donor[elem][param_name] = x_1[elem][param_name] + mut * (x_2[elem][param_name] - x_3[elem][param_name])
     v_donor = ensure_bounds(vec=v_donor, bounds=bounds)
     return v_donor
 
@@ -169,9 +165,7 @@ def best_1(pop, popsize, target_indx, mut, bounds, ind_sol):
     for elem, param in x_best.items():
         v_donor[elem] = {}
         for param_name in param.items():
-            v_donor[elem][param_name] = x_best[elem][param_name] + mut * (
-                x_1[elem][param_name] - x_2[elem][param_name]
-            )
+            v_donor[elem][param_name] = x_best[elem][param_name] + mut * (x_1[elem][param_name] - x_2[elem][param_name])
     v_donor = ensure_bounds(vec=v_donor, bounds=bounds)
     return v_donor
 
@@ -182,9 +176,7 @@ def mutate(population, strategy, mut, bounds, ind_sol):
         if strategy == "rand/1":
             v_donor = rand_1(pop=population, popsize=len(population), target_indx=i, mut=mut, bounds=bounds)
         elif strategy == "best/1":
-            v_donor = best_1(
-                pop=population, popsize=len(population), target_indx=i, mut=mut, bounds=bounds, ind_sol=ind_sol
-            )
+            v_donor = best_1(pop=population, popsize=len(population), target_indx=i, mut=mut, bounds=bounds, ind_sol=ind_sol)
         # elif strategy == 'current-to-best/1':
         #     v_donor = current_to_best_1(population, len(population), i, mut, bounds, ind_sol)
         # elif strategy == 'best/2':
@@ -544,9 +536,7 @@ def optimization_plan(
         cross_trial_pop = crossover(population=pop_positions, mutated_indv=mutated_trial_pop, crosspb=crosspb)
         # select
         if opt_type == "hardware":
-            select_positions = yield from create_selection_params(
-                motors=motors, population=None, cross_indv=cross_trial_pop
-            )
+            select_positions = yield from create_selection_params(motors=motors, population=None, cross_indv=cross_trial_pop)
             uid_list = yield from fly_plan(
                 motors=motors,
                 detector=detector,
@@ -690,6 +680,4 @@ def optimization_plan(
 
     print(f"Convergence list: {best_fitness}")
 
-    yield from bp.count(
-        [], md={"best_fitness": best_fitness, "optimized_positions": optimized_positions, "uids": all_uids}
-    )
+    yield from bp.count([], md={"best_fitness": best_fitness, "optimized_positions": optimized_positions, "uids": all_uids})

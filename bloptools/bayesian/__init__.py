@@ -337,13 +337,9 @@ class Agent:
                 outcome_transform=botorch.models.transforms.outcome.Standardize(m=1, batch_shape=torch.Size((1,))),
             ).double()
 
-            task.regressor_mll = gpytorch.mlls.ExactMarginalLogLikelihood(
-                task.regressor.likelihood, task.regressor
-            )
+            task.regressor_mll = gpytorch.mlls.ExactMarginalLogLikelihood(task.regressor.likelihood, task.regressor)
 
-        log_feas_prob_weight = np.sqrt(
-            np.sum(np.nanvar(self.targets.values, axis=0) * np.square(self.task_weights))
-        )
+        log_feas_prob_weight = np.sqrt(np.sum(np.nanvar(self.targets.values, axis=0) * np.square(self.task_weights)))
 
         self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
             weights=torch.tensor([*[task.weight for task in self.tasks], log_feas_prob_weight]).double(),
@@ -504,9 +500,7 @@ class Agent:
         This should yield a table of sampled tasks with the same length as the sampled inputs.
         """
         try:
-            uid = yield from self.acquisition_plan(
-                self.dofs, active_inputs, [*self.dets, *self.dofs, *self.passive_dofs]
-            )
+            uid = yield from self.acquisition_plan(self.dofs, active_inputs, [*self.dets, *self.dofs, *self.passive_dofs])
 
             products = self.digestion(self.db, uid)
 
@@ -776,9 +770,7 @@ class Agent:
             x = torch.tensor(self.test_inputs).double()
             log_prob = self.classifier.log_prob(x).detach().numpy()
 
-            self.class_axes[1].scatter(
-                *x.detach().numpy().T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap
-            )
+            self.class_axes[1].scatter(*x.detach().numpy().T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap)
 
         self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
 
@@ -850,11 +842,7 @@ class Agent:
                 *self.inputs.values.T[axes], s=size, c=task.targets, norm=task_norm, cmap=cmap
             )
 
-            x = (
-                torch.tensor(self.test_inputs_grid).double()
-                if gridded
-                else torch.tensor(self.test_inputs).double()
-            )
+            x = torch.tensor(self.test_inputs_grid).double() if gridded else torch.tensor(self.test_inputs).double()
 
             task_posterior = task.regressor.posterior(x)
             task_mean = task_posterior.mean.detach().numpy()  # * task.targets_scale + task.targets_mean
@@ -876,12 +864,8 @@ class Agent:
                 )
 
             else:
-                self.task_axes[itask, 1].scatter(
-                    *x.detach().numpy().T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap
-                )
-                sigma_ax = self.task_axes[itask, 2].scatter(
-                    *x.detach().numpy().T[axes], s=size, c=task_sigma, cmap=cmap
-                )
+                self.task_axes[itask, 1].scatter(*x.detach().numpy().T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap)
+                sigma_ax = self.task_axes[itask, 2].scatter(*x.detach().numpy().T[axes], s=size, c=task_sigma, cmap=cmap)
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
             self.task_fig.colorbar(sigma_ax, ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
@@ -916,15 +900,11 @@ class Agent:
                 obj = obj.exp()
 
             self.acq_axes[iacqf].set_title(acqf_meta["name"])
-            self.acq_axes[iacqf].plot(
-                self.test_active_inputs_grid.ravel(), obj.detach().numpy().ravel(), lw=lw, color=color
-            )
+            self.acq_axes[iacqf].plot(self.test_active_inputs_grid.ravel(), obj.detach().numpy().ravel(), lw=lw, color=color)
 
             self.acq_axes[iacqf].set_xlim(*self.active_dof_bounds[0])
 
-    def _plot_acq_many_dofs(
-        self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, **kwargs
-    ):
+    def _plot_acq_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, **kwargs):
         acqf_names = np.atleast_1d(kwargs.get("acqf", "ei"))
 
         self.acq_fig, self.acq_axes = plt.subplots(
