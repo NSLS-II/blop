@@ -36,25 +36,18 @@ def mprod(*M):
     return res
 
 
-def get_routing(origin, points):
+def route(start_point, points):
     """
-    Finds an efficient routing between $n$ points, after normalizing each dimension.
-    Returns $n-1$ indices, ignoring the zeroeth index (the origin).
+    Returns the indices of the most efficient way to visit `points`, starting from `start_point`.
     """
 
-    if not len(points) > 1:
-        return np.array([0]), 1.0
-
-    _points = np.r_[np.atleast_2d(origin), points]
-
-    rel_points = _points / np.array([std if std > 0 else 1.0 for std in points.std(axis=0)])
-
-    # delay_matrix = gpo.delay_estimate(rel_points[:,None,:] - rel_points[None,:,:])
-    delay_matrix = np.sqrt(np.square(rel_points[:, None, :] - rel_points[None, :, :]).sum(axis=-1))
-    delay_matrix = (1e3 * delay_matrix).astype(int)  # it likes integers idk
+    total_points = np.r_[np.atleast_2d(start_point), points]
+    normalized_points = (total_points - total_points.min(axis=0)) / total_points.ptp(axis=0)
+    delay_matrix = np.sqrt(np.square(normalized_points[:, None, :] - normalized_points[None, :, :]).sum(axis=-1))
+    delay_matrix = (1e4 * delay_matrix).astype(int)  # it likes integers idk
 
     manager = pywrapcp.RoutingIndexManager(
-        len(_points), 1, 0
+        len(total_points), 1, 0
     )  # number of depots, number of salesmen, starting index
     routing = pywrapcp.RoutingModel(manager)
 
@@ -71,17 +64,17 @@ def get_routing(origin, points):
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
 
     solution = routing.SolveWithParameters(search_parameters)
-    dir(solution)
 
     index = routing.Start(0)
-    route_indices, route_delays = [], []
+    route_indices, route_delays = [0], []
     while not routing.IsEnd(index):
         previous_index = index
         index = solution.Value(routing.NextVar(index))
         route_delays.append(routing.GetArcCostForVehicle(previous_index, index, 0))
         route_indices.append(index)
 
-    return np.array(route_indices)[:-1] - 1, route_delays[:-1]
+    # omit the first and last indices, which correspond to the start
+    return np.array(route_indices)[1:-1] - 1
 
 
 def get_movement_time(x, v_max, a):

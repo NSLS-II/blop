@@ -43,9 +43,18 @@ class LatentKernel(gpytorch.kernels.Kernel):
             raise ValueError("invalud dimension index in skew_dims")
 
         skew_group_submatrix_indices = []
-        for skew_group in self.skew_dims:
-            i, j = skew_group[torch.triu_indices(len(skew_group), len(skew_group), 1)].unsqueeze(1)
-            skew_group_submatrix_indices.append(torch.cat((i, j), dim=0))
+        for dim in range(self.num_outputs):
+            for skew_group in self.skew_dims:
+                j, k = skew_group[torch.triu_indices(len(skew_group), len(skew_group), 1)].unsqueeze(1)
+                i = dim * torch.ones(j.shape).long()
+                skew_group_submatrix_indices.append(torch.cat((i, j, k), dim=0))
+
+        self.diag_matrix_indices = tuple(
+            [
+                torch.kron(torch.arange(self.num_outputs), torch.ones(self.num_inputs)).long(),
+                *2 * [torch.arange(self.num_inputs).repeat(self.num_outputs)],
+            ]
+        )
 
         self.skew_matrix_indices = (
             tuple(torch.cat(skew_group_submatrix_indices, dim=1))
@@ -136,27 +145,23 @@ class LatentKernel(gpytorch.kernels.Kernel):
         self.initialize(raw_outputscale=self.raw_outputscale_constraint.inverse_transform(value))
 
     @property
-    def latent_transform(self):
+    def skew_matrix(self):
+        S = torch.zeros((self.num_outputs, self.num_inputs, self.num_inputs), dtype=torch.float64)
         if self.n_skew_entries > 0:
-            # construct an orthogonal matrix. fun fact: exp(skew(N)) is the generator of SO(N)
-            S = torch.zeros((self.num_inputs, self.num_inputs), dtype=torch.float64)
+            # to construct an orthogonal matrix. fun fact: exp(skew(N)) is the generator of SO(N)
             S[self.skew_matrix_indices] = self.skew_entries
             S += -S.transpose(-1, -2)
-            T = torch.linalg.matrix_exp(S)
+        return torch.linalg.matrix_exp(S)
 
-        else:
-            # no rotations
-            T = torch.eye(self.num_inputs, dtype=torch.float64)
+    @property
+    def diag_matrix(self):
+        D = torch.zeros((self.num_outputs, self.num_inputs, self.num_inputs), dtype=torch.float64)
+        D[self.diag_matrix_indices] = self.diag_entries.ravel()
+        return D
 
-        latent_diagonals = self.diag_entries
-        if self.batch_dimension is not None:
-            latent_diagonals[:, self.batch_dimension] = self.batch_inverse_lengthscale
-
-        # this gives everything a nice batchful shape
-        diagonal_transform = torch.cat([torch.diag(entries).unsqueeze(0) for entries in latent_diagonals], dim=0)
-        T = torch.matmul(diagonal_transform, T)
-
-        return T
+    @property
+    def latent_transform(self):
+        return torch.matmul(self.diag_matrix, self.skew_matrix)
 
     def forward(self, x1, x2, diag=False, **params):
         # adapted from the Matern kernel
