@@ -20,9 +20,9 @@ def test_bayesian_agent_himmelblau(RE, db):
         db=db,
     )
 
-    RE(agent.initialize(acqf="qr", n_init=16))
+    RE(agent.initialize("qr", n_init=16))
 
-    RE(agent.learn(acqf="ei", n_iter=2))
+    RE(agent.learn("ei", n_iter=2))
 
     agent.plot_tasks()
 
@@ -43,8 +43,8 @@ def test_bayesian_agent_mock_kbs(RE, db):
         db=db,
     )
 
-    RE(agent.initialize(acqf="qr", n_init=16))
+    RE(agent.initialize("qr", n_init=16))
 
-    RE(agent.learn(acqf="ei", n_iter=4))
+    RE(agent.learn("ei", n_iter=4))
 
     agent.plot_tasks()

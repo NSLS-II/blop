@@ -1,4 +1,5 @@
 import logging
+import time as ttime
 import warnings
 from collections import OrderedDict
 
@@ -40,7 +41,7 @@ def default_digestion_plan(db, uid):
 # dofs: degrees of freedom are things that can change
 # inputs: these are the values of the dofs, which may be transformed/normalized
 # targets: these are what our model tries to predict from the inputs
-# tasks: these are quantities that our agent will try to optimize over
+# tasks: these are quantities that our self will try to optimize over
 
 MAX_TEST_INPUTS = 2**11
 
@@ -71,16 +72,16 @@ class Agent:
         **kwargs,
     ):
         """
-        A Bayesian optimization agent.
+        A Bayesian optimization self.
 
         Parameters
         ----------
         dofs : iterable of ophyd objects
-            The degrees of freedom that the agent can control, which determine the output of the model.
+            The degrees of freedom that the self can control, which determine the output of the model.
         bounds : iterable of lower and upper bounds
             The bounds on each degree of freedom. This should be an array of shape (n_dofs, 2).
         tasks : iterable of tasks
-            The tasks which the agent will try to optimize.
+            The tasks which the self will try to optimize.
         acquisition : Bluesky plan generator that takes arguments (dofs, inputs, dets)
             A plan that samples the beamline for some given inputs.
         digestion : function that takes arguments (db, uid)
@@ -137,7 +138,7 @@ class Agent:
         self._initialized = False
         self._train_models = True
 
-        self.hypers = None
+        self.a_priori_hypers = None
 
     def normalize_active_inputs(self, x):
         return (x - self.active_dof_bounds.min(axis=1)) / self.active_dof_bounds.ptp(axis=1)
@@ -193,10 +194,10 @@ class Agent:
             d=self.n_dofs, coefficient=coefficient, offset=offset
         )
 
-    def save_data(self, filepath="./agent_data.h5"):
+    def save_data(self, filepath="./self_data.h5"):
         """
-        Save the sampled inputs and targets of the agent to a file, which can be used
-        to initialize a future agent.
+        Save the sampled inputs and targets of the self to a file, which can be used
+        to initialize a future self.
         """
 
         self.table.to_hdf(filepath, key="table")
@@ -212,25 +213,40 @@ class Agent:
         subset = np.random.choice(min_power_of_two, size=n, replace=False)
         return sp.stats.qmc.Sobol(d=self.n_active_dofs, scramble=True).random(n=min_power_of_two)[subset]
 
+    def _set_hypers(self, hypers):
+        for task in self.tasks:
+            task.regressor.load_state_dict(hypers[task.name])
+        self.classifier.load_state_dict(hypers["classifier"])
+
+    @property
+    def hypers(self):
+        hypers = {"classifier": {}}
+        for key, value in self.classifier.state_dict().items():
+            hypers["classifier"][key] = value
+        for task in self.tasks:
+            hypers[task.name] = {}
+            for key, value in task.regressor.state_dict().items():
+                hypers[task.name][key] = value
+
+        return hypers
+
     def save_hypers(self, filepath):
+        hypers = self.hypers
         with h5py.File(filepath, "w") as f:
-            for task in self.tasks:
-                f.create_group(task.name)
-                for key, value in task.regressor.state_dict().items():
-                    f[task.name].create_dataset(key, data=value)
-            f.create_group("classifier")
-            for key, value in self.classifier.state_dict().items():
-                f["classifier"].create_dataset(key, data=value)
+            for model_key in hypers.keys():
+                f.create_group(model_key)
+                for param_key, param_value in hypers[model_key].items():
+                    f[model_key].create_dataset(param_key, data=param_value)
 
     @staticmethod
-    def read_hypers(filepath):
-        state_dicts = {}
+    def load_hypers(filepath):
+        hypers = {}
         with h5py.File(filepath, "r") as f:
-            for model_name in f.keys():
-                state_dicts[model_name] = OrderedDict()
-                for key, value in f[model_name].items():
-                    state_dicts[model_name][key] = torch.tensor(np.atleast_1d(value[()]))
-        return state_dicts
+            for model_key in f.keys():
+                hypers[model_key] = OrderedDict()
+                for param_key, param_value in f[model_key].items():
+                    hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
+        return hypers
 
     def initialize(
         self,
@@ -240,8 +256,8 @@ class Agent:
         hypers=None,
     ):
         """
-        An initialization plan for the agent.
-        This must be run before the agent can learn.
+        An initialization plan for the self.
+        This must be run before the self can learn.
         It should be passed to a Bluesky RunEngine.
         """
 
@@ -250,7 +266,7 @@ class Agent:
             yield from self.initialization()
 
         if hypers is not None:
-            self.hypers = self.read_hypers(hypers)
+            self.a_priori_hypers = self.load_hypers(hypers)
 
         if data is not None:
             if type(data) == str:
@@ -260,7 +276,7 @@ class Agent:
 
         # now let's get bayesian
         elif acqf in ["qr"]:
-            yield from self.learn(acqf=acqf, n_iter=1, n_per_iter=n_init, route=True)
+            yield from self.learn("qr", n_iter=1, n_per_iter=n_init, route=True)
 
         else:
             raise Exception(
@@ -270,9 +286,9 @@ class Agent:
 
         self._initialized = True
 
-    def tell(self, new_table=None, append=True, **kwargs):
+    def tell(self, new_table=None, append=True, train=True, **kwargs):
         """
-        Inform the agent about new inputs and targets for the model.
+        Inform the self about new inputs and targets for the model.
         """
 
         new_table = pd.DataFrame() if new_table is None else new_table
@@ -283,6 +299,9 @@ class Agent:
         self.table.index = np.arange(len(self.table))
 
         skew_dims = [tuple(np.arange(self.n_active_dofs))]
+
+        if not train:
+            hypers = self.hypers
 
         for task in self.tasks:
             task.targets = self.targets.loc[:, task.name]
@@ -349,31 +368,30 @@ class Agent:
             f=lambda X: -self.classifier.log_prob(X).square()
         )
 
-        if self.hypers is None:
-            self.train_models()
+        if self.a_priori_hypers is not None:
+            self._set_hypers(self.a_priori_hypers)
+        elif not train:
+            self._set_hypers(hypers)
         else:
-            for task in self.tasks:
-                task.regressor.load_state_dict(self.hypers[task.name])
-            self.classifier.load_state_dict(self.hypers["classifier"])
-
-        self.targets_model = botorch.models.model_list_gp_regression.ModelListGP(
-            *[task.regressor for task in self.tasks]
-        )
+            self.train_models()
 
         self.task_model = botorch.models.model.ModelList(*[task.regressor for task in self.tasks], self.feas_model)
 
     def train_models(self, **kwargs):
+        t0 = ttime.monotonic()
         for task in self.tasks:
             botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
         botorch.fit.fit_gpytorch_mll(self.classifier_mll, **kwargs)
+        if self.verbose:
+            print(f"trained models in {ttime.monotonic() - t0:.02f} seconds")
 
-    def get_acquisition_function(self, acqf_name="ei", return_metadata=False, acqf_args={}, **kwargs):
+    def get_acquisition_function(self, acqf_identifier="ei", return_metadata=False, acqf_args={}, **kwargs):
         if not self._initialized:
             raise RuntimeError(
-                f'Can\'t construct acquisition function "{acqf_name}" (the agent is not initialized!)'
+                f'Can\'t construct acquisition function "{acqf_identifier}" (the self is not initialized!)'
             )
 
-        if acqf_name.lower() in AVAILABLE_ACQFS["expected_improvement"]["identifiers"]:
+        if acqf_identifier.lower() in AVAILABLE_ACQFS["expected_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogExpectedImprovement(
                 self.task_model,
                 best_f=self.best_sum_of_tasks,
@@ -382,7 +400,7 @@ class Agent:
             )
             acqf_meta = {"name": "expected improvement", "args": {}}
 
-        elif acqf_name.lower() in AVAILABLE_ACQFS["probability_of_improvement"]["identifiers"]:
+        elif acqf_identifier.lower() in AVAILABLE_ACQFS["probability_of_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogProbabilityOfImprovement(
                 self.task_model,
                 best_f=self.best_sum_of_tasks,
@@ -391,7 +409,7 @@ class Agent:
             )
             acqf_meta = {"name": "probability of improvement", "args": {}}
 
-        elif acqf_name.lower() in AVAILABLE_ACQFS["expected_mean"]["identifiers"]:
+        elif acqf_identifier.lower() in AVAILABLE_ACQFS["expected_mean"]["identifiers"]:
             acqf = botorch.acquisition.analytic.UpperConfidenceBound(
                 self.task_model,
                 beta=0,
@@ -400,7 +418,7 @@ class Agent:
             )
             acqf_meta = {"name": "expected mean"}
 
-        elif acqf_name.lower() in AVAILABLE_ACQFS["upper_confidence_bound"]["identifiers"]:
+        elif acqf_identifier.lower() in AVAILABLE_ACQFS["upper_confidence_bound"]["identifiers"]:
             beta = AVAILABLE_ACQFS["upper_confidence_bound"]["default_args"]["beta"]
             acqf = botorch.acquisition.analytic.UpperConfidenceBound(
                 self.task_model,
@@ -411,71 +429,77 @@ class Agent:
             acqf_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
 
         else:
-            raise ValueError(f'Unrecognized acquisition acqf_name "{acqf_name}".')
+            raise ValueError(f'Unrecognized acquisition acqf_identifier "{acqf_identifier}".')
 
         return (acqf, acqf_meta) if return_metadata else acqf
 
-    def ask(
-        self,
-        tasks=None,
-        classifier=None,
-        acqf_name="ei",
-        greedy=True,
-        n=1,
-        disappointment=0,
-        route=False,
-        cost_model=None,
-        n_test=1024,
-        optimize=True,
-        return_metadata=False,
-    ):
-        """
-        The next $n$ points to sample, recommended by the agent.
-        """
-
-        # if route:
-        #     unrouted_points = self.ask(
-        #         tasks=tasks,
-        #         classifier=classifier,
-        #         strategy=strategy,
-        #         greedy=greedy,
-        #         n=n,
-        #         disappointment=disappointment,
-        #         route=False,
-        #         cost_model=cost_model,
-        #         n_test=n_test,
-        #     )
-
-        #     routing_index, _ = utils.get_routing(self.read_active_dofs, unrouted_points)
-        #     x = unrouted_points[routing_index]
-
-        if acqf_name.lower() == "qr":
+    def ask(self, acqf_identifier="ei", n=1, route=True, return_metadata=False):
+        if acqf_identifier.lower() == "qr":
             x = self.active_inputs_sampler(n=n)
             acqf_meta = {"name": "quasi-random", "args": {}}
 
-        else:
-            acqf, acqf_meta = self.get_acquisition_function(acqf_name=acqf_name, return_metadata=True)
+        elif n == 1:
+            x, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
+            return (x, acqf_meta) if return_metadata else x
 
-            BATCH_SIZE = 1
-            NUM_RESTARTS = 7
-            RAW_SAMPLES = 512
+        elif n > 1:
+            for i in range(n):
+                x, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
 
-            candidates, _ = botorch.optim.optimize_acqf(
-                acq_function=acqf,
-                bounds=torch.tensor(self.dof_bounds).T,
-                q=BATCH_SIZE,
-                num_restarts=NUM_RESTARTS,
-                raw_samples=RAW_SAMPLES,  # used for intialization heuristic
-                options={"batch_limit": 3, "maxiter": 1024},
-            )
+                if i < (n - 1):
+                    task_samples = [
+                        task.regressor.posterior(torch.tensor(x)).sample().item() for task in self.tasks
+                    ]
+                    fantasy_table = pd.DataFrame(
+                        np.append(x, task_samples)[None], columns=[*self.dof_names, *self.task_names]
+                    )
+                    self.tell(fantasy_table, train=False)
 
-            x = candidates.detach().numpy()[..., self.dof_is_active_mask]
+            x = self.active_inputs.iloc[-n:].values
+
+            if n > 1:
+                self.forget(self.table.index[-(n - 1) :])
+
+        if route:
+            x = x[utils.route(self.read_active_dofs, x)]
+
+        return (x, acqf_meta) if return_metadata else x
+
+    def ask_single(
+        self,
+        acqf_identifier="ei",
+        return_metadata=False,
+    ):
+        """
+        The next $n$ points to sample, recommended by the self.
+        """
+
+        t0 = ttime.monotonic()
+
+        acqf, acqf_meta = self.get_acquisition_function(acqf_identifier=acqf_identifier, return_metadata=True)
+
+        BATCH_SIZE = 1
+        NUM_RESTARTS = 8
+        RAW_SAMPLES = 256
+
+        candidates, _ = botorch.optim.optimize_acqf(
+            acq_function=acqf,
+            bounds=torch.tensor(self.dof_bounds).T,
+            q=BATCH_SIZE,
+            num_restarts=NUM_RESTARTS,
+            raw_samples=RAW_SAMPLES,  # used for intialization heuristic
+        )
+
+        x = candidates.detach().numpy()[..., self.dof_is_active_mask]
+
+        if self.verbose:
+            print(f"found point {x} in {ttime.monotonic() - t0:.02f} seconds")
 
         return (x, acqf_meta) if return_metadata else x
 
     def acquire(self, active_inputs):
         """
-        Acquire and digest according to the agent's acquisition and digestion plans.
+        Acquire and digest according to the self's acquisition and digestion plans.
 
         This should yield a table of sampled tasks with the same length as the sampled inputs.
         """
@@ -504,14 +528,24 @@ class Agent:
 
         return products
 
-    def learn(self, acqf, n_iter=1, n_per_iter=1, reuse_hypers=True, upsample=1, verbose=True, plots=[], **kwargs):
+    def learn(
+        self,
+        acqf_identifier,
+        n_iter=1,
+        n_per_iter=1,
+        reuse_hypers=True,
+        upsample=1,
+        verbose=True,
+        plots=[],
+        **kwargs,
+    ):
         """
         This iterates the learning algorithm, looping over ask -> acquire -> tell.
         It should be passed to a Bluesky RunEngine.
         """
 
-        for i in range(n_iter):
-            x, acqf_meta = self.ask(n=n_per_iter, acqf_name=acqf, return_metadata=True, **kwargs)
+        for iteration in range(n_iter):
+            x, acqf_meta = self.ask(n=n_per_iter, acqf_identifier=acqf_identifier, return_metadata=True, **kwargs)
 
             new_table = yield from self.acquire(x)
 
@@ -1014,6 +1048,6 @@ class Agent:
         legend = hist_axes[0].legend(handles=handles, fontsize=8)
         legend.set_title("acquisition function")
 
-    # plot_history(agent, x_key="time")
+    # plot_history(self, x_key="time")
 
     # plt.savefig("bo-history.pdf", dpi=256)

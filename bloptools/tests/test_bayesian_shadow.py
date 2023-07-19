@@ -33,9 +33,9 @@ def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
         db=db,
     )
 
-    RE(agent.initialize(acqf="qr", n_init=4))
+    RE(agent.initialize("qr", n_init=4))
 
-    RE(agent.learn(acqf="ei", n_iter=2))
-    RE(agent.learn(acqf="pi", n_iter=2))
+    RE(agent.learn("ei", n_iter=2))
+    RE(agent.learn("pi", n_iter=2))
 
     agent.plot_tasks()
