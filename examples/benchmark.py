@@ -38,9 +38,7 @@ timestamps = bo.data.time.astype(int).values / 1e9
 plt.plot(
     timestamps - timestamps[0],
     [
-        np.nanmax(bo.data.fitness.values[: i + 1])
-        if not all(np.isnan(bo.data.fitness.values[: i + 1]))
-        else np.nan
+        np.nanmax(bo.data.fitness.values[: i + 1]) if not all(np.isnan(bo.data.fitness.values[: i + 1])) else np.nan
         for i in range(len(bo.data.fitness.values))
     ],
 )

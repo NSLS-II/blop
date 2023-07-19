@@ -51,9 +51,7 @@ def fitness(entry, args):
 
     background = args["background"]
 
-    x_min, x_max, y_min, y_max, separability = utils.get_beam_stats(
-        image - background, beam_prop=args["beam_prop"]
-    )
+    x_min, x_max, y_min, y_max, separability = utils.get_beam_stats(image - background, beam_prop=args["beam_prop"])
 
     n_y, n_x = image.shape
 
