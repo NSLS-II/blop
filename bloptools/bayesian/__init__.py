@@ -589,11 +589,12 @@ class Agent:
 
     @property
     def feasible_for_all_tasks(self):
-        with pd.option_context("mode.use_inf_as_null", True):
-            feasible = ~self.targets.isna().any(axis=1)
-            for task in self.tasks:
-                if task.min is not None:
-                    feasible &= self.targets.loc[:, task.name].values > task.transform(task.min)
+        # TODO: make this more robust
+        # with pd.option_context("mode.use_inf_as_null", True):
+        feasible = ~self.targets.isna().any(axis=1)
+        for task in self.tasks:
+            if task.min is not None:
+                feasible &= self.targets.loc[:, task.name].values > task.transform(task.min)
         return feasible
 
     # @property
