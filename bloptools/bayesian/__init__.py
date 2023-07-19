@@ -123,9 +123,7 @@ class Agent:
 
         # make some test points for sampling
 
-        self.normalized_test_active_inputs = utils.normalized_sobol_sampler(
-            n=MAX_TEST_INPUTS, d=self.n_active_dofs
-        )
+        self.normalized_test_active_inputs = utils.normalized_sobol_sampler(n=MAX_TEST_INPUTS, d=self.n_active_dofs)
 
         n_per_active_dim = int(np.power(MAX_TEST_INPUTS, 1 / self.n_active_dofs))
 
@@ -190,9 +188,7 @@ class Agent:
     def input_transform(self):
         coefficient = torch.tensor(self.dof_bounds.ptp(axis=1)).unsqueeze(0)
         offset = torch.tensor(self.dof_bounds.min(axis=1)).unsqueeze(0)
-        return botorch.models.transforms.input.AffineInputTransform(
-            d=self.n_dofs, coefficient=coefficient, offset=offset
-        )
+        return botorch.models.transforms.input.AffineInputTransform(d=self.n_dofs, coefficient=coefficient, offset=offset)
 
     def save_data(self, filepath="./self_data.h5"):
         """
@@ -312,9 +308,7 @@ class Agent:
                 raise ValueError("There must be at least two feasible data points per task!")
 
             train_inputs = torch.tensor(self.inputs.loc[task.feasibility].values).double().unsqueeze(0)
-            train_targets = (
-                torch.tensor(task.targets.loc[task.feasibility].values).double().unsqueeze(0).unsqueeze(-1)
-            )
+            train_targets = torch.tensor(task.targets.loc[task.feasibility].values).double().unsqueeze(0).unsqueeze(-1)
 
             if train_inputs.ndim == 1:
                 train_inputs = train_inputs.unsqueeze(-1)
@@ -383,9 +377,7 @@ class Agent:
 
     def get_acquisition_function(self, acqf_identifier="ei", return_metadata=False, acqf_args={}, **kwargs):
         if not self._initialized:
-            raise RuntimeError(
-                f'Can\'t construct acquisition function "{acqf_identifier}" (the self is not initialized!)'
-            )
+            raise RuntimeError(f'Can\'t construct acquisition function "{acqf_identifier}" (the self is not initialized!)')
 
         if acqf_identifier.lower() in AVAILABLE_ACQFS["expected_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogExpectedImprovement(
@@ -443,9 +435,7 @@ class Agent:
                 x, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
 
                 if i < (n - 1):
-                    task_samples = [
-                        task.regressor.posterior(torch.tensor(x)).sample().item() for task in self.tasks
-                    ]
+                    task_samples = [task.regressor.posterior(torch.tensor(x)).sample().item() for task in self.tasks]
                     fantasy_table = pd.DataFrame(
                         np.append(x, task_samples)[None], columns=[*self.dof_names, *self.task_names]
                     )
@@ -996,9 +986,7 @@ class Agent:
         )
         hist_axes = np.atleast_1d(hist_axes)
 
-        unique_strategies, acqf_index, acqf_inverse = np.unique(
-            self.table.acqf, return_index=True, return_inverse=True
-        )
+        unique_strategies, acqf_index, acqf_inverse = np.unique(self.table.acqf, return_index=True, return_inverse=True)
 
         sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
 
