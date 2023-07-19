@@ -1,3 +1,5 @@
+import os
+
 import pytest
 
 
@@ -8,3 +10,5 @@ def test_writing_hypers(RE, agent):
     agent.save_hypers("hypers.h5")
 
     RE(agent.initialize("qr", n_init=8, hypers="hypers.h5"))
+
+    os.remove("hypers.h5")
