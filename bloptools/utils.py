@@ -5,12 +5,19 @@ import torch
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 
+def sobol_sampler(bounds, n, q=1):
+    """
+    Returns $n$ quasi-randomly sampled points within the bounds.
+    """
+    return botorch.utils.sampling.draw_sobol_samples(bounds, n=n, q=q)
+
+
 def normalized_sobol_sampler(n, d):
     """
     Returns $n$ quasi-randomly sampled points in the [0,1]^d hypercube
     """
-    x = botorch.utils.sampling.draw_sobol_samples(torch.outer(torch.tensor([0, 1]), torch.ones(d)), n=n, q=1)
-    return x.squeeze(1).detach().numpy()
+    normalized_bounds = torch.outer(torch.tensor([0, 1]), torch.ones(d))
+    return sobol_sampler(normalized_bounds, n=n, q=1)
 
 
 def estimate_root_indices(x):

@@ -1,10 +1,8 @@
-import numpy as np
 import pytest
 from sirepo_bluesky.sirepo_ophyd import create_classes
 
 import bloptools
 from bloptools.experiments.sirepo.tes import w9_digestion
-from bloptools.tasks import Task
 
 
 @pytest.mark.shadow
@@ -16,19 +14,21 @@ def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
     data["models"]["simulation"]["npoint"] = 100000
     data["models"]["watchpointReport12"]["histogramBins"] = 32
 
-    kb_dofs = [kbv.x_rot, kbv.offz]
-    kb_bounds = np.array([[-0.10, +0.10], [-0.50, +0.50]])
+    dofs = [
+        {"device": kbv.x_rot, "limits": (-0.1, 0.1), "kind": "active"},
+        {"device": kbv.offz, "limits": (-0.5, 0.5), "kind": "active"},
+    ]
 
-    beam_flux_task = Task(key="flux", kind="max", transform=lambda x: np.log(x))
-    beam_width_task = Task(key="x_width", kind="min", transform=lambda x: np.log(x))
-    beam_height_task = Task(key="y_width", kind="min", transform=lambda x: np.log(x))
+    tasks = [
+        {"key": "flux", "kind": "maximize"},
+        {"key": "w9_fwhm_x", "kind": "minimize"},
+        {"key": "w9_fwhm_y", "kind": "minimize"},
+    ]
 
     agent = bloptools.bayesian.Agent(
-        active_dofs=kb_dofs,
-        passive_dofs=[],
-        detectors=[w9],
-        active_dof_bounds=kb_bounds,
-        tasks=[beam_flux_task, beam_width_task, beam_height_task],
+        dofs=dofs,
+        tasks=tasks,
+        dets=[w9],
         digestion=w9_digestion,
         db=db,
     )
