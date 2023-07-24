@@ -736,9 +736,11 @@ class Agent:
                 color=color,
             )
 
+            on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
+
             for z in [0, 1, 2]:
                 self.task_axes[itask].fill_between(
-                    x[..., self._dof_mask(kind="active", mode="on")].squeeze(),
+                    x[..., on_dofs_are_active_mask].squeeze(),
                     (task_mean - z * task_sigma).squeeze(),
                     (task_mean + z * task_sigma).squeeze(),
                     lw=lw,
@@ -774,7 +776,7 @@ class Agent:
             #     task_norm = mpl.colors.LogNorm(task_vmin, task_vmax)
             # else:
 
-            self.task_axes[itask, 0].set_ylabel(task["key"])
+            self.task_axes[itask, 0].set_ylabel(f'{task["key"]}_fitness')
 
             self.task_axes[itask, 0].set_title("samples")
             self.task_axes[itask, 1].set_title("posterior mean")
@@ -860,9 +862,9 @@ class Agent:
                 obj = obj.exp()
 
             self.acq_axes[iacqf].set_title(acqf_meta["name"])
-            self.acq_axes[iacqf].plot(
-                x[..., self._dof_mask(kind="active", mode="on")].squeeze(), obj.detach().numpy(), lw=lw, color=color
-            )
+
+            on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
+            self.acq_axes[iacqf].plot(x[..., on_dofs_are_active_mask].squeeze(), obj.detach().numpy(), lw=lw, color=color)
 
             self.acq_axes[iacqf].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
@@ -934,8 +936,11 @@ class Agent:
         *input_shape, input_dim = x.shape
         log_prob = self.classifier.log_prob(x.reshape(-1, 1, input_dim)).reshape(input_shape)
 
-        self.feas_ax.scatter(self.inputs.values, self.task_fitnesses.isna().any(axis=1).astype(int), s=size)
-        self.feas_ax.plot(x[..., self._dof_mask(kind="active", mode="on")].squeeze(), log_prob.exp().detach().numpy(), lw=lw)
+        self.feas_ax.scatter(self.inputs.values, ~self.task_fitnesses.isna().any(axis=1), s=size)
+
+        on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
+
+        self.feas_ax.plot(x[..., on_dofs_are_active_mask].squeeze(), log_prob.exp().detach().numpy(), lw=lw)
 
         self.feas_ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
@@ -947,8 +952,8 @@ class Agent:
 
         data_ax = self.feas_axes[0].scatter(
             *self.inputs.values.T[:2],
+            c=~self.task_fitnesses.isna().any(axis=1),
             s=size,
-            c=self.task_fitnesses.isna().any(axis=1).astype(int),
             vmin=0,
             vmax=1,
             cmap=cmap,
