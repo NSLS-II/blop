@@ -41,7 +41,7 @@ def default_digestion_plan(db, uid):
 # dofs: degrees of freedom are things that can change
 # inputs: these are the values of the dofs, which may be transformed/normalized
 # targets: these are what our model tries to predict from the inputs
-# tasks: these are quantities that our self will try to optimize over
+# tasks: these are quantities that our agent will try to optimize over
 
 MAX_TEST_INPUTS = 2**11
 
@@ -109,6 +109,8 @@ def _validate_and_prepare_tasks(tasks):
             raise ValueError('"mode" must be specified as either "minimize" or "maximize"')
         if "weight" not in task.keys():
             task["weight"] = 1
+        if "limits" not in task.keys():
+            task["limits"] = (-np.inf, np.inf)
 
     task_keys = [task["key"] for task in tasks]
     if not len(set(task_keys)) == len(task_keys):
@@ -131,11 +133,11 @@ class Agent:
         Parameters
         ----------
         dofs : iterable of ophyd objects
-            The degrees of freedom that the self can control, which determine the output of the model.
+            The degrees of freedom that the agent can control, which determine the output of the model.
         bounds : iterable of lower and upper bounds
             The bounds on each degree of freedom. This should be an array of shape (n_dofs, 2).
         tasks : iterable of tasks
-            The tasks which the self will try to optimize.
+            The tasks which the agent will try to optimize.
         acquisition : Bluesky plan generator that takes arguments (dofs, inputs, dets)
             A plan that samples the beamline for some given inputs.
         digestion : function that takes arguments (db, uid)
@@ -203,7 +205,7 @@ class Agent:
     ):
         """
         An initialization plan for the self.
-        This must be run before the self can learn.
+        This must be run before the agent can learn.
         It should be passed to a Bluesky RunEngine.
         """
 
@@ -234,21 +236,24 @@ class Agent:
 
     def tell(self, new_table=None, append=True, train=True, **kwargs):
         """
-        Inform the self about new inputs and targets for the model.
+        Inform the agent about new inputs and targets for the model.
         """
 
         new_table = pd.DataFrame() if new_table is None else new_table
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        # self.table.loc[:, "total_fitness"] = self.table.loc[:, self.task_names].fillna(-np.inf).sum(axis=1)
+        fitnesses = self.task_fitnesses  # computes from self.table
+
+        # update fitness estimates
+        self.table.loc[:, fitnesses.columns] = fitnesses.values
+        self.table.loc[:, "total_fitness"] = fitnesses.values.sum(axis=1)
 
         skew_dims = [tuple(np.arange(self._n_subset_dofs(mode="on")))]
 
         if not train:
             hypers = self.hypers
 
-        fitnesses = self.task_fitnesses
         feasibility = ~fitnesses.isna().any(axis=1)
 
         if not feasibility.sum() >= 2:
@@ -258,7 +263,7 @@ class Agent:
         train_inputs = torch.tensor(inputs).double().unsqueeze(0)
 
         for task in self.tasks:
-            targets = fitnesses.loc[feasibility, task["key"]].values
+            targets = self.table.loc[feasibility, f'{task["key"]}_fitness'].values
             train_targets = torch.tensor(targets).double().unsqueeze(0).unsqueeze(-1)
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
@@ -279,17 +284,14 @@ class Agent:
                 outcome_transform=outcome_transform,
             ).double()
 
-        log_feas_prob_weight = (self.fitness_variance * self.task_weights.square()).sum().sqrt()
-
+        # this ensures that we have equal weight between task fitness and feasibility fitness
         self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-            weights=torch.tensor([*self.task_weights, log_feas_prob_weight]).double(),
+            weights=torch.tensor([*torch.ones(self.n_tasks), self.fitness_variance.sum().sqrt()]).double(),
             offset=0,
         )
 
-        train_classes = torch.tensor(feasibility).long()  # .unsqueeze(0)#.unsqueeze(-1)
-
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            train_classes, learn_additional_noise=True
+            torch.tensor(feasibility).long(), learn_additional_noise=True
         ).double()
 
         self.classifier = models.LatentDirichletClassifier(
@@ -317,15 +319,22 @@ class Agent:
     def task_fitnesses(self):
         df = pd.DataFrame(index=self.table.index)
         for task in self.tasks:
-            df.loc[:, task["key"]] = self.table.loc[:, task["key"]]
-            valid = (df.loc[:, task["key"]] > -np.inf) & (df.loc[:, task["key"]] < np.inf)
+            name = f'{task["key"]}_fitness'
+
+            df.loc[:, name] = task["weight"] * self.table.loc[:, task["key"]]
+
+            # check that task values are inside acceptable values
+            valid = (df.loc[:, name] > task["limits"][0]) & (df.loc[:, name] < task["limits"][1])
+
+            # transform if needed
             if "transform" in task.keys():
                 if task["transform"] == "log":
-                    valid &= df.loc[:, task["key"]] > 0
-                    df.loc[valid, task["key"]] = np.log(df.loc[valid, task["key"]])
-                    df.loc[~valid, task["key"]] = np.nan
+                    valid &= df.loc[:, name] > 0
+                    df.loc[valid, name] = np.log(df.loc[valid, name])
+                    df.loc[~valid, name] = np.nan
+
             if task["kind"] == "minimize":
-                df.loc[valid, task["key"]] *= -1
+                df.loc[valid, name] *= -1
         return df
 
     def _dof_kind_mask(self, kind=None):
@@ -421,7 +430,7 @@ class Agent:
 
     def save_data(self, filepath="./self_data.h5"):
         """
-        Save the sampled inputs and targets of the self to a file, which can be used
+        Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future self.
         """
 
@@ -475,10 +484,6 @@ class Agent:
                     hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
         return hypers
 
-    @property
-    def all_task_fitnesseses_feasible(self):
-        return ~self.task_fitnesses.isna().any(axis=1)
-
     def train_models(self, **kwargs):
         t0 = ttime.monotonic()
         for task in self.tasks:
@@ -503,7 +508,7 @@ class Agent:
 
     def get_acquisition_function(self, acqf_identifier="ei", return_metadata=False, acqf_args={}, **kwargs):
         if not self._initialized:
-            raise RuntimeError(f'Can\'t construct acquisition function "{acqf_identifier}" (the self is not initialized!)')
+            raise RuntimeError(f'Can\'t construct acquisition function "{acqf_identifier}" (the agent is not initialized!)')
 
         if acqf_identifier.lower() in ACQF_CONFIG["expected_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogExpectedImprovement(
@@ -688,7 +693,7 @@ class Agent:
 
     @property
     def scalarized_fitness(self):
-        return (self.task_fitnesses * self.task_weights).sum(axis=1)
+        return self.task_fitnesses.sum(axis=1)
 
     # @property
     # def best_sum_of_tasks_inputs(self):
@@ -731,7 +736,7 @@ class Agent:
 
             self.task_axes[itask].scatter(
                 self.inputs.loc[:, self._subset_dof_names(kind="active", mode="on")],
-                self.task_fitnesses.loc[:, task["key"]],
+                self.table.loc[:, f'{task["key"]}_fitness'],
                 s=size,
                 color=color,
             )
@@ -766,10 +771,9 @@ class Agent:
         self.task_axes = np.atleast_2d(self.task_axes)
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        fitnesses = self.task_fitnesses
-
         for itask, task in enumerate(self.tasks):
-            task_vmin, task_vmax = np.nanpercentile(fitnesses.loc[:, task["key"]], q=[1, 99])
+            sampled_fitness = self.table.loc[:, f'{task["key"]}_fitness'].values
+            task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
             task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
             # if task["transform"] == "log":
@@ -783,7 +787,7 @@ class Agent:
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
             data_ax = self.task_axes[itask, 0].scatter(
-                *self.inputs.values.T[axes], s=size, c=fitnesses.loc[:, task["key"]], norm=task_norm, cmap=cmap
+                *self.inputs.values.T[axes], s=size, c=sampled_fitness, norm=task_norm, cmap=cmap
             )
 
             x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
@@ -815,13 +819,17 @@ class Agent:
                 self.task_axes[itask, 1].scatter(
                     x.detach().numpy()[..., axes[0]],
                     x.detach().numpy()[..., axes[1]],
+                    c=task_mean[..., 0].detach().numpy(),
                     s=size,
-                    c=task_mean,
                     norm=task_norm,
                     cmap=cmap,
                 )
                 sigma_ax = self.task_axes[itask, 2].scatter(
-                    x.detach().numpy()[..., axes[0]], x.detach().numpy()[..., axes[1]], s=size, c=task_sigma, cmap=cmap
+                    x.detach().numpy()[..., axes[0]],
+                    x.detach().numpy()[..., axes[1]],
+                    c=task_sigma[..., 0].detach().numpy(),
+                    s=size,
+                    cmap=cmap,
                 )
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
@@ -1028,7 +1036,7 @@ class Agent:
 
         if show_all_tasks:
             for itask, task in enumerate(self.tasks):
-                y = self.task_fitnesses.loc[:, task["key"]].values
+                y = self.table.loc[:, f'{task["key"]}_fitness'].values
                 hist_axes[itask].scatter(x, y, c=sample_colors)
                 hist_axes[itask].plot(x, y, lw=5e-1, c="k")
                 hist_axes[itask].set_ylabel(task["key"])
