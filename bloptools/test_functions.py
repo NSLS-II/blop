@@ -14,9 +14,7 @@ def himmelblau(x1, x2):
 
 
 def constrained_himmelblau(x1, x2):
-    if x1**2 + x2**2 > 50:
-        return np.nan
-    return himmelblau(x1, x2)
+    return np.where(x1**2 + x2**2 < 50, himmelblau(x1, x2), np.nan)
 
 
 def skewed_himmelblau(x1, x2):

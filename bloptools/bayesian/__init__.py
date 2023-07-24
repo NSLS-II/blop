@@ -17,7 +17,7 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
 from .. import utils
-from . import acquisition, models
+from . import models
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -45,28 +45,82 @@ def default_digestion_plan(db, uid):
 
 MAX_TEST_INPUTS = 2**11
 
-AVAILABLE_ACQFS = {
+ACQF_CONFIG = {
     "expected_mean": {
         "identifiers": ["em", "expected_mean"],
+        "pretty_name": "Expected mean",
+        "description": "The expected value at each input.",
     },
     "expected_improvement": {
         "identifiers": ["ei", "expected_improvement"],
+        "pretty_name": "Expected improvement",
+        "description": r"The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.",
     },
     "probability_of_improvement": {
         "identifiers": ["pi", "probability_of_improvement"],
+        "pretty_name": "Probability of improvement",
+        "description": "The probability that this input improves on the current maximum.",
     },
     "upper_confidence_bound": {
         "identifiers": ["ucb", "upper_confidence_bound"],
-        "default_args": {"beta": 4},
+        "default_args": {"z": 2},
+        "pretty_name": "Upper confidence bound",
+        "description": r"The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).",
     },
 }
+
+TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
+
+
+def _validate_and_prepare_dofs(dofs):
+    for dof in dofs:
+        if type(dof) is not dict:
+            raise ValueError("Supplied dofs must be a list of dicts!")
+        if "device" not in dof.keys():
+            raise ValueError("Each DOF must have a device!")
+
+        dof["device"].kind = "hinted"
+
+        if "limits" not in dof.keys():
+            dof["limits"] = (-np.inf, np.inf)
+        dof["limits"] = tuple(np.array(dof["limits"]).astype(float))
+
+        # read-only DOFs (without a set method) are passive by default
+        dof["kind"] = dof.get("kind", "active" if hasattr(dof["device"], "set") else "passive")
+        if dof["kind"] not in ["active", "passive"]:
+            raise ValueError('DOF kinds must be one of "active" or "passive"')
+
+        dof["mode"] = dof.get("mode", "on" if dof["kind"] == "active" else "off")
+        if dof["mode"] not in ["on", "off"]:
+            raise ValueError('DOF modes must be one of "on" or "off"')
+
+    dof_names = [dof["device"].name for dof in dofs]
+    if not len(set(dof_names)) == len(dof_names):
+        raise ValueError("Names of DOFs must be unique!")
+
+    return list(dofs)
+
+
+def _validate_and_prepare_tasks(tasks):
+    for task in tasks:
+        if type(task) is not dict:
+            raise ValueError("Supplied tasks must be a list of dicts!")
+        if task["kind"] not in ["minimize", "maximize"]:
+            raise ValueError('"mode" must be specified as either "minimize" or "maximize"')
+        if "weight" not in task.keys():
+            task["weight"] = 1
+
+    task_keys = [task["key"] for task in tasks]
+    if not len(set(task_keys)) == len(task_keys):
+        raise ValueError("Keys of tasks must be unique!")
+
+    return list(tasks)
 
 
 class Agent:
     def __init__(
         self,
-        active_dofs,
-        active_dof_bounds,
+        dofs,
         tasks,
         db,
         **kwargs,
@@ -89,160 +143,56 @@ class Agent:
         db : A databroker instance.
         """
 
-        self.active_dofs = list(np.atleast_1d(active_dofs))
-        self.passive_dofs = list(np.atleast_1d(kwargs.get("passive_dofs", [])))
+        # DOFs are parametrized by kind ("active" or "passive") and mode ("on" or "off")
+        #
+        # below are the behaviors of DOFs of each kind and mode:
+        #
+        # "read": the agent will read the input on every acquisition (all dofs are always read)
+        # "move": the agent will try to set and optimize over these (there must be at least one of these)
+        # "input" means that the agent will use the value to make its posterior
+        #
+        #
+        #             active             passive
+        #     +---------------------+---------------+
+        #  on |  read, input, move  |  read, input  |
+        #     +---------------------+---------------+
+        # off |  read               |  read         |
+        #     +---------------------+---------------+
+        #
+        #
 
-        for dof in self.dofs:
-            dof.kind = "hinted"
-
-        self.active_dof_bounds = np.atleast_2d(active_dof_bounds).astype(float)
-        self.tasks = np.atleast_1d(tasks)
+        self.dofs = _validate_and_prepare_dofs(np.atleast_1d(dofs))
+        self.tasks = _validate_and_prepare_tasks(np.atleast_1d(tasks))
         self.db = db
 
         self.verbose = kwargs.get("verbose", False)
         self.ignore_acquisition_errors = kwargs.get("ignore_acquisition_errors", False)
-
         self.initialization = kwargs.get("initialization", None)
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
         self.digestion = kwargs.get("digestion", default_digestion_plan)
+        self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
 
-        self.decoherence = kwargs.get("decoherence", False)
-
-        self.tolerate_acquisition_errors = kwargs.get("tolerate_acquisition_errors", True)
-
-        self.acquisition = acquisition.Acquisition()
-
-        self.dets = np.atleast_1d(kwargs.get("detectors", []))
-
-        for i, task in enumerate(self.tasks):
-            task.index = i
-
-        self.n_tasks = len(self.tasks)
-
-        self.training_iter = kwargs.get("training_iter", 256)
-
-        # make some test points for sampling
-
-        self.normalized_test_active_inputs = utils.normalized_sobol_sampler(n=MAX_TEST_INPUTS, d=self.n_active_dofs)
-
-        n_per_active_dim = int(np.power(MAX_TEST_INPUTS, 1 / self.n_active_dofs))
-
-        self.normalized_test_active_inputs_grid = np.swapaxes(
-            np.r_[np.meshgrid(*self.n_active_dofs * [np.linspace(0, 1, n_per_active_dim)])], 0, -1
-        )
+        self.acqf_config = kwargs.get("acqf_config", ACQF_CONFIG)
 
         self.table = pd.DataFrame()
 
         self._initialized = False
         self._train_models = True
-
         self.a_priori_hypers = None
 
-    def normalize_active_inputs(self, x):
-        return (x - self.active_dof_bounds.min(axis=1)) / self.active_dof_bounds.ptp(axis=1)
-
-    def unnormalize_active_inputs(self, x):
-        return x * self.active_dof_bounds.ptp(axis=1) + self.active_dof_bounds.min(axis=1)
+    # A note on how we transform inputs:
+    #
+    #
+    # Inputs can be _active_ or _passive_. We apply
+    #
+    # For passive inputs, this is more complicated. There are two ways to do this
 
     def active_inputs_sampler(self, n=MAX_TEST_INPUTS):
         """
         Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
         """
-        return self.unnormalize_active_inputs(utils.normalized_sobol_sampler(n, self.n_active_dofs))
-
-    @property
-    def dofs(self):
-        return np.append(self.active_dofs, self.passive_dofs)
-
-    @property
-    def n_active_dofs(self):
-        return len(self.active_dofs)
-
-    @property
-    def n_passive_dofs(self):
-        return len(self.passive_dofs)
-
-    @property
-    def n_dofs(self):
-        return self.n_active_dofs + self.n_passive_dofs
-
-    @property
-    def test_active_inputs(self):
-        """
-        A static, quasi-randomly sampled set of test active inputs.
-        """
-        return self.unnormalize_active_inputs(self.normalized_test_active_inputs)
-
-    @property
-    def test_active_inputs_grid(self):
-        """
-        A static, gridded set of test active inputs.
-        """
-        return self.unnormalize_active_inputs(self.normalized_test_active_inputs_grid)
-
-    # @property
-    # def input_transform(self):
-    #     return botorch.models.transforms.input.Normalize(d=self.n_dofs)
-
-    @property
-    def input_transform(self):
-        coefficient = torch.tensor(self.dof_bounds.ptp(axis=1)).unsqueeze(0)
-        offset = torch.tensor(self.dof_bounds.min(axis=1)).unsqueeze(0)
-        return botorch.models.transforms.input.AffineInputTransform(d=self.n_dofs, coefficient=coefficient, offset=offset)
-
-    def save_data(self, filepath="./self_data.h5"):
-        """
-        Save the sampled inputs and targets of the self to a file, which can be used
-        to initialize a future self.
-        """
-
-        self.table.to_hdf(filepath, key="table")
-
-    def forget(self, index):
-        self.tell(new_table=self.table.drop(index=index), append=False)
-
-    def sampler(self, n):
-        """
-        Returns $n$ quasi-randomly sampled points on the [0,1] ^ n_active_dof hypercube using Sobol sampling.
-        """
-        min_power_of_two = 2 ** int(np.ceil(np.log(n) / np.log(2)))
-        subset = np.random.choice(min_power_of_two, size=n, replace=False)
-        return sp.stats.qmc.Sobol(d=self.n_active_dofs, scramble=True).random(n=min_power_of_two)[subset]
-
-    def _set_hypers(self, hypers):
-        for task in self.tasks:
-            task.regressor.load_state_dict(hypers[task.name])
-        self.classifier.load_state_dict(hypers["classifier"])
-
-    @property
-    def hypers(self):
-        hypers = {"classifier": {}}
-        for key, value in self.classifier.state_dict().items():
-            hypers["classifier"][key] = value
-        for task in self.tasks:
-            hypers[task.name] = {}
-            for key, value in task.regressor.state_dict().items():
-                hypers[task.name][key] = value
-
-        return hypers
-
-    def save_hypers(self, filepath):
-        hypers = self.hypers
-        with h5py.File(filepath, "w") as f:
-            for model_key in hypers.keys():
-                f.create_group(model_key)
-                for param_key, param_value in hypers[model_key].items():
-                    f[model_key].create_dataset(param_key, data=param_value)
-
-    @staticmethod
-    def load_hypers(filepath):
-        hypers = {}
-        with h5py.File(filepath, "r") as f:
-            for model_key in f.keys():
-                hypers[model_key] = OrderedDict()
-                for param_key, param_value in f[model_key].items():
-                    hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
-        return hypers
+        transform = self._subset_input_transform(kind="active", mode="on")
+        return transform.untransform(utils.normalized_sobol_sampler(n, self._n_subset_dofs(kind="active", mode="on")))
 
     def initialize(
         self,
@@ -288,60 +238,58 @@ class Agent:
         """
 
         new_table = pd.DataFrame() if new_table is None else new_table
-
         self.table = pd.concat([self.table, new_table]) if append else new_table
-
-        self.table.loc[:, "total_fitness"] = self.table.loc[:, self.task_names].fillna(-np.inf).sum(axis=1)
         self.table.index = np.arange(len(self.table))
 
-        skew_dims = [tuple(np.arange(self.n_active_dofs))]
+        # self.table.loc[:, "total_fitness"] = self.table.loc[:, self.task_names].fillna(-np.inf).sum(axis=1)
+
+        skew_dims = [tuple(np.arange(self._n_subset_dofs(mode="on")))]
 
         if not train:
             hypers = self.hypers
 
+        fitnesses = self.task_fitnesses
+        feasibility = ~fitnesses.isna().any(axis=1)
+
+        if not feasibility.sum() >= 2:
+            raise ValueError("There must be at least two feasible data points per task!")
+
+        inputs = self.inputs.loc[feasibility, self._subset_dof_names(mode="on")].values
+        train_inputs = torch.tensor(inputs).double().unsqueeze(0)
+
         for task in self.tasks:
-            task.targets = self.targets.loc[:, task.name]
-
-            task.feasibility = self.feasible_for_all_tasks
-
-            if not task.feasibility.sum() >= 2:
-                raise ValueError("There must be at least two feasible data points per task!")
-
-            train_inputs = torch.tensor(self.inputs.loc[task.feasibility].values).double().unsqueeze(0)
-            train_targets = torch.tensor(task.targets.loc[task.feasibility].values).double().unsqueeze(0).unsqueeze(-1)
-
-            if train_inputs.ndim == 1:
-                train_inputs = train_inputs.unsqueeze(-1)
-            if train_targets.ndim == 1:
-                train_targets = train_targets.unsqueeze(-1)
+            targets = fitnesses.loc[feasibility, task["key"]].values
+            train_targets = torch.tensor(targets).double().unsqueeze(0).unsqueeze(-1)
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
-                    torch.tensor(task.MIN_NOISE_LEVEL).square(),
-                    torch.tensor(task.MAX_NOISE_LEVEL).square(),
+                    torch.tensor(1e-6).square(),
+                    torch.tensor(1e-2).square(),
                 ),
             ).double()
 
-            task.regressor = models.LatentGP(
+            outcome_transform = botorch.models.transforms.outcome.Standardize(m=1, batch_shape=torch.Size((1,)))
+
+            task["model"] = models.LatentGP(
                 train_inputs=train_inputs,
                 train_targets=train_targets,
                 likelihood=likelihood,
                 skew_dims=skew_dims,
-                input_transform=self.input_transform,
-                outcome_transform=botorch.models.transforms.outcome.Standardize(m=1, batch_shape=torch.Size((1,))),
+                input_transform=self._subset_input_transform(mode="on"),
+                outcome_transform=outcome_transform,
             ).double()
 
-            task.regressor_mll = gpytorch.mlls.ExactMarginalLogLikelihood(task.regressor.likelihood, task.regressor)
-
-        log_feas_prob_weight = np.sqrt(np.sum(np.nanvar(self.targets.values, axis=0) * np.square(self.task_weights)))
+        log_feas_prob_weight = (self.fitness_variance * self.task_weights.square()).sum().sqrt()
 
         self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-            weights=torch.tensor([*[task.weight for task in self.tasks], log_feas_prob_weight]).double(),
+            weights=torch.tensor([*self.task_weights, log_feas_prob_weight]).double(),
             offset=0,
         )
 
+        train_classes = torch.tensor(feasibility).long()  # .unsqueeze(0)#.unsqueeze(-1)
+
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            torch.as_tensor(self.feasible_for_all_tasks.values).long(), learn_additional_noise=True
+            train_classes, learn_additional_noise=True
         ).double()
 
         self.classifier = models.LatentDirichletClassifier(
@@ -349,14 +297,8 @@ class Agent:
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
-            input_transform=self.input_transform,
+            input_transform=self._subset_input_transform(mode="on"),
         ).double()
-
-        self.classifier_mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.classifier.likelihood, self.classifier)
-
-        self.feas_model = botorch.models.deterministic.GenericDeterministicModel(
-            f=lambda X: -self.classifier.log_prob(X).square()
-        )
 
         if self.a_priori_hypers is not None:
             self._set_hypers(self.a_priori_hypers)
@@ -365,51 +307,235 @@ class Agent:
         else:
             self.train_models()
 
-        self.task_model = botorch.models.model.ModelList(*[task.regressor for task in self.tasks], self.feas_model)
+        feasibility_fitness_model = botorch.models.deterministic.GenericDeterministicModel(
+            f=lambda X: -self.classifier.log_prob(X).square()
+        )
+
+        self.model_list = botorch.models.model.ModelList(*[task["model"] for task in self.tasks], feasibility_fitness_model)
+
+    @property
+    def task_fitnesses(self):
+        df = pd.DataFrame(index=self.table.index)
+        for task in self.tasks:
+            df.loc[:, task["key"]] = self.table.loc[:, task["key"]]
+            valid = (df.loc[:, task["key"]] > -np.inf) & (df.loc[:, task["key"]] < np.inf)
+            if "transform" in task.keys():
+                if task["transform"] == "log":
+                    valid &= df.loc[:, task["key"]] > 0
+                    df.loc[valid, task["key"]] = np.log(df.loc[valid, task["key"]])
+                    df.loc[~valid, task["key"]] = np.nan
+            if task["kind"] == "minimize":
+                df.loc[valid, task["key"]] *= -1
+        return df
+
+    def _dof_kind_mask(self, kind=None):
+        return [dof["kind"] == kind if kind is not None else True for dof in self.dofs]
+
+    def _dof_mode_mask(self, mode=None):
+        return [dof["mode"] == mode if mode is not None else True for dof in self.dofs]
+
+    def _dof_mask(self, kind=None, mode=None):
+        return [(k and m) for k, m in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode))]
+
+    def _subset_dofs(self, kind=None, mode=None):
+        return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode)) if m]
+
+    def _n_subset_dofs(self, kind=None, mode=None):
+        return len(self._subset_dofs(kind, mode))
+
+    def _subset_devices(self, kind=None, mode=None):
+        return [dof["device"] for dof in self._subset_dofs(kind, mode)]
+
+    def _read_subset_devices(self, kind=None, mode=None):
+        return [device.read()[device.name]["value"] for device in self._subset_devices(kind, mode)]
+
+    def _subset_dof_names(self, kind=None, mode=None):
+        return [device.name for device in self._subset_devices(kind, mode)]
+
+    def _subset_dof_limits(self, kind=None, mode=None):
+        dofs_subset = self._subset_dofs(kind, mode)
+        if len(dofs_subset) > 0:
+            return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
+        return torch.empty((2, 0))
+
+    def test_inputs(self, n=MAX_TEST_INPUTS):
+        return utils.sobol_sampler(self._acqf_bounds, n=n)
+
+    @property
+    def test_inputs_grid(self):
+        n_side = int(MAX_TEST_INPUTS ** (1 / self._n_subset_dofs(kind="active", mode="on")))
+        return torch.tensor(
+            np.r_[
+                np.meshgrid(
+                    *[
+                        np.linspace(*dof["limits"], n_side)
+                        if dof["kind"] == "active"
+                        else dof["device"].read()[dof["device"].name]["value"]
+                        for dof in self._subset_dofs(mode="on")
+                    ]
+                )
+            ]
+        ).swapaxes(0, -1)
+
+    @property
+    def _acqf_bounds(self):
+        return torch.tensor(
+            [
+                dof["limits"] if dof["kind"] == "active" else tuple(2 * [dof["device"].read()[dof["device"].name]["value"]])
+                for dof in self.dofs
+                if dof["mode"] == "on"
+            ]
+        ).T
+
+    @property
+    def n_tasks(self):
+        return len(self.tasks)
+
+    @property
+    def det_names(self):
+        return [det.name for det in self.dets]
+
+    @property
+    def task_keys(self):
+        return [task["key"] for task in self.tasks]
+
+    @property
+    def task_models(self):
+        return [task["model"] for task in self.tasks]
+
+    @property
+    def task_weights(self):
+        return torch.tensor([task["weight"] for task in self.tasks], dtype=torch.float64)
+
+    @property
+    def task_signs(self):
+        return torch.tensor([(1 if task["kind"] == "maximize" else -1) for task in self.tasks], dtype=torch.long)
+
+    def _subset_input_transform(self, kind=None, mode=None):
+        limits = self._subset_dof_limits(kind, mode)
+        offset = limits.min(dim=0).values
+        coefficient = limits.max(dim=0).values - offset
+        return botorch.models.transforms.input.AffineInputTransform(
+            d=limits.shape[-1], coefficient=coefficient, offset=offset
+        )
+
+    def save_data(self, filepath="./self_data.h5"):
+        """
+        Save the sampled inputs and targets of the self to a file, which can be used
+        to initialize a future self.
+        """
+
+        self.table.to_hdf(filepath, key="table")
+
+    def forget(self, index):
+        self.tell(new_table=self.table.drop(index=index), append=False)
+
+    def sampler(self, n):
+        """
+        Returns $n$ quasi-randomly sampled points on the [0,1] ^ n_active_dof hypercube using Sobol sampling.
+        """
+        min_power_of_two = 2 ** int(np.ceil(np.log(n) / np.log(2)))
+        subset = np.random.choice(min_power_of_two, size=n, replace=False)
+        return sp.stats.qmc.Sobol(d=self._n_subset_dofs(kind="active", mode="on"), scramble=True).random(n=min_power_of_two)[
+            subset
+        ]
+
+    def _set_hypers(self, hypers):
+        for task in self.tasks:
+            task["model"].load_state_dict(hypers[task["key"]])
+        self.classifier.load_state_dict(hypers["classifier"])
+
+    @property
+    def hypers(self):
+        hypers = {"classifier": {}}
+        for key, value in self.classifier.state_dict().items():
+            hypers["classifier"][key] = value
+        for task in self.tasks:
+            hypers[task["key"]] = {}
+            for key, value in task["model"].state_dict().items():
+                hypers[task["key"]][key] = value
+
+        return hypers
+
+    def save_hypers(self, filepath):
+        hypers = self.hypers
+        with h5py.File(filepath, "w") as f:
+            for model_key in hypers.keys():
+                f.create_group(model_key)
+                for param_key, param_value in hypers[model_key].items():
+                    f[model_key].create_dataset(param_key, data=param_value)
+
+    @staticmethod
+    def load_hypers(filepath):
+        hypers = {}
+        with h5py.File(filepath, "r") as f:
+            for model_key in f.keys():
+                hypers[model_key] = OrderedDict()
+                for param_key, param_value in f[model_key].items():
+                    hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
+        return hypers
+
+    @property
+    def all_task_fitnesseses_feasible(self):
+        return ~self.task_fitnesses.isna().any(axis=1)
 
     def train_models(self, **kwargs):
         t0 = ttime.monotonic()
         for task in self.tasks:
-            botorch.fit.fit_gpytorch_mll(task.regressor_mll, **kwargs)
-        botorch.fit.fit_gpytorch_mll(self.classifier_mll, **kwargs)
+            model = task["model"]
+            botorch.fit.fit_gpytorch_mll(gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model), **kwargs)
+        botorch.fit.fit_gpytorch_mll(
+            gpytorch.mlls.ExactMarginalLogLikelihood(self.classifier.likelihood, self.classifier), **kwargs
+        )
         if self.verbose:
             print(f"trained models in {ttime.monotonic() - t0:.02f} seconds")
+
+    @property
+    def acqf_info(self):
+        entries = []
+        for k, d in self.acqf_config.items():
+            ret = ""
+            ret += f'{d["pretty_name"].upper()} (identifiers: {d["identifiers"]})\n'
+            ret += f'-> {d["description"]}'
+            entries.append(ret)
+
+        print("\n\n".join(entries))
 
     def get_acquisition_function(self, acqf_identifier="ei", return_metadata=False, acqf_args={}, **kwargs):
         if not self._initialized:
             raise RuntimeError(f'Can\'t construct acquisition function "{acqf_identifier}" (the self is not initialized!)')
 
-        if acqf_identifier.lower() in AVAILABLE_ACQFS["expected_improvement"]["identifiers"]:
+        if acqf_identifier.lower() in ACQF_CONFIG["expected_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogExpectedImprovement(
-                self.task_model,
-                best_f=self.best_sum_of_tasks,
+                self.model_list,
+                best_f=self.scalarized_fitness.max(),
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
             acqf_meta = {"name": "expected improvement", "args": {}}
 
-        elif acqf_identifier.lower() in AVAILABLE_ACQFS["probability_of_improvement"]["identifiers"]:
+        elif acqf_identifier.lower() in ACQF_CONFIG["probability_of_improvement"]["identifiers"]:
             acqf = botorch.acquisition.analytic.LogProbabilityOfImprovement(
-                self.task_model,
-                best_f=self.best_sum_of_tasks,
+                self.model_list,
+                best_f=self.scalarized_fitness.max(),
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
             acqf_meta = {"name": "probability of improvement", "args": {}}
 
-        elif acqf_identifier.lower() in AVAILABLE_ACQFS["expected_mean"]["identifiers"]:
+        elif acqf_identifier.lower() in ACQF_CONFIG["expected_mean"]["identifiers"]:
             acqf = botorch.acquisition.analytic.UpperConfidenceBound(
-                self.task_model,
+                self.model_list,
                 beta=0,
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
             acqf_meta = {"name": "expected mean"}
 
-        elif acqf_identifier.lower() in AVAILABLE_ACQFS["upper_confidence_bound"]["identifiers"]:
-            beta = AVAILABLE_ACQFS["upper_confidence_bound"]["default_args"]["beta"]
+        elif acqf_identifier.lower() in ACQF_CONFIG["upper_confidence_bound"]["identifiers"]:
+            beta = ACQF_CONFIG["upper_confidence_bound"]["default_args"]["z"] ** 2
             acqf = botorch.acquisition.analytic.UpperConfidenceBound(
-                self.task_model,
+                self.model_list,
                 beta=beta,
                 posterior_transform=self.task_scalarization,
                 **kwargs,
@@ -423,33 +549,38 @@ class Agent:
 
     def ask(self, acqf_identifier="ei", n=1, route=True, return_metadata=False):
         if acqf_identifier.lower() == "qr":
-            x = self.active_inputs_sampler(n=n)
+            active_X = self.active_inputs_sampler(n=n).squeeze(1).numpy()
             acqf_meta = {"name": "quasi-random", "args": {}}
 
         elif n == 1:
-            x, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
-            return (x, acqf_meta) if return_metadata else x
+            active_X, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
 
         elif n > 1:
+            active_x_list = []
             for i in range(n):
-                x, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
+                active_x, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
+                active_x_list.append(active_x)
 
                 if i < (n - 1):
-                    task_samples = [task.regressor.posterior(torch.tensor(x)).sample().item() for task in self.tasks]
+                    x = np.c_[active_x, acqf_meta["passive_values"]]
+                    task_samples = [task["model"].posterior(torch.tensor(x)).sample().item() for task in self.tasks]
                     fantasy_table = pd.DataFrame(
-                        np.append(x, task_samples)[None], columns=[*self.dof_names, *self.task_names]
+                        np.c_[active_x, acqf_meta["passive_values"], np.atleast_2d(task_samples)],
+                        columns=[
+                            *self._subset_dof_names(kind="active", mode="on"),
+                            *self._subset_dof_names(kind="passive", mode="on"),
+                            *self.task_keys,
+                        ],
                     )
-                    self.tell(fantasy_table, train=False)
+                    self.tell(fantasy_table, train=True)
 
-            x = self.active_inputs.iloc[-n:].values
+            active_X = np.concatenate(active_x_list, axis=0)
+            self.forget(self.table.index[-(n - 1) :])
 
-            if n > 1:
-                self.forget(self.table.index[-(n - 1) :])
+            if route:
+                active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
-        if route:
-            x = x[utils.route(self.read_active_dofs, x)]
-
-        return (x, acqf_meta) if return_metadata else x
+        return (active_X, acqf_meta) if return_metadata else active_X
 
     def ask_single(
         self,
@@ -457,7 +588,7 @@ class Agent:
         return_metadata=False,
     ):
         """
-        The next $n$ points to sample, recommended by the self.
+        The next $n$ points to sample, recommended by the self. Returns
         """
 
         t0 = ttime.monotonic()
@@ -470,18 +601,23 @@ class Agent:
 
         candidates, _ = botorch.optim.optimize_acqf(
             acq_function=acqf,
-            bounds=torch.tensor(self.dof_bounds).T,
+            bounds=self._acqf_bounds,
             q=BATCH_SIZE,
             num_restarts=NUM_RESTARTS,
             raw_samples=RAW_SAMPLES,  # used for intialization heuristic
         )
 
-        x = candidates.detach().numpy()[..., self.dof_is_active_mask]
+        x = candidates.numpy().astype(float)
+
+        active_x = x[..., [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]]
+        passive_x = x[..., [dof["kind"] != "active" for dof in self._subset_dofs(mode="on")]]
+
+        acqf_meta["passive_values"] = passive_x
 
         if self.verbose:
             print(f"found point {x} in {ttime.monotonic() - t0:.02f} seconds")
 
-        return (x, acqf_meta) if return_metadata else x
+        return (active_x, acqf_meta) if return_metadata else active_x
 
     def acquire(self, active_inputs):
         """
@@ -490,22 +626,27 @@ class Agent:
         This should yield a table of sampled tasks with the same length as the sampled inputs.
         """
         try:
-            uid = yield from self.acquisition_plan(self.dofs, active_inputs, [*self.dets, *self.dofs, *self.passive_dofs])
+            active_devices = [dof["device"] for dof in self.dofs if (dof["kind"], dof["mode"]) == ("active", "on")]
+            passive_devices = [dof["device"] for dof in self.dofs if (dof["kind"], dof["mode"]) != ("active", "on")]
+
+            uid = yield from self.acquisition_plan(
+                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices]
+            )
 
             products = self.digestion(self.db, uid)
 
             # compute the fitness for each task
-            for index, entry in products.iterrows():
-                for task in self.tasks:
-                    products.loc[index, task.name] = task.get_fitness(entry)
+            # for index, entry in products.iterrows():
+            #     for task in self.tasks:
+            #         products.loc[index, task["key"]] = getattr(entry, task["key"])
 
         except Exception as error:
-            if not self.tolerate_acquisition_errors:
+            if not self.ignore_acquisition_errors:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(active_inputs, columns=self.active_dof_names)
             for task in self.tasks:
-                products.loc[:, task.name] = np.nan
+                products.loc[:, task["key"]] = np.nan
 
         if not len(active_inputs) == len(products):
             raise ValueError("The table returned by the digestion must be the same length as the sampled inputs!")
@@ -537,239 +678,37 @@ class Agent:
 
             self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
 
-    def normalize_inputs(self, inputs):
-        return (inputs - self.input_bounds.min(axis=1)) / self.input_bounds.ptp(axis=1)
-
-    def unnormalize_inputs(self, X):
-        return X * self.input_bounds.ptp(axis=1) + self.input_bounds.min(axis=1)
-
-    def normalize_targets(self, targets):
-        return (targets - self.targets_mean) / (1e-20 + self.targets_scale)
-
-    def unnormalize_targets(self, targets):
-        return targets * self.targets_scale + self.targets_mean
-
-    @property
-    def batch_dimension(self):
-        return self.dof_names.index("training_batch") if "training_batch" in self.dof_names else None
-
-    @property
-    def test_inputs(self):
-        test_passive_inputs = self.read_passive_dofs[None] * np.ones(len(self.test_active_inputs))[..., None]
-        return np.concatenate([self.test_active_inputs, test_passive_inputs], axis=-1)
-
-    @property
-    def test_inputs_grid(self):
-        test_passive_inputs_grid = self.read_passive_dofs * np.ones(
-            (*self.test_active_inputs_grid.shape[:-1], self.n_passive_dofs)
-        )
-        return np.concatenate([self.test_active_inputs_grid, test_passive_inputs_grid], axis=-1)
-
     @property
     def inputs(self):
-        return self.table.loc[:, self.dof_names].astype(float)
+        return self.table.loc[:, self._subset_dof_names(mode="on")].astype(float)
 
     @property
-    def active_inputs(self):
-        return self.inputs.loc[:, self.active_dof_names]
+    def fitness_variance(self):
+        return torch.tensor(np.nanvar(self.task_fitnesses.values, axis=0))
 
     @property
-    def passive_inputs(self):
-        return self.inputs.loc[:, self.passive_dof_names]
-
-    @property
-    def targets(self):
-        return self.table.loc[:, self.task_names].astype(float)
+    def scalarized_fitness(self):
+        return (self.task_fitnesses * self.task_weights).sum(axis=1)
 
     # @property
-    # def feasible(self):
-    #     with pd.option_context("mode.use_inf_as_null", True):
-    #         feasible = ~self.targets.isna()
-    #     return feasible
-
-    @property
-    def feasible_for_all_tasks(self):
-        # TODO: make this more robust
-        # with pd.option_context("mode.use_inf_as_null", True):
-        feasible = ~self.targets.isna().any(axis=1)
-        for task in self.tasks:
-            if task.min is not None:
-                feasible &= self.targets.loc[:, task.name].values > task.transform(task.min)
-        return feasible
-
-    # @property
-    # def input_bounds(self):
-    #     lower_bound = np.r_[
-    #         self.active_dof_bounds[:, 0], np.nanmin(self.passive_inputs.astype(float).values, axis=0)
-    #     ]
-    #     upper_bound = np.r_[
-    #         self.active_dof_bounds[:, 1], np.nanmax(self.passive_inputs.astype(float).values, axis=0)
-    #     ]
-    #     return np.c_[lower_bound, upper_bound]
-
-    @property
-    def targets_mean(self):
-        return np.nanmean(self.targets, axis=0)
-
-    @property
-    def targets_scale(self):
-        return np.nanstd(self.targets, axis=0)
-
-    @property
-    def normalized_targets(self):
-        return self.normalize_targets(self.targets)
-
-    @property
-    def latest_passive_dof_values(self):
-        passive_inputs = self.passive_inputs
-        return [passive_inputs.loc[passive_inputs.last_valid_index(), col] for col in passive_inputs.columns]
-
-    @property
-    def passive_dof_bounds(self):
-        # food for thought: should this be the current values, or the latest recorded values?
-        # the former leads to weird extrapolation (especially for time), and the latter to some latency.
-        # let's go with the second way for now
-        return np.outer(self.read_passive_dofs, [1.0, 1.0])
-
-    @property
-    def dof_is_active_mask(self):
-        return np.r_[np.ones(self.n_active_dofs), np.zeros(self.n_passive_dofs)].astype(bool)
-
-    @property
-    def dof_bounds(self):
-        return np.r_[self.active_dof_bounds, self.passive_dof_bounds]
-
-    @property
-    def read_active_dofs(self):
-        return np.array([dof.read()[dof.name]["value"] for dof in self.active_dofs])
-
-    @property
-    def read_passive_dofs(self):
-        return np.array([dof.read()[dof.name]["value"] for dof in self.passive_dofs])
-
-    @property
-    def read_dofs(self):
-        return np.r_[self.read_active_dofs, self.read_passive_dofs]
-
-    @property
-    def active_dof_names(self):
-        return [dof.name for dof in self.active_dofs]
-
-    @property
-    def passive_dof_names(self):
-        return [dof.name for dof in self.passive_dofs]
-
-    @property
-    def dof_names(self):
-        return [dof.name for dof in self.dofs]
-
-    @property
-    def det_names(self):
-        return [det.name for det in self.dets]
-
-    @property
-    def target_names(self):
-        return [task.name for task in self.tasks]
-
-    @property
-    def task_names(self):
-        return [task.name for task in self.tasks]
-
-    @property
-    def task_weights(self):
-        return np.array([task.weight for task in self.tasks])
-
-    @property
-    def best_sum_of_tasks(self):
-        return self.targets.fillna(-np.inf).sum(axis=1).max()
-
-    @property
-    def best_sum_of_tasks_inputs(self):
-        return self.inputs[np.nanargmax(self.targets.sum(axis=1))]
+    # def best_sum_of_tasks_inputs(self):
+    #     return self.inputs[np.nanargmax(self.task_fitnesses.sum(axis=1))]
 
     @property
     def go_to(self, inputs):
-        yield from bps.mv(*[_ for items in zip(self.dofs, np.atleast_1d(inputs).T) for _ in items])
+        yield from bps.mv(*[_ for items in zip(self._subset_dofs(kind="active"), np.atleast_1d(inputs).T) for _ in items])
 
-    @property
-    def go_to_best_sum_of_tasks(self):
-        yield from self.go_to(self.best_sum_of_tasks_inputs)
+    # @property
+    # def go_to_best_sum_of_tasks(self):
+    #     yield from self.go_to(self.best_sum_of_tasks_inputs)
 
     def plot_tasks(self, **kwargs):
-        if self.n_active_dofs == 1:
+        if self._n_subset_dofs(kind="active", mode="on") == 1:
             self._plot_tasks_one_dof(**kwargs)
-
         else:
             self._plot_tasks_many_dofs(**kwargs)
 
-    def plot_feasibility(self, **kwargs):
-        if self.n_active_dofs == 1:
-            self._plot_feas_one_dof(**kwargs)
-
-        else:
-            self._plot_feas_many_dofs(**kwargs)
-
-    def plot_acquisition(self, **kwargs):
-        if self.n_active_dofs == 1:
-            self._plot_acq_one_dof(**kwargs)
-
-        else:
-            self._plot_acq_many_dofs(**kwargs)
-
-    def _plot_feas_one_dof(self, size=32):
-        self.class_fig, self.class_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
-
-        self.class_ax.scatter(self.inputs.values, self.feasible_for_all_tasks.astype(int), s=size)
-
-        x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dofs)).double()
-        log_prob = self.classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
-
-        self.class_ax.plot(self.test_inputs_grid.ravel(), np.exp(log_prob))
-
-        self.class_ax.set_xlim(*self.active_dof_bounds[0])
-
-    def _plot_feas_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=32, gridded=None):
-        if gridded is None:
-            gridded = self.n_dofs == 2
-
-        self.class_fig, self.class_axes = plt.subplots(
-            1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True
-        )
-
-        for ax in self.class_axes.ravel():
-            ax.set_xlabel(self.dofs[axes[0]].name)
-            ax.set_ylabel(self.dofs[axes[1]].name)
-
-        data_ax = self.class_axes[0].scatter(
-            *self.inputs.values.T[:2], s=size, c=self.feasible_for_all_tasks.astype(int), vmin=0, vmax=1, cmap=cmap
-        )
-
-        if gridded:
-            x = torch.tensor(self.test_inputs_grid.reshape(-1, self.n_dofs)).double()
-            log_prob = self.classifier.log_prob(x).detach().numpy().reshape(self.test_inputs_grid.shape[:-1])
-
-            self.class_axes[1].pcolormesh(
-                *np.swapaxes(self.test_inputs_grid, 0, -1),
-                np.exp(log_prob).T,
-                shading=shading,
-                cmap=cmap,
-                vmin=0,
-                vmax=1,
-            )
-
-        else:
-            x = torch.tensor(self.test_inputs).double()
-            log_prob = self.classifier.log_prob(x).detach().numpy()
-
-            self.class_axes[1].scatter(*x.detach().numpy().T[axes], s=size, c=np.exp(log_prob), vmin=0, vmax=1, cmap=cmap)
-
-        self.class_fig.colorbar(data_ax, ax=self.class_axes[:2], location="bottom", aspect=32, shrink=0.8)
-
-        for ax in self.class_axes.ravel():
-            ax.set_xlim(*self.active_dof_bounds[axes[0]])
-            ax.set_ylim(*self.active_dof_bounds[axes[1]])
-
-    def _plot_tasks_one_dof(self, size=32, lw=1e0):
+    def _plot_tasks_one_dof(self, size=16, lw=1e0):
         self.task_fig, self.task_axes = plt.subplots(
             self.n_tasks,
             1,
@@ -783,30 +722,35 @@ class Agent:
         for itask, task in enumerate(self.tasks):
             color = DEFAULT_COLOR_LIST[itask]
 
-            self.task_axes[itask].set_ylabel(task.name)
+            self.task_axes[itask].set_ylabel(task["key"])
 
-            task_posterior = task.regressor.posterior(torch.tensor(self.test_inputs_grid).double())
-            task_mean = task_posterior.mean.detach().numpy().ravel()
-            task_sigma = task_posterior.variance.sqrt().detach().numpy().ravel()
+            x = self.test_inputs_grid
+            task_posterior = task["model"].posterior(x)
+            task_mean = task_posterior.mean.detach().numpy()
+            task_sigma = task_posterior.variance.sqrt().detach().numpy()
 
-            self.task_axes[itask].scatter(self.inputs.values, task.targets, s=size, color=color)
-            self.task_axes[itask].plot(self.test_active_inputs_grid.ravel(), task_mean, lw=lw, color=color)
+            self.task_axes[itask].scatter(
+                self.inputs.loc[:, self._subset_dof_names(kind="active", mode="on")],
+                self.task_fitnesses.loc[:, task["key"]],
+                s=size,
+                color=color,
+            )
 
-            for z in [1, 2]:
+            for z in [0, 1, 2]:
                 self.task_axes[itask].fill_between(
-                    self.test_inputs_grid.ravel(),
-                    (task_mean - z * task_sigma).ravel(),
-                    (task_mean + z * task_sigma).ravel(),
+                    x[..., self._dof_mask(kind="active", mode="on")].squeeze(),
+                    (task_mean - z * task_sigma).squeeze(),
+                    (task_mean + z * task_sigma).squeeze(),
                     lw=lw,
                     color=color,
                     alpha=0.5**z,
                 )
 
-            self.task_axes[itask].set_xlim(*self.active_dof_bounds[0])
+            self.task_axes[itask].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
-    def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32):
+    def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16):
         if gridded is None:
-            gridded = self.n_dofs == 2
+            gridded = self._n_subset_dofs(kind="active", mode="on") == 2
 
         self.task_fig, self.task_axes = plt.subplots(
             self.n_tasks,
@@ -818,116 +762,144 @@ class Agent:
         )
 
         self.task_axes = np.atleast_2d(self.task_axes)
-        self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
+        # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
+
+        fitnesses = self.task_fitnesses
 
         for itask, task in enumerate(self.tasks):
-            task_norm = mpl.colors.Normalize(*np.nanpercentile(task.targets, q=[1, 99]))
+            task_vmin, task_vmax = np.nanpercentile(fitnesses.loc[:, task["key"]], q=[1, 99])
+            task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
-            self.task_axes[itask, 0].set_ylabel(task.name)
+            # if task["transform"] == "log":
+            #     task_norm = mpl.colors.LogNorm(task_vmin, task_vmax)
+            # else:
+
+            self.task_axes[itask, 0].set_ylabel(task["key"])
 
             self.task_axes[itask, 0].set_title("samples")
             self.task_axes[itask, 1].set_title("posterior mean")
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
             data_ax = self.task_axes[itask, 0].scatter(
-                *self.inputs.values.T[axes], s=size, c=task.targets, norm=task_norm, cmap=cmap
+                *self.inputs.values.T[axes], s=size, c=fitnesses.loc[:, task["key"]], norm=task_norm, cmap=cmap
             )
 
-            x = torch.tensor(self.test_inputs_grid).double() if gridded else torch.tensor(self.test_inputs).double()
+            x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
 
-            task_posterior = task.regressor.posterior(x)
-            task_mean = task_posterior.mean.detach().numpy()  # * task.targets_scale + task.targets_mean
-            task_sigma = task_posterior.variance.sqrt().detach().numpy()  # * task.targets_scale
+            task_posterior = task["model"].posterior(x)
+            task_mean = task_posterior.mean
+            task_sigma = task_posterior.variance.sqrt()
 
             if gridded:
+                if not x.ndim == 3:
+                    raise ValueError()
                 self.task_axes[itask, 1].pcolormesh(
-                    *np.swapaxes(self.test_inputs_grid, 0, -1),
-                    task_mean.reshape(self.test_active_inputs_grid.shape[:-1]).T,
+                    x[..., 0],
+                    x[..., 1],
+                    task_mean[..., 0].detach().numpy(),
                     shading=shading,
                     cmap=cmap,
                     norm=task_norm,
                 )
                 sigma_ax = self.task_axes[itask, 2].pcolormesh(
-                    *np.swapaxes(self.test_inputs_grid, 0, -1),
-                    task_sigma.reshape(self.test_inputs_grid.shape[:-1]).T,
+                    x[..., 0],
+                    x[..., 1],
+                    task_sigma[..., 0].detach().numpy(),
                     shading=shading,
                     cmap=cmap,
                 )
 
             else:
-                self.task_axes[itask, 1].scatter(*x.detach().numpy().T[axes], s=size, c=task_mean, norm=task_norm, cmap=cmap)
-                sigma_ax = self.task_axes[itask, 2].scatter(*x.detach().numpy().T[axes], s=size, c=task_sigma, cmap=cmap)
+                self.task_axes[itask, 1].scatter(
+                    x.detach().numpy()[..., axes[0]],
+                    x.detach().numpy()[..., axes[1]],
+                    s=size,
+                    c=task_mean,
+                    norm=task_norm,
+                    cmap=cmap,
+                )
+                sigma_ax = self.task_axes[itask, 2].scatter(
+                    x.detach().numpy()[..., axes[0]], x.detach().numpy()[..., axes[1]], s=size, c=task_sigma, cmap=cmap
+                )
 
             self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
             self.task_fig.colorbar(sigma_ax, ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
 
         for ax in self.task_axes.ravel():
-            ax.set_xlim(*self.active_dof_bounds[axes[0]])
-            ax.set_ylim(*self.active_dof_bounds[axes[1]])
+            ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
+            ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
-    def _plot_acq_one_dof(self, size=32, lw=1e0, **kwargs):
-        acqf_names = np.atleast_1d(kwargs.get("acqf", "ei"))
+    def plot_acquisition(self, acqfs=["ei"], **kwargs):
+        if self._n_subset_dofs(kind="active", mode="on") == 1:
+            self._plot_acq_one_dof(acqfs=acqfs, **kwargs)
 
+        else:
+            self._plot_acq_many_dofs(acqfs=acqfs, **kwargs)
+
+    def _plot_acq_one_dof(self, acqfs, lw=1e0, **kwargs):
         self.acq_fig, self.acq_axes = plt.subplots(
             1,
-            len(acqf_names),
-            figsize=(6 * len(acqf_names), 6),
+            len(acqfs),
+            figsize=(4 * len(acqfs), 4),
             sharex=True,
             constrained_layout=True,
         )
 
         self.acq_axes = np.atleast_1d(self.acq_axes)
 
-        for iacqf, acqf_name in enumerate(acqf_names):
-            color = DEFAULT_COLOR_LIST[0]
+        for iacqf, acqf_identifier in enumerate(acqfs):
+            color = DEFAULT_COLOR_LIST[iacqf]
 
-            acqf, acqf_meta = self.get_acquisition_function(acqf_name, return_metadata=True)
+            acqf, acqf_meta = self.get_acquisition_function(acqf_identifier, return_metadata=True)
 
-            *grid_shape, dim = self.test_inputs_grid.shape
-            x = torch.tensor(self.test_inputs_grid.reshape(-1, 1, dim)).double()
-            obj = acqf.forward(x)
+            x = self.test_inputs_grid
+            *input_shape, input_dim = x.shape
+            obj = acqf.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
 
-            if acqf_name in ["ei", "pi"]:
+            if acqf_identifier in ["ei", "pi"]:
                 obj = obj.exp()
 
             self.acq_axes[iacqf].set_title(acqf_meta["name"])
-            self.acq_axes[iacqf].plot(self.test_active_inputs_grid.ravel(), obj.detach().numpy().ravel(), lw=lw, color=color)
+            self.acq_axes[iacqf].plot(
+                x[..., self._dof_mask(kind="active", mode="on")].squeeze(), obj.detach().numpy(), lw=lw, color=color
+            )
 
-            self.acq_axes[iacqf].set_xlim(*self.active_dof_bounds[0])
+            self.acq_axes[iacqf].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
-    def _plot_acq_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, **kwargs):
-        acqf_names = np.atleast_1d(kwargs.get("acqf", "ei"))
-
+    def _plot_acq_many_dofs(
+        self, acqfs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
+    ):
         self.acq_fig, self.acq_axes = plt.subplots(
             1,
-            len(acqf_names),
-            figsize=(4 * len(acqf_names), 5),
+            len(acqfs),
+            figsize=(4 * len(acqfs), 4),
             sharex=True,
             sharey=True,
             constrained_layout=True,
         )
 
         if gridded is None:
-            gridded = self.n_active_dofs == 2
+            gridded = self._n_subset_dofs(kind="active", mode="on") == 2
 
         self.acq_axes = np.atleast_1d(self.acq_axes)
-        self.acq_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
+        # self.acq_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        for iacqf, acqf_name in enumerate(acqf_names):
-            acqf, acqf_meta = self.get_acquisition_function(acqf_name, return_metadata=True)
+        x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
+        *input_shape, input_dim = x.shape
+
+        for iacqf, acqf_identifier in enumerate(acqfs):
+            acqf, acqf_meta = self.get_acquisition_function(acqf_identifier, return_metadata=True)
+
+            obj = acqf.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+            if acqf_identifier in ["ei", "pi"]:
+                obj = obj.exp()
 
             if gridded:
-                *grid_shape, dim = self.test_inputs_grid.shape
-                x = torch.tensor(self.test_inputs_grid.reshape(-1, 1, dim)).double()
-                obj = acqf.forward(x)
-
-                if acqf_name in ["ei", "pi"]:
-                    obj = obj.exp()
-
                 self.acq_axes[iacqf].set_title(acqf_meta["name"])
                 obj_ax = self.acq_axes[iacqf].pcolormesh(
-                    *np.swapaxes(self.test_inputs_grid, 0, -1)[axes],
-                    obj.detach().numpy().reshape(grid_shape).T,
+                    x[..., 0],
+                    x[..., 1],
+                    obj.detach().numpy(),
                     shading=shading,
                     cmap=cmap,
                 )
@@ -935,25 +907,83 @@ class Agent:
                 self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
             else:
-                *inputs_shape, dim = self.test_inputs.shape
-                x = torch.tensor(self.test_inputs.reshape(-1, 1, dim)).double()
-                obj = acqf.forward(x)
-
-                if acqf_name in ["ei", "pi"]:
-                    obj = obj.exp()
-
                 self.acq_axes[iacqf].set_title(acqf_meta["name"])
                 obj_ax = self.acq_axes[iacqf].scatter(
                     x.detach().numpy()[..., axes[0]],
                     x.detach().numpy()[..., axes[1]],
-                    c=obj.detach().numpy().reshape(inputs_shape),
+                    c=obj.detach().numpy(),
                 )
 
                 self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
         for ax in self.acq_axes.ravel():
-            ax.set_xlim(*self.active_dof_bounds[axes[0]])
-            ax.set_ylim(*self.active_dof_bounds[axes[1]])
+            ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
+            ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
+
+    def plot_feasibility(self, **kwargs):
+        if self._n_subset_dofs(kind="active", mode="on") == 1:
+            self._plot_feas_one_dof(**kwargs)
+
+        else:
+            self._plot_feas_many_dofs(**kwargs)
+
+    def _plot_feas_one_dof(self, size=16, lw=1e0):
+        self.feas_fig, self.feas_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
+
+        x = self.test_inputs_grid
+        *input_shape, input_dim = x.shape
+        log_prob = self.classifier.log_prob(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+
+        self.feas_ax.scatter(self.inputs.values, self.task_fitnesses.isna().any(axis=1).astype(int), s=size)
+        self.feas_ax.plot(x[..., self._dof_mask(kind="active", mode="on")].squeeze(), log_prob.exp().detach().numpy(), lw=lw)
+
+        self.feas_ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[0]["limits"])
+
+    def _plot_feas_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
+        self.feas_fig, self.feas_axes = plt.subplots(1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True)
+
+        if gridded is None:
+            gridded = self._n_subset_dofs(kind="active", mode="on") == 2
+
+        data_ax = self.feas_axes[0].scatter(
+            *self.inputs.values.T[:2],
+            s=size,
+            c=self.task_fitnesses.isna().any(axis=1).astype(int),
+            vmin=0,
+            vmax=1,
+            cmap=cmap,
+        )
+
+        x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
+        *input_shape, input_dim = x.shape
+        log_prob = self.classifier.log_prob(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+
+        if gridded:
+            self.feas_axes[1].pcolormesh(
+                x[..., 0],
+                x[..., 1],
+                log_prob.exp().detach().numpy(),
+                shading=shading,
+                cmap=cmap,
+                vmin=0,
+                vmax=1,
+            )
+
+            # self.acq_fig.colorbar(obj_ax, ax=self.feas_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
+
+        else:
+            # self.feas_axes.set_title(acqf_meta["name"])
+            self.feas_axes[1].scatter(
+                x.detach().numpy()[..., axes[0]],
+                x.detach().numpy()[..., axes[1]],
+                c=log_prob.exp().detach().numpy(),
+            )
+
+        self.feas_fig.colorbar(data_ax, ax=self.feas_axes[:2], location="bottom", aspect=32, shrink=0.8)
+
+        for ax in self.feas_axes.ravel():
+            ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
+            ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
     def inspect_beam(self, index, border=None):
         im = self.images[index]
@@ -993,10 +1023,10 @@ class Agent:
 
         if show_all_tasks:
             for itask, task in enumerate(self.tasks):
-                y = task.targets.values
+                y = self.task_fitnesses.loc[:, task["key"]].values
                 hist_axes[itask].scatter(x, y, c=sample_colors)
                 hist_axes[itask].plot(x, y, lw=5e-1, c="k")
-                hist_axes[itask].set_ylabel(task.name)
+                hist_axes[itask].set_ylabel(task["key"])
 
         y = self.table.total_fitness
 

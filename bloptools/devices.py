@@ -1,28 +1,49 @@
 import time as ttime
 
-from ophyd import Component as Cpt
-from ophyd import Device, Signal, SignalRO
+import numpy as np
+from ophyd import Signal, SignalRO
+
+DEFAULT_BOUNDS = (-5.0, +5.0)
 
 
-def dummy_dof(name):
-    return Signal(name=name, value=0.0)
+class DOF(Signal):
+    """
+    Degree of freedom
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
-def dummy_dofs(n=2):
-    return [dummy_dof(name=f"x{i+1}") for i in range(n)]
+class RODOF(DOF):
+    """
+    Read-only degree of freedom
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
 
-def get_dummy_device(name="dofs", n=2):
-    components = {}
+class BrownianMotion(RODOF):
+    """
+    Read-only degree of freedom simulating brownian motion
+    """
 
-    for i in range(n):
-        components[f"x{i+1}"] = Cpt(Signal, value=i + 1)
+    def __init__(self, theta=0.95, *args, **kwargs):
+        super().__init__(*args, **kwargs)
 
-    cls = type("DOF", (Device,), components)
+        self.theta = theta
+        self.old_t = ttime.monotonic()
+        self.old_y = 0.0
 
-    device = cls(name=name)
+    def get(self):
+        new_t = ttime.monotonic()
+        alpha = self.theta ** (new_t - self.old_t)
+        new_y = alpha * self.old_y + np.sqrt(1 - alpha**2) * np.random.standard_normal()
 
-    return [getattr(device, attr) for attr in device.read_attrs]
+        self.old_t = new_t
+        self.old_y = new_y
+        return new_y
 
 
 class TimeReadback(SignalRO):
@@ -32,9 +53,6 @@ class TimeReadback(SignalRO):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
-    def get(self):
-        return ttime.time()
 
 
 class ConstantReadback(SignalRO):
