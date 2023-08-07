@@ -33,19 +33,20 @@ def default_acquisition_plan(dofs, inputs, dets):
 
 
 def default_digestion_plan(db, uid):
-    return db[uid].table()
+    return db[uid].table(fill=True)
 
-
-# let's be specific about our terminology.
-#
-# dofs: degrees of freedom are things that can change
-# inputs: these are the values of the dofs, which may be transformed/normalized
-# targets: these are what our model tries to predict from the inputs
-# tasks: these are quantities that our agent will try to optimize over
 
 MAX_TEST_INPUTS = 2**11
 
+
+TASK_CONFIG = {}
+
 ACQF_CONFIG = {
+    "quasi-random": {
+        "identifiers": ["qr", "quasi-random"],
+        "pretty_name": "Quasi-random",
+        "description": "Sobol-sampled quasi-random points.",
+    },
     "expected_mean": {
         "identifiers": ["em", "expected_mean"],
         "pretty_name": "Expected mean",
@@ -168,7 +169,7 @@ class Agent:
         self.db = db
 
         self.verbose = kwargs.get("verbose", False)
-        self.ignore_acquisition_errors = kwargs.get("ignore_acquisition_errors", False)
+        self.allow_acquisition_errors = kwargs.get("allow_acquisition_errors", True)
         self.initialization = kwargs.get("initialization", None)
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
         self.digestion = kwargs.get("digestion", default_digestion_plan)
@@ -182,19 +183,12 @@ class Agent:
         self._train_models = True
         self.a_priori_hypers = None
 
-    # A note on how we transform inputs:
-    #
-    #
-    # Inputs can be _active_ or _passive_. We apply
-    #
-    # For passive inputs, this is more complicated. There are two ways to do this
-
-    def active_inputs_sampler(self, n=MAX_TEST_INPUTS):
+    def _subset_inputs_sampler(self, kind=None, mode=None, n=MAX_TEST_INPUTS):
         """
         Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
         """
-        transform = self._subset_input_transform(kind="active", mode="on")
-        return transform.untransform(utils.normalized_sobol_sampler(n, self._n_subset_dofs(kind="active", mode="on")))
+        transform = self._subset_input_transform(kind=kind, mode=mode)
+        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._n_subset_dofs(kind=kind, mode=mode)))
 
     def initialize(
         self,
@@ -252,7 +246,7 @@ class Agent:
         skew_dims = [tuple(np.arange(self._n_subset_dofs(mode="on")))]
 
         if not train:
-            hypers = self.hypers
+            cached_hypers = self.hypers
 
         feasibility = ~fitnesses.isna().any(axis=1)
 
@@ -260,11 +254,11 @@ class Agent:
             raise ValueError("There must be at least two feasible data points per task!")
 
         inputs = self.inputs.loc[feasibility, self._subset_dof_names(mode="on")].values
-        train_inputs = torch.tensor(inputs).double().unsqueeze(0)
+        train_inputs = torch.tensor(inputs).double()  # .unsqueeze(0)
 
         for task in self.tasks:
             targets = self.table.loc[feasibility, f'{task["key"]}_fitness'].values
-            train_targets = torch.tensor(targets).double().unsqueeze(0).unsqueeze(-1)
+            train_targets = torch.tensor(targets).double().unsqueeze(-1)  # .unsqueeze(0)
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
@@ -273,7 +267,7 @@ class Agent:
                 ),
             ).double()
 
-            outcome_transform = botorch.models.transforms.outcome.Standardize(m=1, batch_shape=torch.Size((1,)))
+            outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
 
             task["model"] = models.LatentGP(
                 train_inputs=train_inputs,
@@ -305,9 +299,12 @@ class Agent:
         if self.a_priori_hypers is not None:
             self._set_hypers(self.a_priori_hypers)
         elif not train:
-            self._set_hypers(hypers)
+            self._set_hypers(cached_hypers)
         else:
-            self.train_models()
+            try:
+                self.train_models()
+            except botorch.exceptions.errors.ModelFittingError:
+                self._set_hypers(cached_hypers)
 
         feasibility_fitness_model = botorch.models.deterministic.GenericDeterministicModel(
             f=lambda X: -self.classifier.log_prob(X).square()
@@ -437,7 +434,7 @@ class Agent:
         self.table.to_hdf(filepath, key="table")
 
     def forget(self, index):
-        self.tell(new_table=self.table.drop(index=index), append=False)
+        self.tell(new_table=self.table.drop(index=index), append=False, train=False)
 
     def sampler(self, n):
         """
@@ -554,7 +551,7 @@ class Agent:
 
     def ask(self, acqf_identifier="ei", n=1, route=True, return_metadata=False):
         if acqf_identifier.lower() == "qr":
-            active_X = self.active_inputs_sampler(n=n).squeeze(1).numpy()
+            active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
             acqf_meta = {"name": "quasi-random", "args": {}}
 
         elif n == 1:
@@ -577,7 +574,7 @@ class Agent:
                             *self.task_keys,
                         ],
                     )
-                    self.tell(fantasy_table, train=True)
+                    self.tell(fantasy_table, train=False)
 
             active_X = np.concatenate(active_x_list, axis=0)
             self.forget(self.table.index[-(n - 1) :])
@@ -631,8 +628,8 @@ class Agent:
         This should yield a table of sampled tasks with the same length as the sampled inputs.
         """
         try:
-            active_devices = [dof["device"] for dof in self.dofs if (dof["kind"], dof["mode"]) == ("active", "on")]
-            passive_devices = [dof["device"] for dof in self.dofs if (dof["kind"], dof["mode"]) != ("active", "on")]
+            active_devices = self._subset_devices(kind="active", mode="on")
+            passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
 
             uid = yield from self.acquisition_plan(
                 active_devices, active_inputs.astype(float), [*self.dets, *passive_devices]
@@ -646,10 +643,10 @@ class Agent:
             #         products.loc[index, task["key"]] = getattr(entry, task["key"])
 
         except Exception as error:
-            if not self.ignore_acquisition_errors:
+            if not self.allow_acquisition_errors:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
-            products = pd.DataFrame(active_inputs, columns=self.active_dof_names)
+            products = pd.DataFrame(active_inputs, columns=self._subset_dof_names(kind="active", mode="on"))
             for task in self.tasks:
                 products.loc[:, task["key"]] = np.nan
 
@@ -771,8 +768,10 @@ class Agent:
         self.task_axes = np.atleast_2d(self.task_axes)
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
+        feasible = ~self.task_fitnesses.isna().any(axis=1)
+
         for itask, task in enumerate(self.tasks):
-            sampled_fitness = self.table.loc[:, f'{task["key"]}_fitness'].values
+            sampled_fitness = np.where(feasible, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
             task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
             task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
