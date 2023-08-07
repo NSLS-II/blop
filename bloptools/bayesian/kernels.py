@@ -21,8 +21,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
         self.num_inputs = num_inputs
         self.scale_output = scale_output
 
-        self.nu = kwargs.get("nu", 1.5)
-        self.batch_dimension = kwargs.get("batch_dimension", None)
+        self.nu = kwargs.get("nu", 2.5)
 
         if type(skew_dims) is bool:
             if skew_dims:
@@ -170,6 +169,14 @@ class LatentKernel(gpytorch.kernels.Kernel):
         trans_x1 = torch.matmul(self.latent_transform.unsqueeze(1), (x1 - mean).unsqueeze(-1)).squeeze(-1)
         trans_x2 = torch.matmul(self.latent_transform.unsqueeze(1), (x2 - mean).unsqueeze(-1)).squeeze(-1)
 
-        distance = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
+        d = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
 
-        return (self.outputscale if self.scale_output else 1.0) * (1 + distance) * torch.exp(-distance)
+        if self.num_outputs == 1:
+            d = d.squeeze(0)
+
+        if self.nu == 0.5:
+            return (self.outputscale if self.scale_output else 1.0) * torch.exp(-d)
+        if self.nu == 1.5:
+            return (self.outputscale if self.scale_output else 1.0) * (1 + d) * torch.exp(-d)
+        if self.nu == 2.5:
+            return (self.outputscale if self.scale_output else 1.0) * (1 + d + d**2 / 3) * torch.exp(-d)
