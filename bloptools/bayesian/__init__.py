@@ -245,8 +245,7 @@ class Agent:
 
         skew_dims = [tuple(np.arange(self._n_subset_dofs(mode="on")))]
 
-        if not train:
-            cached_hypers = self.hypers
+        cached_hypers = self.hypers
 
         feasibility = ~fitnesses.isna().any(axis=1)
 
