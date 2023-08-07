@@ -30,9 +30,3 @@ bec.disable_heading()
 import warnings
 
 warnings.filterwarnings("ignore", module="sirepo_bluesky")
-
-# This should be done by installing the package with `pip install -e .` or something similar.
-# import sys
-# sys.path.insert(0, "../")
-
-kb_dofs = [kbv.x_rot, kbv.offz, kbh.x_rot, kbh.offz]  # noqa F821

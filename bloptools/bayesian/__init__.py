@@ -245,7 +245,8 @@ class Agent:
 
         skew_dims = [tuple(np.arange(self._n_subset_dofs(mode="on")))]
 
-        cached_hypers = self.hypers
+        if self._initialized:
+            cached_hypers = self.hypers
 
         feasibility = ~fitnesses.isna().any(axis=1)
 
@@ -303,7 +304,10 @@ class Agent:
             try:
                 self.train_models()
             except botorch.exceptions.errors.ModelFittingError:
-                self._set_hypers(cached_hypers)
+                if self._initialized:
+                    self._set_hypers(cached_hypers)
+                else:
+                    raise RuntimeError("Could not fit model on initialization!")
 
         feasibility_fitness_model = botorch.models.deterministic.GenericDeterministicModel(
             f=lambda X: -self.classifier.log_prob(X).square()
