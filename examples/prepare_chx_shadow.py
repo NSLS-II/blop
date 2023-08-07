@@ -10,12 +10,8 @@ _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 connection = SirepoBluesky("http://localhost:8000")
 
 data, schema = connection.auth("shadow", "I1Flcbdw")
-classes, objects = create_classes(connection.data, connection=connection)
+classes, objects = create_classes(connection=connection)
 globals().update(**objects)
-
-# data["models"]["simulation"]["npoint"] = 100000
-# data["models"]["watchpointReport12"]["histogramBins"] = 32
-# w9.duration.kind = "hinted"
 
 bec.disable_baseline()
 bec.disable_heading()
