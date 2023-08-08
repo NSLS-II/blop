@@ -7,5 +7,6 @@ numpy
 ophyd
 ortools
 scipy
-sirepo-bluesky
+sirepo-bluesky>=0.7.0
+tables
 torch
