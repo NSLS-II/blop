@@ -13,6 +13,8 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
+from acquisition import default_acquisition_plan
+from digestion import default_digestion_function
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
@@ -25,15 +27,6 @@ mpl.rc("image", cmap="coolwarm")
 
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
 DEFAULT_COLORMAP = "turbo"
-
-
-def default_acquisition_plan(dofs, inputs, dets):
-    uid = yield from bp.list_scan(dets, *[_ for items in zip(dofs, np.atleast_2d(inputs).T) for _ in items])
-    return uid
-
-
-def default_digestion_plan(db, uid):
-    return db[uid].table(fill=True)
 
 
 MAX_TEST_INPUTS = 2**11
@@ -172,7 +165,7 @@ class Agent:
         self.allow_acquisition_errors = kwargs.get("allow_acquisition_errors", True)
         self.initialization = kwargs.get("initialization", None)
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
-        self.digestion = kwargs.get("digestion", default_digestion_plan)
+        self.digestion = kwargs.get("digestion", default_digestion_function)
         self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
 
         self.acqf_config = kwargs.get("acqf_config", ACQF_CONFIG)
