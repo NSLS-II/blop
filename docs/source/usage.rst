@@ -4,30 +4,98 @@ Usage
 
 Working in the Bluesky environment, we need to pass four ingredients to the Bayesian agent:
 
-* ``dofs``: A list of degrees of freedom for the agent.
-* ``dets`` (Optional): A list of detectors to be triggered during acquisition.
+* ``dofs``: A list of degrees of freedom for the agent to optimize over.
+* ``dets``: A list of detectors to be triggered during acquisition.
 * ``tasks``: A list of tasks for the agent to maximize.
 * ``digestion``: A function that processes the output of the acquisition into the task values.
+
+
+
+
+
+Degrees of freedom
+++++++++++++++++++
+
+Degrees of freedom (DOFs) are passed as an iterable of dicts, each containing at least the device and set of limits.
+
+.. code-block:: python
+
+    my_dofs = [
+        {"device": some_motor, "limits": (lower_limit, upper_limit)},
+        {"device": another_motor, "limits": (lower_limit, upper_limit)},
+    ]
+
+Here ``some_motor`` and ``another_motor`` are ``ophyd`` objects.
+
+
+Detectors
++++++++++
+
+Detectors are triggered for each input.
+
+.. code-block:: python
+
+    my_dets = [some_detector, some_other_detector]
+
+
+Tasks
++++++
+
+Degrees of freedom (DOFs) are passed as an iterable of dicts, each containing at least the device and set of limits.
+
+.. code-block:: python
+
+    my_tasks = [
+        {"key": "value_to_maximize"}
+        ]
+
+
+
+Digestion
++++++++++
+
+The digestion function is how we go from what is spit out by the acquisition to the actual values of the tasks.
+
+.. code-block:: python
+
+    def my_digestion_function(db, uid):
+
+        products = db[uid].table(fill=True) # a pandas DataFrame
+
+        # for each entry, do some
+        for index, entry in products.iterrows():
+
+            raw_output_1 = entry.raw_output_1
+            raw_output_2 = entry.raw_output_2
+
+            entry.loc[index, "value_to_maximize"] = some_fitness_function(raw_output_1, raw_output_2)
+
+        return products
+
+
+
+Building the agent
+++++++++++++++++++
+
+Combining these with a databroker instance will construct an agent.
 
 .. code-block:: python
 
     import bloptools
 
-    dofs = [
-        {"device": some_motor, "limits": (-0.5, 0.5), "kind": "active"},
-        {"device": another_motor, "limits": (-0.5, 0.5), "kind": "active"},
-    ]
-
-    tasks = [
-        {"key": "flux", "kind": "maximize", "transform": "log"}
-        ]
-
-    agent = bloptools.bayesian.Agent(
-        dofs=dofs,
-        tasks=tasks,
-        dets=[some_detector, another_detector],
-        digestion=your_digestion_function,
-        db=db,
+    my_agent = bloptools.bayesian.Agent(
+        dofs=my_dofs,
+        dets=my_dets,
+        tasks=my_tasks,
+        digestion=my_digestion_function,
+        db=db, # a databroker instance
     )
 
     RE(agent.initialize("qr", n_init=24))
+
+
+In the example below, the agent will loop over the following steps in each iteration of learning.
+
+#. Find the most interesting point (or points) to sample, and move the degrees of freedom there.
+#. For each point, run an acquisition plan (e.g., trigger and read the detectors).
+#. Digest the results of the acquisition to find the value of the task.
