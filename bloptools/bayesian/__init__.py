@@ -2,6 +2,7 @@ import logging
 import time as ttime
 import warnings
 from collections import OrderedDict
+from collections.abc import Mapping
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp  # noqa F401
@@ -68,8 +69,8 @@ TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
 
 def _validate_and_prepare_dofs(dofs):
     for dof in dofs:
-        if type(dof) is not dict:
-            raise ValueError("Supplied dofs must be a list of dicts!")
+        if not isinstance(dof, Mapping):
+            raise ValueError("Supplied dofs must be an iterable of mappings (e.g. a dict)!")
         if "device" not in dof.keys():
             raise ValueError("Each DOF must have a device!")
 
@@ -77,10 +78,10 @@ def _validate_and_prepare_dofs(dofs):
 
         if "limits" not in dof.keys():
             dof["limits"] = (-np.inf, np.inf)
-        dof["limits"] = tuple(np.array(dof["limits"]).astype(float))
+        dof["limits"] = tuple(np.array(dof["limits"], dtype=float))
 
-        # read-only DOFs (without a set method) are passive by default
-        dof["kind"] = dof.get("kind", "active" if hasattr(dof["device"], "set") else "passive")
+        # dofs are passive by default
+        dof["kind"] = dof.get("kind", "passive")
         if dof["kind"] not in ["active", "passive"]:
             raise ValueError('DOF kinds must be one of "active" or "passive"')
 
@@ -89,16 +90,20 @@ def _validate_and_prepare_dofs(dofs):
             raise ValueError('DOF modes must be one of "on" or "off"')
 
     dof_names = [dof["device"].name for dof in dofs]
-    if not len(set(dof_names)) == len(dof_names):
-        raise ValueError("Names of DOFs must be unique!")
+
+    # check that dof names are unique
+    unique_dof_names, counts = np.unique(dof_names, return_counts=True)
+    duplicate_dof_names = unique_dof_names[counts > 1]
+    if len(duplicate_dof_names) > 0:
+        raise ValueError(f'Duplicate name(s) in supplied dofs: "{duplicate_dof_names}"')
 
     return list(dofs)
 
 
 def _validate_and_prepare_tasks(tasks):
     for task in tasks:
-        if type(task) is not dict:
-            raise ValueError("Supplied tasks must be a list of dicts!")
+        if not isinstance(task, Mapping):
+            raise ValueError("Supplied tasks must be an iterable of mappings (e.g. a dict)!")
         if task["kind"] not in ["minimize", "maximize"]:
             raise ValueError('"mode" must be specified as either "minimize" or "maximize"')
         if "weight" not in task.keys():
@@ -107,8 +112,10 @@ def _validate_and_prepare_tasks(tasks):
             task["limits"] = (-np.inf, np.inf)
 
     task_keys = [task["key"] for task in tasks]
-    if not len(set(task_keys)) == len(task_keys):
-        raise ValueError("Keys of tasks must be unique!")
+    unique_task_keys, counts = np.unique(task_keys, return_counts=True)
+    duplicate_task_keys = unique_task_keys[counts > 1]
+    if len(duplicate_task_keys) > 0:
+        raise ValueError(f'Duplicate key(s) in supplied tasks: "{duplicate_task_keys}"')
 
     return list(tasks)
 

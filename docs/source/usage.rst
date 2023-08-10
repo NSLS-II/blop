@@ -5,12 +5,10 @@ Usage
 Working in the Bluesky environment, we need to pass four ingredients to the Bayesian agent:
 
 * ``dofs``: A list of degrees of freedom for the agent to optimize over.
-* ``dets``: A list of detectors to be triggered during acquisition.
 * ``tasks``: A list of tasks for the agent to maximize.
 * ``digestion``: A function that processes the output of the acquisition into the task values.
-
-
-
+* ``dets``: (Optional) A list of detectors to be triggered during acquisition.
+* ``acquisition``: (Optional) A Bluesky plan to run for each set of inputs.
 
 
 Degrees of freedom
@@ -36,6 +34,13 @@ Detectors are triggered for each input.
 .. code-block:: python
 
     my_dets = [some_detector, some_other_detector]
+
+
+
+Acquisition
++++++++++
+
+We run this plan for each set of DOF inputs. By default, this just moves the active DOFs to the desired points and triggers the supplied detectors.
 
 
 Tasks
