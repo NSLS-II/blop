@@ -34,7 +34,7 @@ MAX_TEST_INPUTS = 2**11
 
 TASK_CONFIG = {}
 
-ACQF_CONFIG = {
+ACQ_FUNC_CONFIG = {
     "quasi-random": {
         "identifiers": ["qr", "quasi-random"],
         "pretty_name": "Quasi-random",
@@ -168,7 +168,7 @@ class Agent:
         self.digestion = kwargs.get("digestion", default_digestion_function)
         self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
 
-        self.acqf_config = kwargs.get("acqf_config", ACQF_CONFIG)
+        self.acq_func_config = kwargs.get("acq_func_config", ACQ_FUNC_CONFIG)
 
         self.table = pd.DataFrame()
 
@@ -185,7 +185,7 @@ class Agent:
 
     def initialize(
         self,
-        acqf=None,
+        acq_func=None,
         n_init=4,
         data=None,
         hypers=None,
@@ -210,12 +210,12 @@ class Agent:
                 self.tell(new_table=data)
 
         # now let's get bayesian
-        elif acqf in ["qr"]:
+        elif acq_func in ["qr"]:
             yield from self.learn("qr", n_iter=1, n_per_iter=n_init, route=True)
 
         else:
             raise Exception(
-                """Could not initialize model! Either load a table, or specify an acqf from:
+                """Could not initialize model! Either load a table, or specify an acq_func from:
 ['qr']."""
             )
 
@@ -361,7 +361,7 @@ class Agent:
         return torch.empty((2, 0))
 
     def test_inputs(self, n=MAX_TEST_INPUTS):
-        return utils.sobol_sampler(self._acqf_bounds, n=n)
+        return utils.sobol_sampler(self._acq_func_bounds, n=n)
 
     @property
     def test_inputs_grid(self):
@@ -380,7 +380,7 @@ class Agent:
         ).swapaxes(0, -1)
 
     @property
-    def _acqf_bounds(self):
+    def _acq_func_bounds(self):
         return torch.tensor(
             [
                 dof["limits"] if dof["kind"] == "active" else tuple(2 * [dof["device"].read()[dof["device"].name]["value"]])
@@ -489,9 +489,9 @@ class Agent:
             print(f"trained models in {ttime.monotonic() - t0:.02f} seconds")
 
     @property
-    def acqf_info(self):
+    def acq_func_info(self):
         entries = []
-        for k, d in self.acqf_config.items():
+        for k, d in self.acq_func_config.items():
             ret = ""
             ret += f'{d["pretty_name"].upper()} (identifiers: {d["identifiers"]})\n'
             ret += f'-> {d["description"]}'
@@ -499,71 +499,73 @@ class Agent:
 
         print("\n\n".join(entries))
 
-    def get_acquisition_function(self, acqf_identifier="ei", return_metadata=False, acqf_args={}, **kwargs):
+    def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, acq_func_args={}, **kwargs):
         if not self._initialized:
-            raise RuntimeError(f'Can\'t construct acquisition function "{acqf_identifier}" (the agent is not initialized!)')
+            raise RuntimeError(
+                f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
+            )
 
-        if acqf_identifier.lower() in ACQF_CONFIG["expected_improvement"]["identifiers"]:
-            acqf = botorch.acquisition.analytic.LogExpectedImprovement(
+        if acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_improvement"]["identifiers"]:
+            acq_func = botorch.acquisition.analytic.LogExpectedImprovement(
                 self.model_list,
                 best_f=self.scalarized_fitness.max(),
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
-            acqf_meta = {"name": "expected improvement", "args": {}}
+            acq_func_meta = {"name": "expected improvement", "args": {}}
 
-        elif acqf_identifier.lower() in ACQF_CONFIG["probability_of_improvement"]["identifiers"]:
-            acqf = botorch.acquisition.analytic.LogProbabilityOfImprovement(
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["probability_of_improvement"]["identifiers"]:
+            acq_func = botorch.acquisition.analytic.LogProbabilityOfImprovement(
                 self.model_list,
                 best_f=self.scalarized_fitness.max(),
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
-            acqf_meta = {"name": "probability of improvement", "args": {}}
+            acq_func_meta = {"name": "probability of improvement", "args": {}}
 
-        elif acqf_identifier.lower() in ACQF_CONFIG["expected_mean"]["identifiers"]:
-            acqf = botorch.acquisition.analytic.UpperConfidenceBound(
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_mean"]["identifiers"]:
+            acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
                 self.model_list,
                 beta=0,
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
-            acqf_meta = {"name": "expected mean"}
+            acq_func_meta = {"name": "expected mean"}
 
-        elif acqf_identifier.lower() in ACQF_CONFIG["upper_confidence_bound"]["identifiers"]:
-            beta = ACQF_CONFIG["upper_confidence_bound"]["default_args"]["z"] ** 2
-            acqf = botorch.acquisition.analytic.UpperConfidenceBound(
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
+            beta = ACQ_FUNC_CONFIG["upper_confidence_bound"]["default_args"]["z"] ** 2
+            acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
                 self.model_list,
                 beta=beta,
                 posterior_transform=self.task_scalarization,
                 **kwargs,
             )
-            acqf_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
+            acq_func_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
 
         else:
-            raise ValueError(f'Unrecognized acquisition acqf_identifier "{acqf_identifier}".')
+            raise ValueError(f'Unrecognized acquisition acq_func_identifier "{acq_func_identifier}".')
 
-        return (acqf, acqf_meta) if return_metadata else acqf
+        return (acq_func, acq_func_meta) if return_metadata else acq_func
 
-    def ask(self, acqf_identifier="ei", n=1, route=True, return_metadata=False):
-        if acqf_identifier.lower() == "qr":
+    def ask(self, acq_func_identifier="ei", n=1, route=True, return_metadata=False):
+        if acq_func_identifier.lower() == "qr":
             active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
-            acqf_meta = {"name": "quasi-random", "args": {}}
+            acq_func_meta = {"name": "quasi-random", "args": {}}
 
         elif n == 1:
-            active_X, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
+            active_X, acq_func_meta = self.ask_single(acq_func_identifier, return_metadata=True)
 
         elif n > 1:
             active_x_list = []
             for i in range(n):
-                active_x, acqf_meta = self.ask_single(acqf_identifier, return_metadata=True)
+                active_x, acq_func_meta = self.ask_single(acq_func_identifier, return_metadata=True)
                 active_x_list.append(active_x)
 
                 if i < (n - 1):
-                    x = np.c_[active_x, acqf_meta["passive_values"]]
+                    x = np.c_[active_x, acq_func_meta["passive_values"]]
                     task_samples = [task["model"].posterior(torch.tensor(x)).sample().item() for task in self.tasks]
                     fantasy_table = pd.DataFrame(
-                        np.c_[active_x, acqf_meta["passive_values"], np.atleast_2d(task_samples)],
+                        np.c_[active_x, acq_func_meta["passive_values"], np.atleast_2d(task_samples)],
                         columns=[
                             *self._subset_dof_names(kind="active", mode="on"),
                             *self._subset_dof_names(kind="passive", mode="on"),
@@ -578,11 +580,11 @@ class Agent:
             if route:
                 active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
-        return (active_X, acqf_meta) if return_metadata else active_X
+        return (active_X, acq_func_meta) if return_metadata else active_X
 
     def ask_single(
         self,
-        acqf_identifier="ei",
+        acq_func_identifier="ei",
         return_metadata=False,
     ):
         """
@@ -591,15 +593,17 @@ class Agent:
 
         t0 = ttime.monotonic()
 
-        acqf, acqf_meta = self.get_acquisition_function(acqf_identifier=acqf_identifier, return_metadata=True)
+        acq_func, acq_func_meta = self.get_acquisition_function(
+            acq_func_identifier=acq_func_identifier, return_metadata=True
+        )
 
         BATCH_SIZE = 1
         NUM_RESTARTS = 8
         RAW_SAMPLES = 256
 
-        candidates, _ = botorch.optim.optimize_acqf(
-            acq_function=acqf,
-            bounds=self._acqf_bounds,
+        candidates, _ = botorch.optim.optimize_acq_func(
+            acq_function=acq_func,
+            bounds=self._acq_func_bounds,
             q=BATCH_SIZE,
             num_restarts=NUM_RESTARTS,
             raw_samples=RAW_SAMPLES,  # used for intialization heuristic
@@ -610,12 +614,12 @@ class Agent:
         active_x = x[..., [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]]
         passive_x = x[..., [dof["kind"] != "active" for dof in self._subset_dofs(mode="on")]]
 
-        acqf_meta["passive_values"] = passive_x
+        acq_func_meta["passive_values"] = passive_x
 
         if self.verbose:
             print(f"found point {x} in {ttime.monotonic() - t0:.02f} seconds")
 
-        return (active_x, acqf_meta) if return_metadata else active_x
+        return (active_x, acq_func_meta) if return_metadata else active_x
 
     def acquire(self, active_inputs):
         """
@@ -653,7 +657,7 @@ class Agent:
 
     def learn(
         self,
-        acqf_identifier,
+        acq_func_identifier,
         n_iter=1,
         n_per_iter=1,
         reuse_hypers=True,
@@ -668,11 +672,13 @@ class Agent:
         """
 
         for iteration in range(n_iter):
-            x, acqf_meta = self.ask(n=n_per_iter, acqf_identifier=acqf_identifier, return_metadata=True, **kwargs)
+            x, acq_func_meta = self.ask(
+                n=n_per_iter, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
+            )
 
             new_table = yield from self.acquire(x)
 
-            new_table.loc[:, "acqf"] = acqf_meta["name"]
+            new_table.loc[:, "acq_func"] = acq_func_meta["name"]
 
             self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
 
@@ -834,50 +840,52 @@ class Agent:
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
-    def plot_acquisition(self, acqfs=["ei"], **kwargs):
+    def plot_acquisition(self, acq_funcs=["ei"], **kwargs):
         if self._n_subset_dofs(kind="active", mode="on") == 1:
-            self._plot_acq_one_dof(acqfs=acqfs, **kwargs)
+            self._plot_acq_one_dof(acq_funcs=acq_funcs, **kwargs)
 
         else:
-            self._plot_acq_many_dofs(acqfs=acqfs, **kwargs)
+            self._plot_acq_many_dofs(acq_funcs=acq_funcs, **kwargs)
 
-    def _plot_acq_one_dof(self, acqfs, lw=1e0, **kwargs):
+    def _plot_acq_one_dof(self, acq_funcs, lw=1e0, **kwargs):
         self.acq_fig, self.acq_axes = plt.subplots(
             1,
-            len(acqfs),
-            figsize=(4 * len(acqfs), 4),
+            len(acq_funcs),
+            figsize=(4 * len(acq_funcs), 4),
             sharex=True,
             constrained_layout=True,
         )
 
         self.acq_axes = np.atleast_1d(self.acq_axes)
 
-        for iacqf, acqf_identifier in enumerate(acqfs):
-            color = DEFAULT_COLOR_LIST[iacqf]
+        for iacq_func, acq_func_identifier in enumerate(acq_funcs):
+            color = DEFAULT_COLOR_LIST[iacq_func]
 
-            acqf, acqf_meta = self.get_acquisition_function(acqf_identifier, return_metadata=True)
+            acq_func, acq_func_meta = self.get_acquisition_function(acq_func_identifier, return_metadata=True)
 
             x = self.test_inputs_grid
             *input_shape, input_dim = x.shape
-            obj = acqf.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+            obj = acq_func.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
 
-            if acqf_identifier in ["ei", "pi"]:
+            if acq_func_identifier in ["ei", "pi"]:
                 obj = obj.exp()
 
-            self.acq_axes[iacqf].set_title(acqf_meta["name"])
+            self.acq_axes[iacq_func].set_title(acq_func_meta["name"])
 
             on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
-            self.acq_axes[iacqf].plot(x[..., on_dofs_are_active_mask].squeeze(), obj.detach().numpy(), lw=lw, color=color)
+            self.acq_axes[iacq_func].plot(
+                x[..., on_dofs_are_active_mask].squeeze(), obj.detach().numpy(), lw=lw, color=color
+            )
 
-            self.acq_axes[iacqf].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
+            self.acq_axes[iacq_func].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
     def _plot_acq_many_dofs(
-        self, acqfs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
+        self, acq_funcs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
     ):
         self.acq_fig, self.acq_axes = plt.subplots(
             1,
-            len(acqfs),
-            figsize=(4 * len(acqfs), 4),
+            len(acq_funcs),
+            figsize=(4 * len(acq_funcs), 4),
             sharex=True,
             sharey=True,
             constrained_layout=True,
@@ -892,16 +900,16 @@ class Agent:
         x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
         *input_shape, input_dim = x.shape
 
-        for iacqf, acqf_identifier in enumerate(acqfs):
-            acqf, acqf_meta = self.get_acquisition_function(acqf_identifier, return_metadata=True)
+        for iacq_func, acq_func_identifier in enumerate(acq_funcs):
+            acq_func, acq_func_meta = self.get_acquisition_function(acq_func_identifier, return_metadata=True)
 
-            obj = acqf.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
-            if acqf_identifier in ["ei", "pi"]:
+            obj = acq_func.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+            if acq_func_identifier in ["ei", "pi"]:
                 obj = obj.exp()
 
             if gridded:
-                self.acq_axes[iacqf].set_title(acqf_meta["name"])
-                obj_ax = self.acq_axes[iacqf].pcolormesh(
+                self.acq_axes[iacq_func].set_title(acq_func_meta["name"])
+                obj_ax = self.acq_axes[iacq_func].pcolormesh(
                     x[..., 0],
                     x[..., 1],
                     obj.detach().numpy(),
@@ -909,17 +917,17 @@ class Agent:
                     cmap=cmap,
                 )
 
-                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
+                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
 
             else:
-                self.acq_axes[iacqf].set_title(acqf_meta["name"])
-                obj_ax = self.acq_axes[iacqf].scatter(
+                self.acq_axes[iacq_func].set_title(acq_func_meta["name"])
+                obj_ax = self.acq_axes[iacq_func].scatter(
                     x.detach().numpy()[..., axes[0]],
                     x.detach().numpy()[..., axes[1]],
                     c=obj.detach().numpy(),
                 )
 
-                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
+                self.acq_fig.colorbar(obj_ax, ax=self.acq_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
 
         for ax in self.acq_axes.ravel():
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
@@ -977,10 +985,10 @@ class Agent:
                 vmax=1,
             )
 
-            # self.acq_fig.colorbar(obj_ax, ax=self.feas_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
+            # self.acq_fig.colorbar(obj_ax, ax=self.feas_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
 
         else:
-            # self.feas_axes.set_title(acqf_meta["name"])
+            # self.feas_axes.set_title(acq_func_meta["name"])
             self.feas_axes[1].scatter(
                 x.detach().numpy()[..., axes[0]],
                 x.detach().numpy()[..., axes[1]],
@@ -1025,9 +1033,11 @@ class Agent:
         )
         hist_axes = np.atleast_1d(hist_axes)
 
-        unique_strategies, acqf_index, acqf_inverse = np.unique(self.table.acqf, return_index=True, return_inverse=True)
+        unique_strategies, acq_func_index, acq_func_inverse = np.unique(
+            self.table.acq_func, return_index=True, return_inverse=True
+        )
 
-        sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
+        sample_colors = np.array(DEFAULT_COLOR_LIST)[acq_func_inverse]
 
         if show_all_tasks:
             for itask, task in enumerate(self.tasks):
@@ -1049,9 +1059,9 @@ class Agent:
         hist_axes[-1].set_xlabel(x_key)
 
         handles = []
-        for i_acqf, acqf in enumerate(unique_strategies):
-            #        i_acqf = np.argsort(acqf_index)[i_handle]
-            handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acqf], label=acqf))
+        for i_acq_func, acq_func in enumerate(unique_strategies):
+            #        i_acq_func = np.argsort(acq_func_index)[i_handle]
+            handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acq_func], label=acq_func))
         legend = hist_axes[0].legend(handles=handles, fontsize=8)
         legend.set_title("acquisition function")
 
