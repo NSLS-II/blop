@@ -6,6 +6,10 @@ from ophyd import Signal, SignalRO
 DEFAULT_BOUNDS = (-5.0, +5.0)
 
 
+class ReadOnlyError(Exception):
+    ...
+
+
 class DOF(Signal):
     """
     Degree of freedom
@@ -20,7 +24,11 @@ class RODOF(DOF):
     Read-only degree of freedom
     """
 
-    ...
+    def put(self, value, *, timestamp=None, force=False):
+        raise ReadOnlyError(f'Cannot put, DOF "{self.name}" is read-only!')
+
+    def set(self, value, *, timestamp=None, force=False):
+        raise ReadOnlyError(f'Cannot set, DOF "{self.name}" is read-only!')
 
 
 class BrownianMotion(RODOF):
