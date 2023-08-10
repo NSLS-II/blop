@@ -169,14 +169,17 @@ class LatentKernel(gpytorch.kernels.Kernel):
         trans_x1 = torch.matmul(self.latent_transform.unsqueeze(1), (x1 - mean).unsqueeze(-1)).squeeze(-1)
         trans_x2 = torch.matmul(self.latent_transform.unsqueeze(1), (x2 - mean).unsqueeze(-1)).squeeze(-1)
 
-        d = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
+        distance = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
 
         if self.num_outputs == 1:
-            d = d.squeeze(0)
+            distance = distance.squeeze(0)
 
+        outputscale = self.outputscale if self.scale_output else 1.0
+
+        # special cases of the Matern function
         if self.nu == 0.5:
-            return (self.outputscale if self.scale_output else 1.0) * torch.exp(-d)
+            return outputscale * torch.exp(-distance)
         if self.nu == 1.5:
-            return (self.outputscale if self.scale_output else 1.0) * (1 + d) * torch.exp(-d)
+            return outputscale * (1 + distance) * torch.exp(-distance)
         if self.nu == 2.5:
-            return (self.outputscale if self.scale_output else 1.0) * (1 + d + d**2 / 3) * torch.exp(-d)
+            return outputscale * (1 + distance + distance**2 / 3) * torch.exp(-distance)

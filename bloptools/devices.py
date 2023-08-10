@@ -20,8 +20,7 @@ class RODOF(DOF):
     Read-only degree of freedom
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    ...
 
 
 class BrownianMotion(RODOF):

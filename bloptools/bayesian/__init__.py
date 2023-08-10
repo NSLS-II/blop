@@ -13,13 +13,13 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
-from acquisition import default_acquisition_plan
-from digestion import default_digestion_function
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
 from .. import utils
 from . import models
+from .acquisition import default_acquisition_plan
+from .digestion import default_digestion_function
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -181,7 +181,7 @@ class Agent:
         Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
         """
         transform = self._subset_input_transform(kind=kind, mode=mode)
-        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._n_subset_dofs(kind=kind, mode=mode)))
+        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._len_subset_dofs(kind=kind, mode=mode)))
 
     def initialize(
         self,
@@ -236,7 +236,7 @@ class Agent:
         self.table.loc[:, fitnesses.columns] = fitnesses.values
         self.table.loc[:, "total_fitness"] = fitnesses.values.sum(axis=1)
 
-        skew_dims = [tuple(np.arange(self._n_subset_dofs(mode="on")))]
+        skew_dims = [tuple(np.arange(self._len_subset_dofs(mode="on")))]
 
         if self._initialized:
             cached_hypers = self.hypers
@@ -342,7 +342,7 @@ class Agent:
     def _subset_dofs(self, kind=None, mode=None):
         return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode)) if m]
 
-    def _n_subset_dofs(self, kind=None, mode=None):
+    def _len_subset_dofs(self, kind=None, mode=None):
         return len(self._subset_dofs(kind, mode))
 
     def _subset_devices(self, kind=None, mode=None):
@@ -365,7 +365,7 @@ class Agent:
 
     @property
     def test_inputs_grid(self):
-        n_side = int(MAX_TEST_INPUTS ** (1 / self._n_subset_dofs(kind="active", mode="on")))
+        n_side = int(MAX_TEST_INPUTS ** (1 / self._len_subset_dofs(kind="active", mode="on")))
         return torch.tensor(
             np.r_[
                 np.meshgrid(
@@ -438,9 +438,9 @@ class Agent:
         """
         min_power_of_two = 2 ** int(np.ceil(np.log(n) / np.log(2)))
         subset = np.random.choice(min_power_of_two, size=n, replace=False)
-        return sp.stats.qmc.Sobol(d=self._n_subset_dofs(kind="active", mode="on"), scramble=True).random(n=min_power_of_two)[
-            subset
-        ]
+        return sp.stats.qmc.Sobol(d=self._len_subset_dofs(kind="active", mode="on"), scramble=True).random(
+            n=min_power_of_two
+        )[subset]
 
     def _set_hypers(self, hypers):
         for task in self.tasks:
@@ -601,7 +601,7 @@ class Agent:
         NUM_RESTARTS = 8
         RAW_SAMPLES = 256
 
-        candidates, _ = botorch.optim.optimize_acq_func(
+        candidates, _ = botorch.optim.optimize_acqf(
             acq_function=acq_func,
             bounds=self._acq_func_bounds,
             q=BATCH_SIZE,
@@ -707,7 +707,7 @@ class Agent:
     #     yield from self.go_to(self.best_sum_of_tasks_inputs)
 
     def plot_tasks(self, **kwargs):
-        if self._n_subset_dofs(kind="active", mode="on") == 1:
+        if self._len_subset_dofs(kind="active", mode="on") == 1:
             self._plot_tasks_one_dof(**kwargs)
         else:
             self._plot_tasks_many_dofs(**kwargs)
@@ -756,7 +756,7 @@ class Agent:
 
     def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16):
         if gridded is None:
-            gridded = self._n_subset_dofs(kind="active", mode="on") == 2
+            gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         self.task_fig, self.task_axes = plt.subplots(
             self.n_tasks,
@@ -841,7 +841,7 @@ class Agent:
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
     def plot_acquisition(self, acq_funcs=["ei"], **kwargs):
-        if self._n_subset_dofs(kind="active", mode="on") == 1:
+        if self._len_subset_dofs(kind="active", mode="on") == 1:
             self._plot_acq_one_dof(acq_funcs=acq_funcs, **kwargs)
 
         else:
@@ -892,7 +892,7 @@ class Agent:
         )
 
         if gridded is None:
-            gridded = self._n_subset_dofs(kind="active", mode="on") == 2
+            gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         self.acq_axes = np.atleast_1d(self.acq_axes)
         # self.acq_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
@@ -934,7 +934,7 @@ class Agent:
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
     def plot_feasibility(self, **kwargs):
-        if self._n_subset_dofs(kind="active", mode="on") == 1:
+        if self._len_subset_dofs(kind="active", mode="on") == 1:
             self._plot_feas_one_dof(**kwargs)
 
         else:
@@ -959,7 +959,7 @@ class Agent:
         self.feas_fig, self.feas_axes = plt.subplots(1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True)
 
         if gridded is None:
-            gridded = self._n_subset_dofs(kind="active", mode="on") == 2
+            gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         data_ax = self.feas_axes[0].scatter(
             *self.inputs.values.T[:2],
