@@ -9,8 +9,9 @@ on:
 
 jobs:
   build_docs:
-    # pull requests are a duplicate of a branch push if they are from within the same repo. Skip these
+    # pull requests are a duplicate of a branch push if within the same repo.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -62,7 +63,8 @@ jobs:
           set -vxeo pipefail
 
           conda env list
-          mamba install -c conda-forge shadow3 srwpy pandoc
+          # mamba install -c conda-forge shadow3 srwpy pandoc
+          mamba install -c conda-forge pandoc
           pip install --upgrade pip wheel
           pip install -v .
           pip install -r requirements-dev.txt
