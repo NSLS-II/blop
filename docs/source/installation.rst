@@ -7,21 +7,21 @@ Installation
 
 The package works with Python 3.8+ and can be installed from both PyPI and conda-forge.
 
-To install the package using the ``pip`` package manager, run the following command::
+To install the package using the ``pip`` package manager, run the following command:
 
 .. code:: bash
 
    $ python3 -m pip install bloptools
 
-To install the package using the ``conda`` package manager, run the following command::
+To install the package using the ``conda`` package manager, run the following command:
 
 .. code:: bash
 
    $ conda install -c conda-forge bloptools
 
 If you'd like to use the Sirepo backend and ``sirepo-bluesky`` ophyd objects, please
-follow the installation instructions at
-`https://nsls-ii.github.io/sirepo-bluesky/installation.html <https://nsls-ii.github.io/sirepo-bluesky/installation.html>`_.
+follow the `Sirepo/Sirepo-Bluesky installation & configuration instructions
+<https://nsls-ii.github.io/sirepo-bluesky/installation.html>`_.
 
 
 Run tests
