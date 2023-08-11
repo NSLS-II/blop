@@ -5,7 +5,7 @@ Usage
 Working in the Bluesky environment, we need to pass four ingredients to the Bayesian agent:
 
 * ``dofs``: A list of degrees of freedom for the agent to optimize over.
-* ``tasks``: A list of tasks for the agent to maximize.
+* ``tasks``: A list of tasks for the agent to optimize.
 * ``digestion``: A function that processes the output of the acquisition into the task values.
 * ``dets``: (Optional) A list of detectors to be triggered during acquisition.
 * ``acquisition``: (Optional) A Bluesky plan to run for each set of inputs.
