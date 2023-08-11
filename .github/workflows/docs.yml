@@ -3,6 +3,8 @@ name: Build Documentation
 on:
   push:
   pull_request:
+  release:
+    types: [created]
 
 jobs:
   build_docs:
@@ -76,7 +78,7 @@ jobs:
           path: docs/build/html/
 
       - name: Deploy documentation to nsls-ii.github.io
-        if: github.repository_owner == 'NSLS-II' && github.ref_name == 'main'
+        if: github.event_name == 'release'
         # We pin to the SHA, not the tag, for security reasons.
         # https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/security-hardening-for-github-actions#using-third-party-actions
         uses: peaceiris/actions-gh-pages@bbdfb200618d235585ad98e965f4aafc39b4c501  # v3.7.3

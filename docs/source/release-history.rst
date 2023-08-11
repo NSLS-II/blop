@@ -2,6 +2,15 @@
 Release History
 ===============
 
+
+v0.4.0 (2023-08-08)
+-------------------
+
+- Easier-to-use syntax when building the agent
+- Modular and stateful agent design for better usability
+- Ability to save/load both data and hyperparameters
+
+
 v0.3.0 (2023-06-17)
 -------------------
 
