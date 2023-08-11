@@ -2,7 +2,7 @@
 Release History
 ===============
 
-v0.4.0 (2023-08-10)
+v0.4.0 (2023-08-11)
 -------------------
 
 - Easier-to-use syntax when building the agent.
