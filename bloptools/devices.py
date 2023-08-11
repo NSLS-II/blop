@@ -15,11 +15,10 @@ class DOF(Signal):
     Degree of freedom
     """
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    ...
 
 
-class RODOF(DOF):
+class DOFRO(DOF):
     """
     Read-only degree of freedom
     """
@@ -31,7 +30,7 @@ class RODOF(DOF):
         raise ReadOnlyError(f'Cannot set, DOF "{self.name}" is read-only!')
 
 
-class BrownianMotion(RODOF):
+class BrownianMotion(DOFRO):
     """
     Read-only degree of freedom simulating brownian motion
     """
@@ -60,6 +59,9 @@ class TimeReadback(SignalRO):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+    def get(self):
+        return ttime.time()
 
 
 class ConstantReadback(SignalRO):
