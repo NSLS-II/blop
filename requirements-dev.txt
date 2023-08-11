@@ -4,6 +4,7 @@ black
 pytest-codecov
 coverage
 flake8
+furo
 isort
 nbstripout
 pre-commit

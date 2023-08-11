@@ -21,8 +21,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
         self.num_inputs = num_inputs
         self.scale_output = scale_output
 
-        self.nu = kwargs.get("nu", 1.5)
-        self.batch_dimension = kwargs.get("batch_dimension", None)
+        self.nu = kwargs.get("nu", 2.5)
 
         if type(skew_dims) is bool:
             if skew_dims:
@@ -172,4 +171,15 @@ class LatentKernel(gpytorch.kernels.Kernel):
 
         distance = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
 
-        return (self.outputscale if self.scale_output else 1.0) * (1 + distance) * torch.exp(-distance)
+        if self.num_outputs == 1:
+            distance = distance.squeeze(0)
+
+        outputscale = self.outputscale if self.scale_output else 1.0
+
+        # special cases of the Matern function
+        if self.nu == 0.5:
+            return outputscale * torch.exp(-distance)
+        if self.nu == 1.5:
+            return outputscale * (1 + distance) * torch.exp(-distance)
+        if self.nu == 2.5:
+            return outputscale * (1 + distance + distance**2 / 3) * torch.exp(-distance)

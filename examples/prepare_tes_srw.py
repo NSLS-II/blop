@@ -9,7 +9,7 @@ _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 connection = SirepoBluesky("http://localhost:8000")
 
 data, schema = connection.auth("srw", "00000002")
-classes, objects = create_classes(connection.data, connection=connection)
+classes, objects = create_classes(connection=connection)
 globals().update(**objects)
 
 # w9.duration.kind = "hinted"

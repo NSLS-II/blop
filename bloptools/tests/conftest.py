@@ -13,7 +13,6 @@ from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
 from sirepo_bluesky.srw_handler import SRWFileHandler
 
 from bloptools.bayesian import Agent
-from bloptools.tasks import Task
 
 from .. import devices, test_functions
 
@@ -57,27 +56,57 @@ def RE(db):
 @pytest.fixture(scope="function")
 def agent(db):
     """
-    A simple agent maximizing two Styblinski-Tang functions
+    A simple agent minimizing Himmelblau's function
     """
 
-    dofs = devices.dummy_dofs(n=2)
-    bounds = [(-5, 5), (-5, 5)]
+    dofs = [
+        {"device": devices.DOF(name="x1"), "limits": (-5, 5), "kind": "active"},
+        {"device": devices.DOF(name="x2"), "limits": (-5, 5), "kind": "active"},
+    ]
+
+    tasks = [
+        {"key": "himmelblau", "kind": "minimize"},
+    ]
+
+    agent = Agent(
+        dofs=dofs,
+        tasks=tasks,
+        digestion=test_functions.himmelblau_digestion,
+        db=db,
+        verbose=True,
+        tolerate_acquisition_errors=False,
+    )
+
+    return agent
+
+
+@pytest.fixture(scope="function")
+def multitask_agent(db):
+    """
+    A simple agent minimizing two Styblinski-Tang functions
+    """
 
     def digestion(db, uid):
         products = db[uid].table()
 
         for index, entry in products.iterrows():
-            products.loc[index, "loss1"] = test_functions.styblinski_tang(entry.x1, entry.x2)
-            products.loc[index, "loss2"] = test_functions.styblinski_tang(entry.x1, -entry.x2)
+            products.loc[index, "ST1"] = test_functions.styblinski_tang(entry.x1, entry.x2)
+            products.loc[index, "ST2"] = test_functions.styblinski_tang(entry.x1, -entry.x2)
 
         return products
 
-    tasks = [Task(key="loss1", kind="min"), Task(key="loss2", kind="min")]
+    dofs = [
+        {"device": devices.DOF(name="x1"), "limits": (-5, 5), "kind": "active"},
+        {"device": devices.DOF(name="x2"), "limits": (-5, 5), "kind": "active"},
+    ]
+
+    tasks = [
+        {"key": "ST1", "kind": "minimize"},
+        {"key": "ST2", "kind": "minimize"},
+    ]
 
     agent = Agent(
-        active_dofs=dofs,
-        passive_dofs=[],
-        active_dof_bounds=bounds,
+        dofs=dofs,
         tasks=tasks,
         digestion=digestion,
         db=db,
