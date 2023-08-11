@@ -38,7 +38,7 @@ Detectors are triggered for each input.
 
 
 Acquisition
-+++++++++
++++++++++++
 
 We run this plan for each set of DOF inputs. By default, this just moves the active DOFs to the desired points and triggers the supplied detectors.
 
