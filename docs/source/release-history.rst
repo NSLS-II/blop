@@ -2,21 +2,24 @@
 Release History
 ===============
 
-
-v0.4.0 (2023-08-08)
+v0.4.0 (2023-08-10)
 -------------------
 
-- Easier-to-use syntax when building the agent
-- Modular and stateful agent design for better usability
-- Ability to save/load both data and hyperparameters
+- Easier-to-use syntax when building the agent.
+- Modular and stateful agent design for better usability.
+- Added the ability to save/load both data and hyperparameters.
+- Added passive degrees of freedom.
+- Added a number of `test functions / artificial landscapes for optimization
+  <https://en.wikipedia.org/wiki/Test_functions_for_optimization>`_.
+- Updated the Sphinx documentation theme to `furo <https://github.com/pradyunsg/furo>`_.
 
 
 v0.3.0 (2023-06-17)
 -------------------
 
-- Implemented multi-task optimization
-- Simplified the syntax on initializing the agent
-- Resolved issues discovered at ISS
+- Implemented multi-task optimization.
+- Simplified the syntax on initializing the agent.
+- Resolved issues discovered at NSLS-II ISS.
 
 
 v0.2.0 (2023-04-25)
