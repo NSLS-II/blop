@@ -26,32 +26,17 @@ Degrees of freedom (DOFs) are passed as an iterable of dicts, each containing at
 Here ``some_motor`` and ``another_motor`` are ``ophyd`` objects.
 
 
-Detectors
-+++++++++
-
-Detectors are triggered for each input.
-
-.. code-block:: python
-
-    my_dets = [some_detector, some_other_detector]
-
-
-
-Acquisition
-+++++++++++
-
-We run this plan for each set of DOF inputs. By default, this just moves the active DOFs to the desired points and triggers the supplied detectors.
-
 
 Tasks
 +++++
 
-Degrees of freedom (DOFs) are passed as an iterable of dicts, each containing at least the device and set of limits.
+Tasks are what we want our agent to try to optimize (either maximize or minimize). We can pass as many as we'd like:
 
 .. code-block:: python
 
     my_tasks = [
-        {"key": "value_to_maximize"}
+        {"key": "something_to_maximize", "kind": "maximize"}
+        {"key": "something_to_minimize", "kind": "minimize"}
         ]
 
 
@@ -73,9 +58,27 @@ The digestion function is how we go from what is spit out by the acquisition to 
             raw_output_1 = entry.raw_output_1
             raw_output_2 = entry.raw_output_2
 
-            entry.loc[index, "value_to_maximize"] = some_fitness_function(raw_output_1, raw_output_2)
+            entry.loc[index, "thing_to_maximize"] = some_fitness_function(raw_output_1, raw_output_2)
 
         return products
+
+
+Detectors
++++++++++
+
+Detectors are triggered for each input.
+
+.. code-block:: python
+
+    my_dets = [some_detector, some_other_detector]
+
+
+
+Acquisition
++++++++++++
+
+We run this plan for each set of DOF inputs. By default, this just moves the active DOFs to the desired points and triggers the supplied detectors.
+
 
 
 
