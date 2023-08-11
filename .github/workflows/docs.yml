@@ -3,12 +3,15 @@ name: Build Documentation
 on:
   push:
   pull_request:
+  workflow_dispatch:
+  release:
+    types: [created]
 
 jobs:
   build_docs:
-    # pull requests are a duplicate of a branch push if they are from within
-    # the same repo. Skip these
+    # pull requests are a duplicate of a branch push if within the same repo.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -34,7 +37,7 @@ jobs:
         uses: supercharge/mongodb-github-action@1.6.0
 
       - name: Start Sirepo Docker container
-        uses: NSLS-II/start-sirepo-action@v1
+        uses: NSLS-II/start-sirepo-action@v2
         with:
           docker-binary: docker
 
@@ -54,13 +57,14 @@ jobs:
           mamba-version: "*"
           channels: conda-forge
 
-      - name: Install dependencies
+      - name: Install documentation-building requirements
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
           set -vxeo pipefail
 
           conda env list
-          mamba install -c conda-forge shadow3 srwpy pandoc
+          # mamba install -c conda-forge shadow3 srwpy pandoc
+          mamba install -c conda-forge pandoc
           pip install --upgrade pip wheel
           pip install -v .
           pip install -r requirements-dev.txt
@@ -76,7 +80,8 @@ jobs:
           path: docs/build/html/
 
       - name: Deploy documentation to nsls-ii.github.io
-        if: github.repository_owner == 'NSLS-II' && github.ref_name == 'main'
+        # if: github.repository_owner == 'NSLS-II' && github.ref_name == 'main'
+        if: github.event_name == 'release'
         # We pin to the SHA, not the tag, for security reasons.
         # https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/security-hardening-for-github-actions#using-third-party-actions
         uses: peaceiris/actions-gh-pages@bbdfb200618d235585ad98e965f4aafc39b4c501  # v3.7.3

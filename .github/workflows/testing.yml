@@ -3,11 +3,15 @@ name: Unit Tests
 on:
   push:
   pull_request:
+  workflow_dispatch:
   # schedule:
   #   - cron: '00 4 * * *'  # daily at 4AM
 
 jobs:
   run_tests:
+    # pull requests are a duplicate of a branch push if within the same repo.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+
     runs-on: ${{ matrix.host-os }}
     strategy:
       matrix:
@@ -32,7 +36,7 @@ jobs:
         uses: supercharge/mongodb-github-action@1.6.0
 
       - name: Start Sirepo Docker container
-        uses: NSLS-II/start-sirepo-action@v1
+        uses: NSLS-II/start-sirepo-action@v2
         with:
           docker-binary: docker
 
@@ -52,13 +56,13 @@ jobs:
           mamba-version: "*"
           channels: conda-forge
 
-      - name: Install dependencies
+      - name: Install the package and its dependencies
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
           set -vxeo pipefail
 
           conda env list
-          mamba install -c conda-forge shadow3 srwpy
+          # mamba install -c conda-forge shadow3 srwpy
           pip install --upgrade pip wheel
           pip install -v .
           pip install -r requirements-dev.txt
