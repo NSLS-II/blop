@@ -7,4 +7,5 @@ def test_plots(RE, agent):
 
     agent.plot_tasks()
     agent.plot_acquisition()
-    agent.plot_feasibility()
+    agent.plot_validity()
+    agent.plot_history()
