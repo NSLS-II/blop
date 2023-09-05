@@ -23,7 +23,7 @@ from matplotlib.patches import Patch
 
 from .. import utils
 from . import acquisition, models
-from .acquisition import default_acquisition_plan
+from .acquisition import ACQ_FUNC_CONFIG, default_acquisition_plan
 from .digestion import default_digestion_function
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
@@ -40,46 +40,6 @@ MAX_TEST_INPUTS = 2**11
 TASK_CONFIG = {}
 
 TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
-
-
-ACQ_FUNC_CONFIG = {
-    "quasi-random": {
-        "identifiers": ["qr", "quasi-random"],
-        "pretty_name": "Quasi-random",
-        "description": "Sobol-sampled quasi-random points.",
-    },
-    "expected_mean": {
-        "identifiers": ["em", "expected_mean"],
-        "pretty_name": "Expected mean",
-        "description": "The expected value at each input.",
-    },
-    "expected_improvement": {
-        "identifiers": ["ei", "expected_improvement"],
-        "pretty_name": "Expected improvement",
-        "description": r"The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.",
-    },
-    "noisy_expected_hypervolume_improvement": {
-        "identifiers": ["nehvi", "noisy_expected_hypervolume_improvement"],
-        "pretty_name": "Noisy expected hypervolume improvement",
-        "description": r"It's like a big box. How big is the box?",
-    },
-    "lower_bound_max_value_entropy": {
-        "identifiers": ["lbmve", "lbmes", "gibbon", "lower_bound_max_value_entropy"],
-        "pretty_name": "Lower bound max value entropy",
-        "description": r"Max entropy search, basically",
-    },
-    "probability_of_improvement": {
-        "identifiers": ["pi", "probability_of_improvement"],
-        "pretty_name": "Probability of improvement",
-        "description": "The probability that this input improves on the current maximum.",
-    },
-    "upper_confidence_bound": {
-        "identifiers": ["ucb", "upper_confidence_bound"],
-        "default_args": {"beta": 4},
-        "pretty_name": "Upper confidence bound",
-        "description": r"The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).",
-    },
-}
 
 
 def _validate_and_prepare_dofs(dofs):
@@ -184,7 +144,7 @@ class Agent:
         self.db = db
 
         self.verbose = kwargs.get("verbose", False)
-        self.allow_acquisition_errors = kwargs.get("allow_acquisition_errors", False)
+        self.allow_acquisition_errors = kwargs.get("allow_acquisition_errors", True)
         self.initialization = kwargs.get("initialization", None)
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
         self.digestion = kwargs.get("digestion", default_digestion_function)
@@ -295,7 +255,7 @@ class Agent:
 
         # # this ensures that we have equal weight between task fitness and feasibility fitness
         # self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-        #     weights=torch.tensor([*torch.ones(self.n_tasks), self.fitness_variance.sum().sqrt()]).double(),
+        #     weights=torch.tensor([*torch.ones(self.num_tasks), self.fitness_variance.sum().sqrt()]).double(),
         #     offset=0,
         # )
 
@@ -328,7 +288,7 @@ class Agent:
 
     @property
     def model(self):
-        return ModelListGP(*[task["model"] for task in self.tasks]) if self.n_tasks > 1 else self.tasks[0]["model"]
+        return ModelListGP(*[task["model"] for task in self.tasks]) if self.num_tasks > 1 else self.tasks[0]["model"]
 
     @property
     def target_names(self):
@@ -438,7 +398,7 @@ class Agent:
         ).T
 
     @property
-    def n_tasks(self):
+    def num_tasks(self):
         return len(self.tasks)
 
     @property
@@ -548,38 +508,53 @@ class Agent:
         print("\n\n".join(entries))
 
     def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, **acq_func_kwargs):
+        """
+        Generates an acquisition function from a supplied identifier.
+        """
+
         if not self._initialized:
             raise RuntimeError(
                 f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
             )
 
-        if acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_improvement"]["identifiers"]:
+        acq_func_name = None
+        for _acq_func_name in ACQ_FUNC_CONFIG.keys():
+            if acq_func_identifier.lower() in ACQ_FUNC_CONFIG[_acq_func_name]["identifiers"]:
+                acq_func_name = _acq_func_name
+
+        if acq_func_name is None:
+            raise ValueError(f'Unrecognized acquisition function "{acq_func_identifier}".')
+
+        if ACQ_FUNC_CONFIG[acq_func_name]["multitask_only"] and (self.num_tasks == 1):
+            raise ValueError(f'Acquisition function "{acq_func_name}" is only for multi-task optimization problems!')
+
+        if acq_func_name == "expected_improvement":
             acq_func = acquisition.ConstrainedLogExpectedImprovement(
                 constraint=self.constraint,
                 model=self.model,
                 best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
                 posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
             )
-            acq_func_meta = {"name": "expected_improvement", "args": {}}
+            acq_func_meta = {"name": acq_func_name, "args": {}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["probability_of_improvement"]["identifiers"]:
+        elif acq_func_name == "probability_of_improvement":
             acq_func = acquisition.ConstrainedLogProbabilityOfImprovement(
                 constraint=self.constraint,
                 model=self.model,
                 best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
                 posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
             )
-            acq_func_meta = {"name": "probability_of_improvement", "args": {}}
+            acq_func_meta = {"name": acq_func_name, "args": {}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["lower_bound_max_value_entropy"]["identifiers"]:
+        elif acq_func_name == "lower_bound_max_value_entropy":
             acq_func = acquisition.qConstrainedLowerBoundMaxValueEntropy(
                 constraint=self.constraint,
                 model=self.model,
                 candidate_set=self.test_inputs(n=1024).squeeze(1),
             )
-            acq_func_meta = {"name": "lower_bound_max_value_entropy", "args": {}}
+            acq_func_meta = {"name": acq_func_name, "args": {}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["noisy_expected_hypervolume_improvement"]["identifiers"]:
+        elif acq_func_name == "noisy_expected_hypervolume_improvement":
             acq_func = acquisition.qConstrainedNoisyExpectedHypervolumeImprovement(
                 constraint=self.constraint,
                 model=self.model,
@@ -587,9 +562,9 @@ class Agent:
                 X_baseline=self.train_inputs,
                 prune_baseline=True,
             )
-            acq_func_meta = {"name": "noisy_expected_hypervolume_improvement", "args": {}}
+            acq_func_meta = {"name": acq_func_name, "args": {}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
+        elif acq_func_name == "upper_confidence_bound":
             config = ACQ_FUNC_CONFIG["upper_confidence_bound"]
             beta = acq_func_kwargs.get("beta", config["default_args"]["beta"])
 
@@ -599,14 +574,11 @@ class Agent:
                 beta=beta,
                 posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
             )
-            acq_func_meta = {"name": "upper_confidence_bound", "args": {"beta": beta}}
+            acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_mean"]["identifiers"]:
+        elif acq_func_name == "expected_mean":
             acq_func = self.get_acquisition_function(acq_func_identifier="ucb", beta=0, return_metadata=False)
-            acq_func_meta = {"name": "expected_mean"}
-
-        else:
-            raise ValueError(f'Unrecognized acquisition acq_func_identifier "{acq_func_identifier}".')
+            acq_func_meta = {"name": acq_func_name, "args": {}}
 
         return (acq_func, acq_func_meta) if return_metadata else acq_func
 
@@ -777,9 +749,9 @@ class Agent:
 
     def _plot_tasks_one_dof(self, size=16, lw=1e0):
         self.task_fig, self.task_axes = plt.subplots(
-            self.n_tasks,
+            self.num_tasks,
             1,
-            figsize=(6, 4 * self.n_tasks),
+            figsize=(6, 4 * self.num_tasks),
             sharex=True,
             constrained_layout=True,
         )
@@ -822,9 +794,9 @@ class Agent:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         self.task_fig, self.task_axes = plt.subplots(
-            self.n_tasks,
+            self.num_tasks,
             3,
-            figsize=(10, 4 * self.n_tasks),
+            figsize=(10, 4 * self.num_tasks),
             sharex=True,
             sharey=True,
             constrained_layout=True,
@@ -1087,9 +1059,9 @@ class Agent:
 
         num_task_plots = 1
         if show_all_tasks:
-            num_task_plots = self.n_tasks + 1
+            num_task_plots = self.num_tasks + 1
 
-        self.n_tasks + 1 if self.n_tasks > 1 else 1
+        self.num_tasks + 1 if self.num_tasks > 1 else 1
 
         hist_fig, hist_axes = plt.subplots(
             num_task_plots, 1, figsize=(6, 4 * num_task_plots), sharex=True, constrained_layout=True, dpi=200
