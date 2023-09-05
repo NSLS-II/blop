@@ -2,11 +2,11 @@ bluesky>=1.6.1
 botorch
 databroker
 gpytorch
+h5py
 matplotlib
 numpy
 ophyd
 ortools
 scipy
-sirepo-bluesky>=0.7.0
 tables
 torch
