@@ -276,9 +276,15 @@ class Agent:
 
     @property
     def model(self):
+        """
+        A model encompassing all the tasks. A single GP in the single-task case, or a model list.
+        """
         return ModelListGP(*[task["model"] for task in self.tasks]) if self.num_tasks > 1 else self.tasks[0]["model"]
 
     def _get_task_fitness(self, task_index):
+        """
+        Returns the fitness for a task given the task index.
+        """
         task = self.tasks[task_index]
 
         targets = self.table.loc[:, task["key"]].values.copy()
@@ -302,7 +308,7 @@ class Agent:
         """
         Returns a (num_tasks x n_obs) array of fitnesses
         """
-        return torch.tensor(np.c_[*[self._get_task_fitness(i) for i in range(self.num_tasks)]]).double()
+        return torch.cat([torch.tensor(self._get_task_fitness(i))[..., None] for i in range(self.num_tasks)], dim=1)
 
     @property
     def scalarized_fitness(self):
@@ -315,39 +321,6 @@ class Agent:
     @property
     def target_names(self):
         return [f'{task["key"]}_fitness' for task in self.tasks]
-
-    def _dof_kind_mask(self, kind=None):
-        return [dof["kind"] == kind if kind is not None else True for dof in self.dofs]
-
-    def _dof_mode_mask(self, mode=None):
-        return [dof["mode"] == mode if mode is not None else True for dof in self.dofs]
-
-    def _dof_mask(self, kind=None, mode=None):
-        return [(k and m) for k, m in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode))]
-
-    def _subset_dofs(self, kind=None, mode=None):
-        return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode)) if m]
-
-    def _len_subset_dofs(self, kind=None, mode=None):
-        return len(self._subset_dofs(kind, mode))
-
-    def _subset_devices(self, kind=None, mode=None):
-        return [dof["device"] for dof in self._subset_dofs(kind, mode)]
-
-    def _read_subset_devices(self, kind=None, mode=None):
-        return [device.read()[device.name]["value"] for device in self._subset_devices(kind, mode)]
-
-    def _subset_dof_names(self, kind=None, mode=None):
-        return [device.name for device in self._subset_devices(kind, mode)]
-
-    def _subset_dof_limits(self, kind=None, mode=None):
-        dofs_subset = self._subset_dofs(kind, mode)
-        if len(dofs_subset) > 0:
-            return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
-        return torch.empty((2, 0))
-
-    def test_inputs(self, n=MAX_TEST_INPUTS):
-        return utils.sobol_sampler(self._acq_func_bounds, n=n)
 
     @property
     def test_inputs_grid(self):
@@ -398,6 +371,39 @@ class Agent:
     @property
     def task_signs(self):
         return torch.tensor([(1 if task["kind"] == "maximize" else -1) for task in self.tasks], dtype=torch.long)
+
+    def _dof_kind_mask(self, kind=None):
+        return [dof["kind"] == kind if kind is not None else True for dof in self.dofs]
+
+    def _dof_mode_mask(self, mode=None):
+        return [dof["mode"] == mode if mode is not None else True for dof in self.dofs]
+
+    def _dof_mask(self, kind=None, mode=None):
+        return [(k and m) for k, m in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode))]
+
+    def _subset_dofs(self, kind=None, mode=None):
+        return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode)) if m]
+
+    def _len_subset_dofs(self, kind=None, mode=None):
+        return len(self._subset_dofs(kind, mode))
+
+    def _subset_devices(self, kind=None, mode=None):
+        return [dof["device"] for dof in self._subset_dofs(kind, mode)]
+
+    def _read_subset_devices(self, kind=None, mode=None):
+        return [device.read()[device.name]["value"] for device in self._subset_devices(kind, mode)]
+
+    def _subset_dof_names(self, kind=None, mode=None):
+        return [device.name for device in self._subset_devices(kind, mode)]
+
+    def _subset_dof_limits(self, kind=None, mode=None):
+        dofs_subset = self._subset_dofs(kind, mode)
+        if len(dofs_subset) > 0:
+            return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
+        return torch.empty((2, 0))
+
+    def test_inputs(self, n=MAX_TEST_INPUTS):
+        return utils.sobol_sampler(self._acq_func_bounds, n=n)
 
     def _subset_input_transform(self, kind=None, mode=None):
         limits = self._subset_dof_limits(kind, mode)
