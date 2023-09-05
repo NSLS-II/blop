@@ -32,4 +32,3 @@ class LatentDirichletClassifier(LatentGP):
         *input_shape, n_dim = x.shape
         samples = self.posterior(x.reshape(-1, n_dim)).sample(torch.Size((n_samples,))).exp()
         return (samples / samples.sum(-1, keepdim=True)).mean(0).reshape(*input_shape, -1)
-

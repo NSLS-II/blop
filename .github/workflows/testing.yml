@@ -32,8 +32,8 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v3
 
-      - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@1.6.0
+      # - name: Start MongoDB
+      #   uses: supercharge/mongodb-github-action@1.6.0
 
       # - name: Start Sirepo Docker container
       #   uses: NSLS-II/start-sirepo-action@v2
