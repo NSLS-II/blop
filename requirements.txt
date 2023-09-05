@@ -8,6 +8,8 @@ numpy
 ophyd
 ortools
 scipy
+shadow3
 sirepo-bluesky
+srwpy
 tables
 torch
