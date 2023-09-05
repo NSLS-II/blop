@@ -184,7 +184,7 @@ class Agent:
         self.db = db
 
         self.verbose = kwargs.get("verbose", False)
-        self.allow_acquisition_errors = kwargs.get("allow_acquisition_errors", True)
+        self.allow_acquisition_errors = kwargs.get("allow_acquisition_errors", False)
         self.initialization = kwargs.get("initialization", None)
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
         self.digestion = kwargs.get("digestion", default_digestion_function)
@@ -590,7 +590,6 @@ class Agent:
             acq_func_meta = {"name": "noisy_expected_hypervolume_improvement", "args": {}}
 
         elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
-            
             config = ACQ_FUNC_CONFIG["upper_confidence_bound"]
             beta = acq_func_kwargs.get("beta", config["default_args"]["beta"])
 

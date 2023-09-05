@@ -17,13 +17,13 @@ def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
 
     dofs = [
         {"device": kbv.x_rot, "limits": (-0.1, 0.1), "kind": "active"},
-        {"device": kbv.offz, "limits": (-0.5, 0.5), "kind": "active"},
+        {"device": kbh.x_rot, "limits": (-0.1, 0.1), "kind": "active"},
     ]
 
     tasks = [
-        {"key": "flux", "kind": "maximize"},
-        {"key": "w9_fwhm_x", "kind": "minimize"},
-        {"key": "w9_fwhm_y", "kind": "minimize"},
+        {"key": "flux", "kind": "maximize", "transform": "log"},
+        {"key": "w9_fwhm_x", "kind": "minimize", "transform": "log"},
+        {"key": "w9_fwhm_y", "kind": "minimize", "transform": "log"},
     ]
 
     agent = bloptools.bayesian.Agent(
@@ -35,7 +35,6 @@ def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
     )
 
     RE(agent.initialize("qr", n_init=4))
-
     RE(agent.learn("ei", n_iter=2))
     RE(agent.learn("pi", n_iter=2))
 
