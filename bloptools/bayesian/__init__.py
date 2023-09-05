@@ -212,28 +212,22 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        fitnesses = self.task_fitnesses  # computes from self.table
-
-        # update fitness estimates
-        self.table.loc[:, fitnesses.columns] = fitnesses.values
-        self.table.loc[:, "total_fitness"] = fitnesses.values.sum(axis=1)
-
         skew_dims = [tuple(np.arange(self._len_subset_dofs(mode="on")))]
 
         if self._initialized:
             cached_hypers = self.hypers
 
-        feasibility = ~fitnesses.isna().any(axis=1)
+        inputs = self.inputs.loc[:, self._subset_dof_names(mode="on")].values
 
-        if not feasibility.sum() >= 2:
-            raise ValueError("There must be at least two feasible data points per task!")
+        for i, task in enumerate(self.tasks):
+            self.table.loc[:, f"{task['key']}_fitness"] = targets = self._get_task_fitness(i)
+            train_index = ~np.isnan(targets)
 
-        inputs = self.inputs.loc[feasibility, self._subset_dof_names(mode="on")].values
-        train_inputs = torch.tensor(inputs).double()  # .unsqueeze(0)
+            if not len(train_index) >= 2:
+                raise ValueError("There must be at least two valid data points per task!")
 
-        for task in self.tasks:
-            targets = self.table.loc[feasibility, f'{task["key"]}_fitness'].values
-            train_targets = torch.tensor(targets).double().unsqueeze(-1)  # .unsqueeze(0)
+            train_inputs = torch.tensor(inputs[train_index]).double()
+            train_targets = torch.tensor(targets[train_index]).double().unsqueeze(-1)  # .unsqueeze(0)
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
@@ -253,18 +247,12 @@ class Agent:
                 outcome_transform=outcome_transform,
             ).double()
 
-        # # this ensures that we have equal weight between task fitness and feasibility fitness
-        # self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-        #     weights=torch.tensor([*torch.ones(self.num_tasks), self.fitness_variance.sum().sqrt()]).double(),
-        #     offset=0,
-        # )
-
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            torch.tensor(feasibility).long(), learn_additional_noise=True
+            self.all_tasks_valid.long(), learn_additional_noise=True
         ).double()
 
         self.classifier = models.LatentDirichletClassifier(
-            train_inputs=torch.tensor(self.inputs.values).double(),
+            train_inputs=torch.tensor(inputs).double(),
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
@@ -290,53 +278,43 @@ class Agent:
     def model(self):
         return ModelListGP(*[task["model"] for task in self.tasks]) if self.num_tasks > 1 else self.tasks[0]["model"]
 
+    def _get_task_fitness(self, task_index):
+        task = self.tasks[task_index]
+
+        targets = self.table.loc[:, task["key"]].values.copy()
+
+        if task["kind"] == "minimize":
+            targets *= -1
+
+        # check that task values are inside acceptable values
+        valid = (targets > task["limits"][0]) & (targets < task["limits"][1])
+        targets = np.where(valid, targets, np.nan)
+
+        # transform if needed
+        if "transform" in task.keys():
+            if task["transform"] == "log":
+                targets = np.where(targets > 0, np.log(targets), np.nan)
+
+        return targets
+
+    @property
+    def fitnesses(self):
+        """
+        Returns a (num_tasks x n_obs) array of fitnesses
+        """
+        return torch.tensor(np.c_[*[self._get_task_fitness(i) for i in range(self.num_tasks)]]).double()
+
+    @property
+    def scalarized_fitness(self):
+        return (self.fitnesses * self.task_weights).sum(axis=-1)
+
+    @property
+    def all_tasks_valid(self):
+        return ~torch.isnan(self.scalarized_fitness)
+
     @property
     def target_names(self):
         return [f'{task["key"]}_fitness' for task in self.tasks]
-
-    @property
-    def train_inputs(self):
-        feasibility = ~self.task_fitnesses.isna().any(axis=1)
-        inputs = self.inputs.loc[feasibility, self._subset_dof_names(mode="on")].values
-        return torch.tensor(inputs).double()
-
-    @property
-    def train_targets(self):
-        feasibility = ~self.task_fitnesses.isna().any(axis=1)
-        inputs = self.table.loc[feasibility, self.target_names].values
-        return torch.tensor(inputs).double()
-
-    @property
-    def class_inputs(self):
-        inputs = self.inputs.loc[:, self._subset_dof_names(mode="on")].values
-        return torch.tensor(inputs).double()
-
-    @property
-    def class_targets(self):
-        feasibility = ~self.task_fitnesses.isna().any(axis=1)
-        return torch.tensor(feasibility).double()
-
-    @property
-    def task_fitnesses(self):
-        df = pd.DataFrame(index=self.table.index)
-        for task in self.tasks:
-            name = f'{task["key"]}_fitness'
-
-            df.loc[:, name] = task["weight"] * self.table.loc[:, task["key"]]
-
-            # check that task values are inside acceptable values
-            valid = (df.loc[:, name] > task["limits"][0]) & (df.loc[:, name] < task["limits"][1])
-
-            # transform if needed
-            if "transform" in task.keys():
-                if task["transform"] == "log":
-                    valid &= df.loc[:, name] > 0
-                    df.loc[valid, name] = np.log(df.loc[valid, name])
-                    df.loc[~valid, name] = np.nan
-
-            if task["kind"] == "minimize":
-                df.loc[valid, name] *= -1
-        return df
 
     def _dof_kind_mask(self, kind=None):
         return [dof["kind"] == kind if kind is not None else True for dof in self.dofs]
@@ -721,17 +699,9 @@ class Agent:
     def inputs(self):
         return self.table.loc[:, self._subset_dof_names(mode="on")].astype(float)
 
-    @property
-    def fitness_variance(self):
-        return torch.tensor(np.nanvar(self.task_fitnesses.values, axis=0))
-
-    @property
-    def scalarized_fitness(self):
-        return self.task_fitnesses.sum(axis=1)
-
     # @property
     # def best_sum_of_tasks_inputs(self):
-    #     return self.inputs[np.nanargmax(self.task_fitnesses.sum(axis=1))]
+    #     return self.inputs[np.nanargmax(self.fitnesses.sum(axis=1))]
 
     @property
     def go_to(self, inputs):
@@ -805,10 +775,8 @@ class Agent:
         self.task_axes = np.atleast_2d(self.task_axes)
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        feasible = ~self.task_fitnesses.isna().any(axis=1)
-
         for itask, task in enumerate(self.tasks):
-            sampled_fitness = np.where(feasible, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
+            sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
             task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
             task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
@@ -968,37 +936,39 @@ class Agent:
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
-    def plot_feasibility(self, **kwargs):
+    def plot_validity(self, **kwargs):
         if self._len_subset_dofs(kind="active", mode="on") == 1:
-            self._plot_feas_one_dof(**kwargs)
+            self._plot_valid_one_dof(**kwargs)
 
         else:
-            self._plot_feas_many_dofs(**kwargs)
+            self._plot_valid_many_dofs(**kwargs)
 
-    def _plot_feas_one_dof(self, size=16, lw=1e0):
-        self.feas_fig, self.feas_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
+    def _plot_valid_one_dof(self, size=16, lw=1e0):
+        self.valid_fig, self.valid_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
 
         x = self.test_inputs_grid
         *input_shape, input_dim = x.shape
         constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
-        self.feas_ax.scatter(self.inputs.values, ~self.task_fitnesses.isna().any(axis=1), s=size)
+        self.valid_ax.scatter(self.inputs.values, self.all_tasks_valid, s=size)
 
         on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
-        self.feas_ax.plot(x[..., on_dofs_are_active_mask].squeeze(), constraint.detach().numpy(), lw=lw)
+        self.valid_ax.plot(x[..., on_dofs_are_active_mask].squeeze(), constraint.detach().numpy(), lw=lw)
 
-        self.feas_ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[0]["limits"])
+        self.valid_ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
-    def _plot_feas_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
-        self.feas_fig, self.feas_axes = plt.subplots(1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True)
+    def _plot_valid_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
+        self.valid_fig, self.valid_axes = plt.subplots(
+            1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True
+        )
 
         if gridded is None:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
-        data_ax = self.feas_axes[0].scatter(
+        data_ax = self.valid_axes[0].scatter(
             *self.inputs.values.T[:2],
-            c=~self.task_fitnesses.isna().any(axis=1),
+            c=self.all_tasks_valid,
             s=size,
             vmin=0,
             vmax=1,
@@ -1010,7 +980,7 @@ class Agent:
         constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
         if gridded:
-            self.feas_axes[1].pcolormesh(
+            self.valid_axes[1].pcolormesh(
                 x[..., 0],
                 x[..., 1],
                 constraint.detach().numpy(),
@@ -1020,19 +990,19 @@ class Agent:
                 vmax=1,
             )
 
-            # self.acq_fig.colorbar(obj_ax, ax=self.feas_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
+            # self.acq_fig.colorbar(obj_ax, ax=self.valid_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
 
         else:
-            # self.feas_axes.set_title(acq_func_meta["name"])
-            self.feas_axes[1].scatter(
+            # self.valid_axes.set_title(acq_func_meta["name"])
+            self.valid_axes[1].scatter(
                 x.detach().numpy()[..., axes[0]],
                 x.detach().numpy()[..., axes[1]],
                 c=constraint.detach().numpy(),
             )
 
-        self.feas_fig.colorbar(data_ax, ax=self.feas_axes[:2], location="bottom", aspect=32, shrink=0.8)
+        self.valid_fig.colorbar(data_ax, ax=self.valid_axes[:2], location="bottom", aspect=32, shrink=0.8)
 
-        for ax in self.feas_axes.ravel():
+        for ax in self.valid_axes.ravel():
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
