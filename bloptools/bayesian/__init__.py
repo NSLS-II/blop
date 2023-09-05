@@ -1,4 +1,5 @@
 import logging
+import os
 import time as ttime
 import warnings
 from collections import OrderedDict
@@ -14,20 +15,18 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
-import os
-from matplotlib import pyplot as plt
-from matplotlib.patches import Patch
-
 from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
+from matplotlib import pyplot as plt
+from matplotlib.patches import Patch
 
 from .. import utils
-from . import models
+from . import acquisition, models
 from .acquisition import default_acquisition_plan
 from .digestion import default_digestion_function
 
-os.environ['KMP_DUPLICATE_LIB_OK']='True'
+os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -49,33 +48,39 @@ ACQ_FUNC_CONFIG = {
         "pretty_name": "Quasi-random",
         "description": "Sobol-sampled quasi-random points.",
     },
-    # "expected_mean": {
-    #     "identifiers": ["em", "expected_mean"],
-    #     "pretty_name": "Expected mean",
-    #     "description": "The expected value at each input.",
-    # },
+    "expected_mean": {
+        "identifiers": ["em", "expected_mean"],
+        "pretty_name": "Expected mean",
+        "description": "The expected value at each input.",
+    },
     "expected_improvement": {
         "identifiers": ["ei", "expected_improvement"],
         "pretty_name": "Expected improvement",
         "description": r"The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.",
     },
-    "expected_hypervolume_improvement": {
-        "identifiers": ["ehvi", "expected_hypervolume_improvement"],
-        "pretty_name": "Expected hypervolume improvement",
+    "noisy_expected_hypervolume_improvement": {
+        "identifiers": ["nehvi", "noisy_expected_hypervolume_improvement"],
+        "pretty_name": "Noisy expected hypervolume improvement",
         "description": r"It's like a big box. How big is the box?",
+    },
+    "lower_bound_max_value_entropy": {
+        "identifiers": ["lbmve", "lbmes", "gibbon", "lower_bound_max_value_entropy"],
+        "pretty_name": "Lower bound max value entropy",
+        "description": r"Max entropy search, basically",
     },
     "probability_of_improvement": {
         "identifiers": ["pi", "probability_of_improvement"],
         "pretty_name": "Probability of improvement",
         "description": "The probability that this input improves on the current maximum.",
     },
-    # "upper_confidence_bound": {
-    #     "identifiers": ["ucb", "upper_confidence_bound"],
-    #     "default_args": {"z": 2},
-    #     "pretty_name": "Upper confidence bound",
-    #     "description": r"The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).",
-    # },
+    "upper_confidence_bound": {
+        "identifiers": ["ucb", "upper_confidence_bound"],
+        "default_args": {"beta": 4},
+        "pretty_name": "Upper confidence bound",
+        "description": r"The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).",
+    },
 }
+
 
 def _validate_and_prepare_dofs(dofs):
     for dof in dofs:
@@ -321,15 +326,9 @@ class Agent:
 
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1].squeeze(-1))
 
-        # feasibility_fitness_model = botorch.models.deterministic.GenericDeterministicModel(
-        #     f=lambda X: -self.classifier.log_prob(X).square()
-        # )
-
-        # self.model_list = botorch.models.model.ModelList(*[task["model"] for task in self.tasks], feasibility_fitness_model)
-
     @property
     def model(self):
-        return ModelListGP(*[task["model"] for task in self.tasks])
+        return ModelListGP(*[task["model"] for task in self.tasks]) if self.n_tasks > 1 else self.tasks[0]["model"]
 
     @property
     def target_names(self):
@@ -548,8 +547,7 @@ class Agent:
 
         print("\n\n".join(entries))
 
-    def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, acq_func_args={}, **kwargs):
-       
+    def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, **acq_func_kwargs):
         if not self._initialized:
             raise RuntimeError(
                 f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
@@ -561,9 +559,8 @@ class Agent:
                 model=self.model,
                 best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
                 posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
-                **kwargs,
             )
-            acq_func_meta = {"name": "expected improvement", "args": {}}
+            acq_func_meta = {"name": "expected_improvement", "args": {}}
 
         elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["probability_of_improvement"]["identifiers"]:
             acq_func = acquisition.ConstrainedLogProbabilityOfImprovement(
@@ -571,37 +568,43 @@ class Agent:
                 model=self.model,
                 best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
                 posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
-                **kwargs,
             )
-            acq_func_meta = {"name": "probability of improvement", "args": {}}
+            acq_func_meta = {"name": "probability_of_improvement", "args": {}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_hypervolume_improvement"]["identifiers"]:
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["lower_bound_max_value_entropy"]["identifiers"]:
+            acq_func = acquisition.qConstrainedLowerBoundMaxValueEntropy(
+                constraint=self.constraint,
+                model=self.model,
+                candidate_set=self.test_inputs(n=1024).squeeze(1),
+            )
+            acq_func_meta = {"name": "lower_bound_max_value_entropy", "args": {}}
+
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["noisy_expected_hypervolume_improvement"]["identifiers"]:
             acq_func = acquisition.qConstrainedNoisyExpectedHypervolumeImprovement(
                 constraint=self.constraint,
                 model=self.model,
                 ref_point=self.train_targets.min(dim=0).values,
                 X_baseline=self.train_inputs,
-                prune_baseline=True)
-            acq_func_meta = {"name": "expected hypervolume improvement", "args": {}}
+                prune_baseline=True,
+            )
+            acq_func_meta = {"name": "noisy_expected_hypervolume_improvement", "args": {}}
 
-        # elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_mean"]["identifiers"]:
-        #     acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
-        #         self.model_list,
-        #         beta=0,
-        #         posterior_transform=self.task_scalarization,
-        #         **kwargs,
-        #     )
-        #     acq_func_meta = {"name": "expected mean"}
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
+            
+            config = ACQ_FUNC_CONFIG["upper_confidence_bound"]
+            beta = acq_func_kwargs.get("beta", config["default_args"]["beta"])
 
-        # elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
-        #     beta = ACQ_FUNC_CONFIG["upper_confidence_bound"]["default_args"]["z"] ** 2
-        #     acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
-        #         self.model_list,
-        #         beta=beta,
-        #         posterior_transform=self.task_scalarization,
-        #         **kwargs,
-        #     )
-        #     acq_func_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
+            acq_func = acquisition.ConstrainedUpperConfidenceBound(
+                constraint=self.constraint,
+                model=self.model,
+                beta=beta,
+                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
+            )
+            acq_func_meta = {"name": "upper_confidence_bound", "args": {"beta": beta}}
+
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_mean"]["identifiers"]:
+            acq_func = self.get_acquisition_function(acq_func_identifier="ucb", beta=0, return_metadata=False)
+            acq_func_meta = {"name": "expected_mean"}
 
         else:
             raise ValueError(f'Unrecognized acquisition acq_func_identifier "{acq_func_identifier}".')

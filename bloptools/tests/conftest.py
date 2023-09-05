@@ -9,7 +9,6 @@ from databroker import Broker
 from ophyd.utils import make_dir_tree
 from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
 
-
 from bloptools.bayesian import Agent
 
 from .. import devices, test_functions
@@ -26,6 +25,7 @@ def db():
         pass
 
     return db
+
 
 @pytest.fixture(scope="function")
 def db_with_sirepo_bluesky():

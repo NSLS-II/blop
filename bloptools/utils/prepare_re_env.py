@@ -81,7 +81,6 @@ if __name__ == "__main__":
     globals().update(**ret)
 
     if args.use_sirepo:
-
         from sirepo_bluesky.srw_handler import SRWFileHandler
 
         if args.env_type == "stepper":
@@ -95,8 +94,6 @@ if __name__ == "__main__":
             handlers = {"srw": SRWFileHandler, "SIREPO_FLYER": SRWFileHandler, "madx": MADXFileHandler}
             bec.disable_plots()  # noqa: F821
         else:
-            raise RuntimeError(
-                f"Unknown environment type: {args.env_type}.\nAvailable environment types: {env_choices}"
-            )
+            raise RuntimeError(f"Unknown environment type: {args.env_type}.\nAvailable environment types: {env_choices}")
 
         register_handlers(db, handlers)  # noqa: F821
