@@ -315,6 +315,11 @@ class Agent:
         return (self.fitnesses * self.task_weights).sum(axis=-1)
 
     @property
+    def best_scalarized_fitness(self):
+        f = self.scalarized_fitness
+        return np.where(np.isnan(f), -np.inf, f).max()
+
+    @property
     def all_tasks_valid(self):
         return ~torch.isnan(self.scalarized_fitness)
 
@@ -516,7 +521,7 @@ class Agent:
             acq_func = acquisition.ConstrainedLogExpectedImprovement(
                 constraint=self.constraint,
                 model=self.model,
-                best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
+                best_f=self.best_scalarized_fitness,
                 posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
             )
             acq_func_meta = {"name": acq_func_name, "args": {}}
@@ -525,7 +530,7 @@ class Agent:
             acq_func = acquisition.ConstrainedLogProbabilityOfImprovement(
                 constraint=self.constraint,
                 model=self.model,
-                best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
+                best_f=self.best_scalarized_fitness,
                 posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
             )
             acq_func_meta = {"name": acq_func_name, "args": {}}
@@ -1057,7 +1062,7 @@ class Agent:
                 hist_axes[itask].plot(x, y, lw=5e-1, c="k")
                 hist_axes[itask].set_ylabel(task["key"])
 
-        y = self.table.total_fitness
+        y = self.scalarized_fitness
 
         cummax_y = np.array([np.nanmax(y[: i + 1]) for i in range(len(y))])
 

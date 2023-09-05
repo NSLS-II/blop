@@ -8,8 +8,5 @@ numpy
 ophyd
 ortools
 scipy
-shadow3
-sirepo-bluesky
-srwpy==4.0.0b1
 tables
 torch
