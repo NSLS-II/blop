@@ -14,13 +14,20 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
+import os
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
+
+from botorch.acquisition.objective import ScalarizedPosteriorTransform
+from botorch.models.deterministic import GenericDeterministicModel
+from botorch.models.model_list_gp_regression import ModelListGP
 
 from .. import utils
 from . import models
 from .acquisition import default_acquisition_plan
 from .digestion import default_digestion_function
+
+os.environ['KMP_DUPLICATE_LIB_OK']='True'
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -29,11 +36,12 @@ mpl.rc("image", cmap="coolwarm")
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
 DEFAULT_COLORMAP = "turbo"
 
-
 MAX_TEST_INPUTS = 2**11
 
-
 TASK_CONFIG = {}
+
+TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
+
 
 ACQ_FUNC_CONFIG = {
     "quasi-random": {
@@ -41,31 +49,33 @@ ACQ_FUNC_CONFIG = {
         "pretty_name": "Quasi-random",
         "description": "Sobol-sampled quasi-random points.",
     },
-    "expected_mean": {
-        "identifiers": ["em", "expected_mean"],
-        "pretty_name": "Expected mean",
-        "description": "The expected value at each input.",
-    },
+    # "expected_mean": {
+    #     "identifiers": ["em", "expected_mean"],
+    #     "pretty_name": "Expected mean",
+    #     "description": "The expected value at each input.",
+    # },
     "expected_improvement": {
         "identifiers": ["ei", "expected_improvement"],
         "pretty_name": "Expected improvement",
         "description": r"The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.",
+    },
+    "expected_hypervolume_improvement": {
+        "identifiers": ["ehvi", "expected_hypervolume_improvement"],
+        "pretty_name": "Expected hypervolume improvement",
+        "description": r"It's like a big box. How big is the box?",
     },
     "probability_of_improvement": {
         "identifiers": ["pi", "probability_of_improvement"],
         "pretty_name": "Probability of improvement",
         "description": "The probability that this input improves on the current maximum.",
     },
-    "upper_confidence_bound": {
-        "identifiers": ["ucb", "upper_confidence_bound"],
-        "default_args": {"z": 2},
-        "pretty_name": "Upper confidence bound",
-        "description": r"The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).",
-    },
+    # "upper_confidence_bound": {
+    #     "identifiers": ["ucb", "upper_confidence_bound"],
+    #     "default_args": {"z": 2},
+    #     "pretty_name": "Upper confidence bound",
+    #     "description": r"The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).",
+    # },
 }
-
-TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
-
 
 def _validate_and_prepare_dofs(dofs):
     for dof in dofs:
@@ -278,11 +288,11 @@ class Agent:
                 outcome_transform=outcome_transform,
             ).double()
 
-        # this ensures that we have equal weight between task fitness and feasibility fitness
-        self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-            weights=torch.tensor([*torch.ones(self.n_tasks), self.fitness_variance.sum().sqrt()]).double(),
-            offset=0,
-        )
+        # # this ensures that we have equal weight between task fitness and feasibility fitness
+        # self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
+        #     weights=torch.tensor([*torch.ones(self.n_tasks), self.fitness_variance.sum().sqrt()]).double(),
+        #     offset=0,
+        # )
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
             torch.tensor(feasibility).long(), learn_additional_noise=True
@@ -309,11 +319,43 @@ class Agent:
                 else:
                     raise RuntimeError("Could not fit model on initialization!")
 
-        feasibility_fitness_model = botorch.models.deterministic.GenericDeterministicModel(
-            f=lambda X: -self.classifier.log_prob(X).square()
-        )
+        self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1].squeeze(-1))
 
-        self.model_list = botorch.models.model.ModelList(*[task["model"] for task in self.tasks], feasibility_fitness_model)
+        # feasibility_fitness_model = botorch.models.deterministic.GenericDeterministicModel(
+        #     f=lambda X: -self.classifier.log_prob(X).square()
+        # )
+
+        # self.model_list = botorch.models.model.ModelList(*[task["model"] for task in self.tasks], feasibility_fitness_model)
+
+    @property
+    def model(self):
+        return ModelListGP(*[task["model"] for task in self.tasks])
+
+    @property
+    def target_names(self):
+        return [f'{task["key"]}_fitness' for task in self.tasks]
+
+    @property
+    def train_inputs(self):
+        feasibility = ~self.task_fitnesses.isna().any(axis=1)
+        inputs = self.inputs.loc[feasibility, self._subset_dof_names(mode="on")].values
+        return torch.tensor(inputs).double()
+
+    @property
+    def train_targets(self):
+        feasibility = ~self.task_fitnesses.isna().any(axis=1)
+        inputs = self.table.loc[feasibility, self.target_names].values
+        return torch.tensor(inputs).double()
+
+    @property
+    def class_inputs(self):
+        inputs = self.inputs.loc[:, self._subset_dof_names(mode="on")].values
+        return torch.tensor(inputs).double()
+
+    @property
+    def class_targets(self):
+        feasibility = ~self.task_fitnesses.isna().any(axis=1)
+        return torch.tensor(feasibility).double()
 
     @property
     def task_fitnesses(self):
@@ -507,47 +549,59 @@ class Agent:
         print("\n\n".join(entries))
 
     def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, acq_func_args={}, **kwargs):
+       
         if not self._initialized:
             raise RuntimeError(
                 f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
             )
 
         if acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_improvement"]["identifiers"]:
-            acq_func = botorch.acquisition.analytic.LogExpectedImprovement(
-                self.model_list,
-                best_f=self.scalarized_fitness.max(),
-                posterior_transform=self.task_scalarization,
+            acq_func = acquisition.ConstrainedLogExpectedImprovement(
+                constraint=self.constraint,
+                model=self.model,
+                best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
+                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
                 **kwargs,
             )
             acq_func_meta = {"name": "expected improvement", "args": {}}
 
         elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["probability_of_improvement"]["identifiers"]:
-            acq_func = botorch.acquisition.analytic.LogProbabilityOfImprovement(
-                self.model_list,
-                best_f=self.scalarized_fitness.max(),
-                posterior_transform=self.task_scalarization,
+            acq_func = acquisition.ConstrainedLogProbabilityOfImprovement(
+                constraint=self.constraint,
+                model=self.model,
+                best_f=(self.train_targets * self.task_weights).sum(axis=-1).max(),
+                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
                 **kwargs,
             )
             acq_func_meta = {"name": "probability of improvement", "args": {}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_mean"]["identifiers"]:
-            acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
-                self.model_list,
-                beta=0,
-                posterior_transform=self.task_scalarization,
-                **kwargs,
-            )
-            acq_func_meta = {"name": "expected mean"}
+        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_hypervolume_improvement"]["identifiers"]:
+            acq_func = acquisition.qConstrainedNoisyExpectedHypervolumeImprovement(
+                constraint=self.constraint,
+                model=self.model,
+                ref_point=self.train_targets.min(dim=0).values,
+                X_baseline=self.train_inputs,
+                prune_baseline=True)
+            acq_func_meta = {"name": "expected hypervolume improvement", "args": {}}
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
-            beta = ACQ_FUNC_CONFIG["upper_confidence_bound"]["default_args"]["z"] ** 2
-            acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
-                self.model_list,
-                beta=beta,
-                posterior_transform=self.task_scalarization,
-                **kwargs,
-            )
-            acq_func_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
+        # elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_mean"]["identifiers"]:
+        #     acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
+        #         self.model_list,
+        #         beta=0,
+        #         posterior_transform=self.task_scalarization,
+        #         **kwargs,
+        #     )
+        #     acq_func_meta = {"name": "expected mean"}
+
+        # elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
+        #     beta = ACQ_FUNC_CONFIG["upper_confidence_bound"]["default_args"]["z"] ** 2
+        #     acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
+        #         self.model_list,
+        #         beta=beta,
+        #         posterior_transform=self.task_scalarization,
+        #         **kwargs,
+        #     )
+        #     acq_func_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
 
         else:
             raise ValueError(f'Unrecognized acquisition acq_func_identifier "{acq_func_identifier}".')
@@ -952,13 +1006,13 @@ class Agent:
 
         x = self.test_inputs_grid
         *input_shape, input_dim = x.shape
-        log_prob = self.classifier.log_prob(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+        constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
         self.feas_ax.scatter(self.inputs.values, ~self.task_fitnesses.isna().any(axis=1), s=size)
 
         on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
-        self.feas_ax.plot(x[..., on_dofs_are_active_mask].squeeze(), log_prob.exp().detach().numpy(), lw=lw)
+        self.feas_ax.plot(x[..., on_dofs_are_active_mask].squeeze(), constraint.detach().numpy(), lw=lw)
 
         self.feas_ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
@@ -979,13 +1033,13 @@ class Agent:
 
         x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
         *input_shape, input_dim = x.shape
-        log_prob = self.classifier.log_prob(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+        constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
         if gridded:
             self.feas_axes[1].pcolormesh(
                 x[..., 0],
                 x[..., 1],
-                log_prob.exp().detach().numpy(),
+                constraint.detach().numpy(),
                 shading=shading,
                 cmap=cmap,
                 vmin=0,
@@ -999,7 +1053,7 @@ class Agent:
             self.feas_axes[1].scatter(
                 x.detach().numpy()[..., axes[0]],
                 x.detach().numpy()[..., axes[1]],
-                c=log_prob.exp().detach().numpy(),
+                c=constraint.detach().numpy(),
             )
 
         self.feas_fig.colorbar(data_ax, ax=self.feas_axes[:2], location="bottom", aspect=32, shrink=0.8)

@@ -7,10 +7,8 @@ from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
-from sirepo_bluesky.madx_handler import MADXFileHandler
-from sirepo_bluesky.shadow_handler import ShadowFileHandler
 from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
-from sirepo_bluesky.srw_handler import SRWFileHandler
+
 
 from bloptools.bayesian import Agent
 
@@ -21,11 +19,27 @@ from .. import devices, test_functions
 def db():
     """Return a data broker"""
     # MongoDB backend:
-    db = Broker.named("local")  # mongodb backend
+    db = Broker.named("temp")  # mongodb backend
     try:
         databroker.assets.utils.install_sentinels(db.reg.config, version=1)
     except Exception:
         pass
+
+    return db
+
+@pytest.fixture(scope="function")
+def db_with_sirepo_bluesky():
+    """Return a data broker"""
+    # MongoDB backend:
+    db = Broker.named("temp")  # mongodb backend
+    try:
+        databroker.assets.utils.install_sentinels(db.reg.config, version=1)
+    except Exception:
+        pass
+
+    from sirepo_bluesky.madx_handler import MADXFileHandler
+    from sirepo_bluesky.shadow_handler import ShadowFileHandler
+    from sirepo_bluesky.srw_handler import SRWFileHandler
 
     db.reg.register_handler("srw", SRWFileHandler, overwrite=True)
     db.reg.register_handler("shadow", ShadowFileHandler, overwrite=True)
@@ -71,7 +85,7 @@ def agent(db):
     agent = Agent(
         dofs=dofs,
         tasks=tasks,
-        digestion=test_functions.himmelblau_digestion,
+        digestion=test_functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,

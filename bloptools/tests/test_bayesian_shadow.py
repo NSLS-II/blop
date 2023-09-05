@@ -1,5 +1,4 @@
 import pytest
-from sirepo_bluesky.sirepo_ophyd import create_classes
 
 import bloptools
 from bloptools.experiments.sirepo.tes import w9_digestion
@@ -7,6 +6,9 @@ from bloptools.experiments.sirepo.tes import w9_digestion
 
 @pytest.mark.shadow
 def test_bayesian_agent_tes_shadow(RE, db, shadow_tes_simulation):
+
+    from sirepo_bluesky.sirepo_ophyd import create_classes
+
     data, schema = shadow_tes_simulation.auth("shadow", "00000002")
     classes, objects = create_classes(connection=shadow_tes_simulation)
     globals().update(**objects)

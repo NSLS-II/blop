@@ -21,21 +21,12 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
         )
 
 
-class LatentDirichletClassifier(botorch.models.gp_regression.SingleTaskGP):
+class LatentDirichletClassifier(LatentGP):
     def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
-        super().__init__(train_inputs, train_targets, *args, **kwargs)
+        super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
 
-        self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = kernels.LatentKernel(
-            num_inputs=train_inputs.shape[-1],
-            num_outputs=train_targets.shape[-1],
-            skew_dims=skew_dims,
-            diag_prior=True,
-            scale=True,
-            **kwargs
-        )
-
-    def log_prob(self, x, n_samples=256):
+    def probabilities(self, x, n_samples=256):
         *input_shape, n_dim = x.shape
         samples = self.posterior(x.reshape(-1, n_dim)).sample(torch.Size((n_samples,))).exp()
-        return torch.log((samples / samples.sum(-1, keepdim=True)).mean(0)[:, 1]).reshape(*input_shape, 1)
+        return (samples / samples.sum(-1, keepdim=True)).mean(0).reshape(*input_shape, -1)
+

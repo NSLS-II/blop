@@ -77,19 +77,51 @@ def ackley(*x):
 
 def gaussian_beam_waist(x1, x2):
     """
-    Simulating a misaligned Gaussian beam. The optimum is at (1, 1, 1, 1)
+    Simulating a misaligned Gaussian beam. The optimum is at (1, 1)
     """
     return np.sqrt(1 + 0.25 * (x1 - x2) ** 2 + 16 * (x1 + x2 - 2) ** 2)
 
 
-def himmelblau_digestion(db, uid):
+
+
+# alpha = [1.0, 1.2, 3.0, 3.2]';
+# A = [10, 3, 17, 3.5, 1.7, 8;
+#      0.05, 10, 17, 0.1, 8, 14;
+#      3, 3.5, 1.7, 10, 17, 8;
+#      17, 8, 0.05, 10, 0.1, 14];
+# P = 10^(-4) * [1312, 1696, 5569, 124, 8283, 5886;
+#                2329, 4135, 8307, 3736, 1004, 9991;
+#                2348, 1451, 3522, 2883, 3047, 6650;
+#                4047, 8828, 8732, 5743, 1091, 381];
+
+
+def kb_tradeoff_2d(x1, x2):
+
+    width = np.sqrt(1 + 0.25 * (x1 - x2) ** 2 + 16 * (x1 + x2 - 2) ** 2)
+    d = np.sqrt(x1**2 + x2**2)
+    flux = np.exp(-0.5 * np.where(d < 5, np.where(d > -5, 0, d + 5), d - 5)**2)
+
+    return width, flux
+
+
+def kb_tradeoff_4d(x1, x2, x3, x4):
+
+    x_width = np.sqrt(1 + 0.25 * (x1 - x2) ** 2 + 16 * (x1 + x2 - 2) ** 2)
+    y_width = np.sqrt(1 + 0.25 * (x3 - x4) ** 2 + 16 * (x3 + x4 - 2) ** 2)
+    d = np.sqrt(x1**2 + x2**2 + x3**2 + x4**2)
+    flux = np.exp(-0.5 * np.where(d < 5, np.where(d > -5, 0, d + 5), d - 5)**2)
+
+    return x_width, y_width, flux
+
+
+def constrained_himmelblau_digestion(db, uid):
     """
     Digests Himmelblau's function into the feedback.
     """
     products = db[uid].table()
 
     for index, entry in products.iterrows():
-        products.loc[index, "himmelblau"] = himmelblau(entry.x1, entry.x2)
+        products.loc[index, "himmelblau"] = constrained_himmelblau(entry.x1, entry.x2)
 
     return products
 
