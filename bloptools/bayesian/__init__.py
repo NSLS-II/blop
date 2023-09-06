@@ -223,7 +223,7 @@ class Agent:
             self.table.loc[:, f"{task['key']}_fitness"] = targets = self._get_task_fitness(i)
             train_index = ~np.isnan(targets)
 
-            if not len(train_index) >= 2:
+            if not train_index.sum() >= 2:
                 raise ValueError("There must be at least two valid data points per task!")
 
             train_inputs = torch.tensor(inputs[train_index]).double()
@@ -232,7 +232,7 @@ class Agent:
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
                     torch.tensor(1e-6).square(),
-                    torch.tensor(1e-2).square(),
+                    torch.tensor(1e0).square(),
                 ),
             ).double()
 
@@ -710,17 +710,19 @@ class Agent:
     def inputs(self):
         return self.table.loc[:, self._subset_dof_names(mode="on")].astype(float)
 
-    # @property
-    # def best_sum_of_tasks_inputs(self):
-    #     return self.inputs[np.nanargmax(self.fitnesses.sum(axis=1))]
-
     @property
-    def go_to(self, inputs):
-        yield from bps.mv(*[_ for items in zip(self._subset_dofs(kind="active"), np.atleast_1d(inputs).T) for _ in items])
+    def best_inputs(self):
+        return self.inputs.values[np.nanargmax(self.scalarized_fitness)]
 
-    # @property
-    # def go_to_best_sum_of_tasks(self):
-    #     yield from self.go_to(self.best_sum_of_tasks_inputs)
+    def go_to(self, inputs):
+        args = []
+        for device, value in zip(self._subset_devices(kind="active"), np.atleast_1d(inputs).T):
+            args.append(device)
+            args.append(value)
+        yield from bps.mv(*args)
+
+    def go_to_best(self):
+        yield from self.go_to(self.best_inputs)
 
     def plot_tasks(self, **kwargs):
         if self._len_subset_dofs(kind="active", mode="on") == 1:

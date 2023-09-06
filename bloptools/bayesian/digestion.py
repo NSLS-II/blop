@@ -1,2 +1,4 @@
 def default_digestion_function(db, uid):
-    return db[uid].table(fill=True)
+    products = db[uid].table(fill=True)
+    print(products)
+    return products
