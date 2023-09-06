@@ -289,9 +289,6 @@ class Agent:
 
         targets = self.table.loc[:, task["key"]].values.copy()
 
-        if task["kind"] == "minimize":
-            targets *= -1
-
         # check that task values are inside acceptable values
         valid = (targets > task["limits"][0]) & (targets < task["limits"][1])
         targets = np.where(valid, targets, np.nan)
@@ -300,6 +297,9 @@ class Agent:
         if "transform" in task.keys():
             if task["transform"] == "log":
                 targets = np.where(targets > 0, np.log(targets), np.nan)
+
+        if task["kind"] == "minimize":
+            targets *= -1
 
         return targets
 
