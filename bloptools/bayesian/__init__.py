@@ -43,13 +43,14 @@ TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
 
 
 def _validate_and_prepare_dofs(dofs):
-    for dof in dofs:
+    for i_dof, dof in enumerate(dofs):
         if not isinstance(dof, Mapping):
             raise ValueError("Supplied dofs must be an iterable of mappings (e.g. a dict)!")
         if "device" not in dof.keys():
             raise ValueError("Each DOF must have a device!")
 
         dof["device"].kind = "hinted"
+        dof["name"] = dof["device"].name if hasattr(dof["device"], "name") else f"x{i_dof+1}"
 
         if "limits" not in dof.keys():
             dof["limits"] = (-np.inf, np.inf)
