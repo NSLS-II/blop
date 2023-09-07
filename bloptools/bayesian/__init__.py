@@ -151,6 +151,8 @@ class Agent:
         self.digestion = kwargs.get("digestion", default_digestion_function)
         self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
 
+        self.trigger_delay = kwargs.get("trigger_delay", 0)
+
         self.acq_func_config = kwargs.get("acq_func_config", ACQ_FUNC_CONFIG)
 
         self.table = pd.DataFrame()
@@ -657,7 +659,7 @@ class Agent:
             passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
 
             uid = yield from self.acquisition_plan(
-                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices]
+                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices], delay=self.trigger_delay,
             )
 
             products = self.digestion(self.db, uid)

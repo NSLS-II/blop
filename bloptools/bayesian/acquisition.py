@@ -35,14 +35,16 @@ def list_scan_with_delay(*args, delay=0, **kwargs):
     return uid
 
 
-def default_acquisition_plan(dofs, inputs, dets):
+def default_acquisition_plan(dofs, inputs, dets, **kwargs):
+
+    delay = kwargs.get("delay", 0)
 
     args = []
     for dof, points in zip(dofs, np.atleast_2d(inputs).T):
         args.append(dof)
         args.append(list(points))
 
-    uid = yield from list_scan_with_delay(dets, *args, delay=1)
+    uid = yield from list_scan_with_delay(dets, *args, delay=delay)
     return uid
 
 
