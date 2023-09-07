@@ -604,8 +604,8 @@ class Agent:
             active_X = np.concatenate(active_x_list, axis=0)
             self.forget(self.table.index[-(n - 1) :])
 
-            if route:
-                active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
+        if route:
+            active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
         return (active_X, acq_func_meta) if return_metadata else active_X
 
@@ -659,7 +659,10 @@ class Agent:
             passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
 
             uid = yield from self.acquisition_plan(
-                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices], delay=self.trigger_delay,
+                active_devices,
+                active_inputs.astype(float),
+                [*self.dets, *passive_devices],
+                delay=self.trigger_delay,
             )
 
             products = self.digestion(self.db, uid)
