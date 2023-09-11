@@ -18,6 +18,7 @@ jupyter
 matplotlib
 nbsphinx
 numpydoc
-sirepo-bluesky
+pandoc
+# sirepo-bluesky
 sphinx-copybutton
 sphinx_rtd_theme
