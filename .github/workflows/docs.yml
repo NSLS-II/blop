@@ -62,8 +62,10 @@ jobs:
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
           set -vxeo pipefail
 
+          df -h
           conda env list
-          mamba install -c conda-forge shadow3 srwpy pandoc
+          pip install shadow3 srwpy
+          apt install pandoc
           pip install --upgrade pip wheel
           pip install -v .
           pip install -r requirements-dev.txt
