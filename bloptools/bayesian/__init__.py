@@ -22,7 +22,7 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
 from .. import utils
-from . import acquisition, models
+from . import acquisition, models, plots
 from .acquisition import ACQ_FUNC_CONFIG, default_acquisition_plan
 from .digestion import default_digestion_function
 
@@ -81,6 +81,8 @@ def _validate_and_prepare_tasks(tasks):
             raise ValueError("Supplied tasks must be an iterable of mappings (e.g. a dict)!")
         if task["kind"] not in ["minimize", "maximize"]:
             raise ValueError('"mode" must be specified as either "minimize" or "maximize"')
+        if "name" not in task.keys():
+            task["name"] = task["key"]
         if "weight" not in task.keys():
             task["weight"] = 1
         if "limits" not in task.keys():
@@ -157,6 +159,8 @@ class Agent:
         self._initialized = False
         self._train_models = True
         self.a_priori_hypers = None
+
+        self.plots = {}
 
     def _subset_inputs_sampler(self, kind=None, mode=None, n=MAX_TEST_INPUTS):
         """
@@ -656,7 +660,7 @@ class Agent:
             passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
 
             uid = yield from self.acquisition_plan(
-                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices]
+                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices],
             )
 
             products = self.digestion(self.db, uid)
@@ -706,6 +710,10 @@ class Agent:
 
             self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
 
+            for plot in self.plots:
+                if plot.live:
+                    plot.update()
+
     @property
     def inputs(self):
         return self.table.loc[:, self._subset_dof_names(mode="on")].astype(float)
@@ -724,11 +732,59 @@ class Agent:
     def go_to_best(self):
         yield from self.go_to(self.best_inputs)
 
-    def plot_tasks(self, **kwargs):
+
+
+
+    def plot_tasks(self, live=True)
+
+    def plot_tasks(self, live=False, **kwargs):
+
+        self.plots["tasks"] = {}
+
         if self._len_subset_dofs(kind="active", mode="on") == 1:
-            self._plot_tasks_one_dof(**kwargs)
+            self.tasks_plot = plots.TasksPlotOneDOF(self, live=live)
         else:
-            self._plot_tasks_many_dofs(**kwargs)
+            self.tasks_plot = plots.TasksPlotManyDOFs(self, live=live)
+
+
+    def _update_task_plots_many_dofs(self, axes=[0, 1]):
+
+        gridded = self._len_subset_dofs(kind="active", mode="on") == 2
+
+        for itask, task in enumerate(self.tasks):
+
+            task_plots = self.plots["tasks"][task["name"]]
+
+            sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
+            task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
+            task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
+            task_plots["sampled"].set_norm(task_norm)
+            task_plots["sampled"].set_norm(task_norm)
+
+            task_plots["sampled"].set_offsets(self.inputs.values[:, axes])
+            task_plots["sampled"].set_array(sampled_fitness)
+
+            x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
+            task_posterior = task["model"].posterior(x)
+            task_mean = task_posterior.mean
+            task_sigma = task_posterior.variance.sqrt()
+
+            if gridded:
+                if not x.ndim == 3:
+                    raise ValueError()
+                task_plots["pred_mean"].set_array(task_mean[..., 0].detach().numpy())
+                task_plots["pred_sigma"].set_array(task_sigma[..., 0].detach().numpy())
+
+            else:
+                task_plots["pred_mean"].set_offsets(x.detach().numpy()[..., axes])
+                task_plots["pred_mean"].set_array(task_mean[..., 0].detach().numpy())
+                task_plots["pred_sigma"].set_offsets(x.detach().numpy()[..., axes])
+                task_plots["pred_sigma"].set_array(task_sigma[..., 0].detach().numpy())
+
+        for ax in self.task_axes.ravel():
+            ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
+            ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
+
 
     def _plot_tasks_one_dof(self, size=16, lw=1e0):
         self.task_fig, self.task_axes = plt.subplots(
@@ -742,6 +798,9 @@ class Agent:
         self.task_axes = np.atleast_1d(self.task_axes)
 
         for itask, task in enumerate(self.tasks):
+
+            task_plots = self.plots["tasks"][task["name"]] = {}
+
             color = DEFAULT_COLOR_LIST[itask]
 
             self.task_axes[itask].set_ylabel(task["key"])
@@ -751,12 +810,7 @@ class Agent:
             task_mean = task_posterior.mean.detach().numpy()
             task_sigma = task_posterior.variance.sqrt().detach().numpy()
 
-            self.task_axes[itask].scatter(
-                self.inputs.loc[:, self._subset_dof_names(kind="active", mode="on")],
-                self.table.loc[:, f'{task["key"]}_fitness'],
-                s=size,
-                color=color,
-            )
+            task_plots["sampled"] = self.task_axes[itask].scatter([], [], s=size, color=color)
 
             on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
@@ -789,13 +843,12 @@ class Agent:
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
         for itask, task in enumerate(self.tasks):
-            sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
-            task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
-            task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
-            # if task["transform"] == "log":
-            #     task_norm = mpl.colors.LogNorm(task_vmin, task_vmax)
-            # else:
+            task_plots = self.plots["tasks"][task["name"]] = {}
+
+            # sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
+            # task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
+            # task_norm = mpl.colors.Normalize()
 
             self.task_axes[itask, 0].set_ylabel(f'{task["key"]}_fitness')
 
@@ -803,58 +856,22 @@ class Agent:
             self.task_axes[itask, 1].set_title("posterior mean")
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
-            data_ax = self.task_axes[itask, 0].scatter(
-                *self.inputs.values.T[axes], s=size, c=sampled_fitness, norm=task_norm, cmap=cmap
-            )
+            task_plots["sampled"] = self.task_axes[itask, 0].scatter([], [], s=size, cmap=cmap)
 
             x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
-
-            task_posterior = task["model"].posterior(x)
-            task_mean = task_posterior.mean
-            task_sigma = task_posterior.variance.sqrt()
 
             if gridded:
                 if not x.ndim == 3:
                     raise ValueError()
-                self.task_axes[itask, 1].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
-                    task_mean[..., 0].detach().numpy(),
-                    shading=shading,
-                    cmap=cmap,
-                    norm=task_norm,
-                )
-                sigma_ax = self.task_axes[itask, 2].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
-                    task_sigma[..., 0].detach().numpy(),
-                    shading=shading,
-                    cmap=cmap,
-                )
+                task_plots["pred_mean"] = self.task_axes[itask, 1].imshow([[0]], cmap=cmap)
+                task_plots["pred_sigma"] = self.task_axes[itask, 2].imshow([[0]], cmap=cmap)
 
             else:
-                self.task_axes[itask, 1].scatter(
-                    x.detach().numpy()[..., axes[0]],
-                    x.detach().numpy()[..., axes[1]],
-                    c=task_mean[..., 0].detach().numpy(),
-                    s=size,
-                    norm=task_norm,
-                    cmap=cmap,
-                )
-                sigma_ax = self.task_axes[itask, 2].scatter(
-                    x.detach().numpy()[..., axes[0]],
-                    x.detach().numpy()[..., axes[1]],
-                    c=task_sigma[..., 0].detach().numpy(),
-                    s=size,
-                    cmap=cmap,
-                )
+                task_plots["pred_mean"] = self.task_axes[itask, 1].scatter([], [], s=size, cmap=cmap)
+                task_plots["pred_sigma"] = self.task_axes[itask, 2].scatter([], [], s=size, cmap=cmap)
 
-            self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
-            self.task_fig.colorbar(sigma_ax, ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
-
-        for ax in self.task_axes.ravel():
-            ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
-            ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
+            task_plots["colorbar_mean"] = self.task_fig.colorbar(task_plots["sampled"], ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
+            task_plots["colorbar_sigma"] = self.task_fig.colorbar(task_plots["pred_sigma"], ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
 
     def plot_acquisition(self, acq_funcs=["ei"], **kwargs):
         if self._len_subset_dofs(kind="active", mode="on") == 1:

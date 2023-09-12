@@ -8,19 +8,11 @@ from botorch.acquisition.analytic import LogExpectedImprovement, LogProbabilityO
 from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
 from botorch.acquisition.multi_objective.monte_carlo import qNoisyExpectedHypervolumeImprovement
 
-# def default_acquisition_plan(dofs, inputs, dets):
-
-#     args = []
-#     for dof, points in zip(dofs, np.atleast_2d(inputs).T):
-#         args.append(dof)
-#         args.append(list(points))
-
-#     uid = yield from bp.list_scan(dets, *args)
-#     return uid
-
 
 def list_scan_with_delay(*args, delay=0, **kwargs):
     "Accepts all the normal 'scan' parameters, plus an optional delay."
+
+    delay = 0
 
     def one_nd_step_with_delay(detectors, step, pos_cache):
         "This is a copy of bluesky.plan_stubs.one_nd_step with a sleep added."
