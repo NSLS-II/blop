@@ -41,13 +41,14 @@ TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
 
 
 def _validate_and_prepare_dofs(dofs):
-    for dof in dofs:
+    for i_dof, dof in enumerate(dofs):
         if not isinstance(dof, Mapping):
             raise ValueError("Supplied dofs must be an iterable of mappings (e.g. a dict)!")
         if "device" not in dof.keys():
             raise ValueError("Each DOF must have a device!")
 
         dof["device"].kind = "hinted"
+        dof["name"] = dof["device"].name if hasattr(dof["device"], "name") else f"x{i_dof+1}"
 
         if "limits" not in dof.keys():
             dof["limits"] = (-np.inf, np.inf)
@@ -149,6 +150,8 @@ class Agent:
         self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
         self.digestion = kwargs.get("digestion", default_digestion_function)
         self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
+
+        self.trigger_delay = kwargs.get("trigger_delay", 0)
 
         self.acq_func_config = kwargs.get("acq_func_config", ACQ_FUNC_CONFIG)
 
@@ -603,8 +606,8 @@ class Agent:
             active_X = np.concatenate(active_x_list, axis=0)
             self.forget(self.table.index[-(n - 1) :])
 
-            if route:
-                active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
+        if route:
+            active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
         return (active_X, acq_func_meta) if return_metadata else active_X
 
@@ -658,7 +661,10 @@ class Agent:
             passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
 
             uid = yield from self.acquisition_plan(
-                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices],
+                active_devices,
+                active_inputs.astype(float),
+                [*self.dets, *passive_devices],
+                delay=self.trigger_delay,
             )
 
             products = self.digestion(self.db, uid)
@@ -730,16 +736,11 @@ class Agent:
     def go_to_best(self):
         yield from self.go_to(self.best_inputs)
 
-
-
-
     def plot_tasks(self, live=False, **kwargs):
-
         if self._len_subset_dofs(kind="active", mode="on") == 1:
             self.tasks_plot = plots.TasksPlotOneDOF(self, live=live)
         else:
             self.tasks_plot = plots.TasksPlotManyDOFs(self, live=live)
-
 
     # def _update_task_plots_many_dofs(self, axes=[0, 1]):
 
@@ -778,7 +779,6 @@ class Agent:
     #     for ax in self.task_axes.ravel():
     #         ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
     #         ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
-
 
     # def _plot_tasks_one_dof(self, size=16, lw=1e0):
     #     self.task_fig, self.task_axes = plt.subplots(
