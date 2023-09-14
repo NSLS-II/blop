@@ -806,9 +806,9 @@ class Agent:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         self.task_fig, self.task_axes = plt.subplots(
-            self.num_tasks,
+            self.n_tasks,
             3,
-            figsize=(10, 4 * self.num_tasks),
+            figsize=(10, 4 * self.n_tasks),
             sharex=True,
             sharey=True,
             constrained_layout=True,
@@ -817,12 +817,16 @@ class Agent:
         self.task_axes = np.atleast_2d(self.task_axes)
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        for itask, task in enumerate(self.tasks):
-            task_plots = self.plots["tasks"][task["name"]] = {}
+        feasible = ~self.task_fitnesses.isna().any(axis=1)
 
-            # sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
-            # task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
-            # task_norm = mpl.colors.Normalize()
+        for itask, task in enumerate(self.tasks):
+            sampled_fitness = np.where(feasible, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
+            task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
+            task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
+
+            # if task["transform"] == "log":
+            #     task_norm = mpl.colors.LogNorm(task_vmin, task_vmax)
+            # else:
 
             self.task_axes[itask, 0].set_ylabel(f'{task["key"]}_fitness')
 
@@ -830,65 +834,58 @@ class Agent:
             self.task_axes[itask, 1].set_title("posterior mean")
             self.task_axes[itask, 2].set_title("posterior std. dev.")
 
-            task_plots["sampled"] = self.task_axes[itask, 0].scatter([], [], s=size, cmap=cmap)
+            data_ax = self.task_axes[itask, 0].scatter(
+                *self.inputs.values.T[axes], s=size, c=sampled_fitness, norm=task_norm, cmap=cmap
+            )
 
             x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
+
+            task_posterior = task["model"].posterior(x)
+            task_mean = task_posterior.mean
+            task_sigma = task_posterior.variance.sqrt()
 
             if gridded:
                 if not x.ndim == 3:
                     raise ValueError()
-                task_plots["pred_mean"] = self.task_axes[itask, 1].imshow([[0]], cmap=cmap)
-                task_plots["pred_sigma"] = self.task_axes[itask, 2].imshow([[0]], cmap=cmap)
+                self.task_axes[itask, 1].pcolormesh(
+                    x[..., 0],
+                    x[..., 1],
+                    task_mean[..., 0].detach().numpy(),
+                    shading=shading,
+                    cmap=cmap,
+                    norm=task_norm,
+                )
+                sigma_ax = self.task_axes[itask, 2].pcolormesh(
+                    x[..., 0],
+                    x[..., 1],
+                    task_sigma[..., 0].detach().numpy(),
+                    shading=shading,
+                    cmap=cmap,
+                )
 
             else:
-                task_plots["pred_mean"] = self.task_axes[itask, 1].scatter([], [], s=size, cmap=cmap)
-                task_plots["pred_sigma"] = self.task_axes[itask, 2].scatter([], [], s=size, cmap=cmap)
+                self.task_axes[itask, 1].scatter(
+                    x.detach().numpy()[..., axes[0]],
+                    x.detach().numpy()[..., axes[1]],
+                    c=task_mean[..., 0].detach().numpy(),
+                    s=size,
+                    norm=task_norm,
+                    cmap=cmap,
+                )
+                sigma_ax = self.task_axes[itask, 2].scatter(
+                    x.detach().numpy()[..., axes[0]],
+                    x.detach().numpy()[..., axes[1]],
+                    c=task_sigma[..., 0].detach().numpy(),
+                    s=size,
+                    cmap=cmap,
+                )
 
-            task_plots["colorbar_mean"] = self.task_fig.colorbar(
-                task_plots["sampled"], ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8
-            )
-            task_plots["colorbar_sigma"] = self.task_fig.colorbar(
-                task_plots["pred_sigma"], ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8
-            )
+            self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
+            self.task_fig.colorbar(sigma_ax, ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
 
-    def plot_acquisition(self, acq_funcs=["ei"], **kwargs):
-        if self._len_subset_dofs(kind="active", mode="on") == 1:
-            self._plot_acq_one_dof(acq_funcs=acq_funcs, **kwargs)
-
-        else:
-            self._plot_acq_many_dofs(acq_funcs=acq_funcs, **kwargs)
-
-    def _plot_acq_one_dof(self, acq_funcs, lw=1e0, **kwargs):
-        self.acq_fig, self.acq_axes = plt.subplots(
-            1,
-            len(acq_funcs),
-            figsize=(4 * len(acq_funcs), 4),
-            sharex=True,
-            constrained_layout=True,
-        )
-
-        self.acq_axes = np.atleast_1d(self.acq_axes)
-
-        for iacq_func, acq_func_identifier in enumerate(acq_funcs):
-            color = DEFAULT_COLOR_LIST[iacq_func]
-
-            acq_func, acq_func_meta = self.get_acquisition_function(acq_func_identifier, return_metadata=True)
-
-            x = self.test_inputs_grid
-            *input_shape, input_dim = x.shape
-            obj = acq_func.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
-
-            if acq_func_identifier in ["ei", "pi"]:
-                obj = obj.exp()
-
-            self.acq_axes[iacq_func].set_title(acq_func_meta["name"])
-
-            on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
-            self.acq_axes[iacq_func].plot(
-                x[..., on_dofs_are_active_mask].squeeze(), obj.detach().numpy(), lw=lw, color=color
-            )
-
-            self.acq_axes[iacq_func].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
+        for ax in self.task_axes.ravel():
+            ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
+            ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
     def _plot_acq_many_dofs(
         self, acq_funcs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
