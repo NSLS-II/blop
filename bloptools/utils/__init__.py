@@ -56,7 +56,7 @@ def route(start_point, points):
     if dim_mask.sum() == 0:
         return np.arange(len(points))
 
-    normalized_points = (total_points - total_points.min(axis=0))[dim_mask] / points_scale[dim_mask]
+    normalized_points = (total_points - total_points.min(axis=0))[:, dim_mask] / points_scale[dim_mask]
 
     delay_matrix = np.sqrt(np.square(normalized_points[:, None, :] - normalized_points[None, :, :]).sum(axis=-1))
     delay_matrix = (1e4 * delay_matrix).astype(int)  # it likes integers idk
