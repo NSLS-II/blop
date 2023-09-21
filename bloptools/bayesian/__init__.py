@@ -818,10 +818,8 @@ class Agent:
         self.task_axes = np.atleast_2d(self.task_axes)
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        feasible = ~self.task_fitnesses.isna().any(axis=1)
-
         for itask, task in enumerate(self.tasks):
-            sampled_fitness = np.where(feasible, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
+            sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
             task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
             task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
