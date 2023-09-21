@@ -50,7 +50,8 @@ def route(start_point, points):
     """
 
     total_points = np.r_[np.atleast_2d(start_point), points]
-    normalized_points = (total_points - total_points.min(axis=0)) / total_points.ptp(axis=0)
+    points_scale = total_points.ptp(axis=0)
+    normalized_points = (total_points - total_points.min(axis=0)) / np.where(np.isnan(points_scale), 0, points_scale)
     delay_matrix = np.sqrt(np.square(normalized_points[:, None, :] - normalized_points[None, :, :]).sum(axis=-1))
     delay_matrix = (1e4 * delay_matrix).astype(int)  # it likes integers idk
 
