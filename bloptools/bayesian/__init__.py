@@ -717,6 +717,7 @@ class Agent:
         n_iter=1,
         n_per_iter=1,
         reuse_hypers=True,
+        train=True,
         upsample=1,
         verbose=True,
         plots=[],
@@ -736,7 +737,7 @@ class Agent:
 
             new_table.loc[:, "acq_func"] = acq_func_meta["name"]
 
-            self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
+            self.tell(new_table=new_table, train=train)
 
     @property
     def inputs(self):
@@ -806,9 +807,9 @@ class Agent:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         self.task_fig, self.task_axes = plt.subplots(
-            self.n_tasks,
+            len(self.tasks),
             3,
-            figsize=(10, 4 * self.n_tasks),
+            figsize=(10, 4 * len(self.tasks)),
             sharex=True,
             sharey=True,
             constrained_layout=True,
