@@ -886,6 +886,45 @@ class Agent:
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
+    def plot_acquisition(self, acq_funcs=["ei"], **kwargs):
+        if self._len_subset_dofs(kind="active", mode="on") == 1:
+            self._plot_acq_one_dof(acq_funcs=acq_funcs, **kwargs)
+
+        else:
+            self._plot_acq_many_dofs(acq_funcs=acq_funcs, **kwargs)
+
+    def _plot_acq_one_dof(self, acq_funcs, lw=1e0, **kwargs):
+        self.acq_fig, self.acq_axes = plt.subplots(
+            1,
+            len(acq_funcs),
+            figsize=(4 * len(acq_funcs), 4),
+            sharex=True,
+            constrained_layout=True,
+        )
+
+        self.acq_axes = np.atleast_1d(self.acq_axes)
+
+        for iacq_func, acq_func_identifier in enumerate(acq_funcs):
+            color = DEFAULT_COLOR_LIST[iacq_func]
+
+            acq_func, acq_func_meta = self.get_acquisition_function(acq_func_identifier, return_metadata=True)
+
+            x = self.test_inputs_grid
+            *input_shape, input_dim = x.shape
+            obj = acq_func.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+
+            if acq_func_identifier in ["ei", "pi"]:
+                obj = obj.exp()
+
+            self.acq_axes[iacq_func].set_title(acq_func_meta["name"])
+
+            on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
+            self.acq_axes[iacq_func].plot(
+                x[..., on_dofs_are_active_mask].squeeze(), obj.detach().numpy(), lw=lw, color=color
+            )
+
+            self.acq_axes[iacq_func].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
+
     def _plot_acq_many_dofs(
         self, acq_funcs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
     ):
