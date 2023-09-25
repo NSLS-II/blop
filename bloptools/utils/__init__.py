@@ -152,6 +152,8 @@ def get_beam_bounding_box(image, thresh=0.5):
     This should go off without a hitch as long as beam_prop is less than 1.
     """
 
+    n_y, n_x = image.shape
+
     if image.sum() == 0:
         return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
 
@@ -174,10 +176,26 @@ def get_beam_bounding_box(image, thresh=0.5):
     i_y_min_start = np.where(~gtt_y[:-1] & gtt_y[1:])[0][0]
     i_y_max_start = np.where(gtt_y[:-1] & ~gtt_y[1:])[0][-1]
 
-    x_min = np.interp(x_sum_min_val, x_sum[[i_x_min_start, i_x_min_start + 1]], [i_x_min_start, i_x_min_start + 1])
-    y_min = np.interp(y_sum_min_val, y_sum[[i_y_min_start, i_y_min_start + 1]], [i_y_min_start, i_y_min_start + 1])
-    x_max = np.interp(x_sum_min_val, x_sum[[i_x_max_start + 1, i_x_max_start]], [i_x_max_start + 1, i_x_max_start])
-    y_max = np.interp(y_sum_min_val, y_sum[[i_y_max_start + 1, i_y_max_start]], [i_y_max_start + 1, i_y_max_start])
+    x_min = (
+        0
+        if gtt_x[0]
+        else np.interp(x_sum_min_val, x_sum[[i_x_min_start, i_x_min_start + 1]], [i_x_min_start, i_x_min_start + 1])
+    )
+    y_min = (
+        0
+        if gtt_y[0]
+        else np.interp(y_sum_min_val, y_sum[[i_y_min_start, i_y_min_start + 1]], [i_y_min_start, i_y_min_start + 1])
+    )
+    x_max = (
+        n_x - 2
+        if gtt_x[-1]
+        else np.interp(x_sum_min_val, x_sum[[i_x_max_start + 1, i_x_max_start]], [i_x_max_start + 1, i_x_max_start])
+    )
+    y_max = (
+        n_y - 2
+        if gtt_y[-1]
+        else np.interp(y_sum_min_val, y_sum[[i_y_max_start + 1, i_y_max_start]], [i_y_max_start + 1, i_y_max_start])
+    )
 
     return (
         x_min,
