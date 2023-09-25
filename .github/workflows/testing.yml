@@ -46,28 +46,30 @@ jobs:
       #     mkdir -v -p ~/.config/databroker/
       #     wget https://raw.githubusercontent.com/NSLS-II/sirepo-bluesky/main/examples/local.yml -O ~/.config/databroker/local.yml
 
-      - name: Set up Python ${{ matrix.python-version }} with conda
-        uses: conda-incubator/setup-miniconda@v2
+      # - name: Set up Python ${{ matrix.python-version }} with conda
+      #   uses: conda-incubator/setup-miniconda@v2
+      #   with:
+      #     activate-environment: ${{ env.REPOSITORY_NAME }}-py${{ matrix.python-version }}
+      #     auto-update-conda: true
+      #     miniconda-version: "latest"
+      #     python-version: ${{ matrix.python-version }}
+      #     mamba-version: "*"
+      #     channels: conda-forge
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
         with:
-          activate-environment: ${{ env.REPOSITORY_NAME }}-py${{ matrix.python-version }}
-          auto-update-conda: true
-          miniconda-version: "latest"
           python-version: ${{ matrix.python-version }}
-          mamba-version: "*"
-          channels: conda-forge
 
       - name: Install the package and its dependencies
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
           set -vxeo pipefail
 
-          conda env list
-
           pip install --upgrade pip wheel
           pip install -v .
           pip install -r requirements-dev.txt
           pip list
-          conda list
 
       - name: Test with pytest
         run: |
