@@ -728,7 +728,7 @@ class Agent:
         It should be passed to a Bluesky RunEngine.
         """
 
-        for iteration in range(n_iter):
+        for i in range(n_iter):
             x, acq_func_meta = self.ask(
                 n=n_per_iter, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
             )
@@ -749,9 +749,10 @@ class Agent:
 
     def go_to(self, inputs):
         args = []
-        for device, value in zip(self._subset_devices(kind="active"), np.atleast_1d(inputs).T):
-            args.append(device)
-            args.append(value)
+        for dof, value in zip(self._subset_dofs(mode="on"), np.atleast_1d(inputs).T):
+            if dof["kind"] == "active":
+                args.append(dof["device"])
+                args.append(value)
         yield from bps.mv(*args)
 
     def go_to_best(self):
