@@ -203,3 +203,25 @@ def get_beam_bounding_box(image, thresh=0.5):
         y_min,
         y_max,
     )
+
+
+def best_image_feedback(image):
+    n_y, n_x = image.shape
+
+    fim = sp.ndimage.median_filter(image, size=3)
+
+    masked_image = fim * (fim - fim.mean() > 0.5 * fim.ptp())
+
+    x_weight = masked_image.sum(axis=0)
+    y_weight = masked_image.sum(axis=1)
+
+    x = np.arange(n_x)
+    y = np.arange(n_y)
+
+    x0 = np.sum(x_weight * x) / np.sum(x_weight)
+    y0 = np.sum(y_weight * y) / np.sum(y_weight)
+
+    xw = 2 * np.sqrt((np.sum(x_weight * x**2) / np.sum(x_weight) - x0**2))
+    yw = 2 * np.sqrt((np.sum(y_weight * y**2) / np.sum(y_weight) - y0**2))
+
+    return x0, xw, y0, yw
