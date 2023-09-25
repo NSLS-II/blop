@@ -413,6 +413,14 @@ class Agent:
             for k, m, t in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode), self._dof_tags_mask(tags))
         ]
 
+    def activate_dofs(self, kind=None, mode=None, tags=[]):
+        for dof in self._subset_dofs(kind, mode, tags):
+            dof["mode"] = "on"
+
+    def deactivate_dofs(self, kind=None, mode=None, tags=[]):
+        for dof in self._subset_dofs(kind, mode, tags):
+            dof["mode"] = "off"
+
     def _subset_dofs(self, kind=None, mode=None, tags=[]):
         return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode, tags)) if m]
 
