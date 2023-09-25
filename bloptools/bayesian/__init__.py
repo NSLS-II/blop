@@ -59,6 +59,9 @@ def _validate_and_prepare_dofs(dofs):
             dof["limits"] = (-np.inf, np.inf)
         dof["limits"] = tuple(np.array(dof["limits"], dtype=float))
 
+        if "tags" not in dof.keys():
+            dof["tags"] = []
+
         # dofs are passive by default
         dof["kind"] = dof.get("kind", "passive")
         if dof["kind"] not in ["active", "passive"]:
@@ -161,6 +164,8 @@ class Agent:
 
         self.acq_func_config = kwargs.get("acq_func_config", ACQ_FUNC_CONFIG)
 
+        self.sample_center_on_init = kwargs.get("sample_center_on_init", False)
+
         self.table = pd.DataFrame()
 
         self._initialized = False
@@ -195,6 +200,11 @@ class Agent:
 
         if hypers is not None:
             self.a_priori_hypers = self.load_hypers(hypers)
+
+        if data is not None:
+            new_table = yield from self.acquire(self._acq_func_bounds.mean(axis=0))
+            new_table.loc[:, "acq_func"] = "sample_center_on_init"
+            self.tell(new_table=new_table, train=False)
 
         if data is not None:
             if type(data) == str:
@@ -394,26 +404,32 @@ class Agent:
     def _dof_mode_mask(self, mode=None):
         return [dof["mode"] == mode if mode is not None else True for dof in self.dofs]
 
-    def _dof_mask(self, kind=None, mode=None):
-        return [(k and m) for k, m in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode))]
+    def _dof_tags_mask(self, tags=[]):
+        return [np.isin(dof["tags"], tags).any() if tags else True for dof in self.dofs]
 
-    def _subset_dofs(self, kind=None, mode=None):
-        return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode)) if m]
+    def _dof_mask(self, kind=None, mode=None, tags=[]):
+        return [
+            (k and m and t)
+            for k, m, t in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode), self._dof_tags_mask(tags))
+        ]
 
-    def _len_subset_dofs(self, kind=None, mode=None):
-        return len(self._subset_dofs(kind, mode))
+    def _subset_dofs(self, kind=None, mode=None, tags=[]):
+        return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode, tags)) if m]
 
-    def _subset_devices(self, kind=None, mode=None):
-        return [dof["device"] for dof in self._subset_dofs(kind, mode)]
+    def _len_subset_dofs(self, kind=None, mode=None, tags=[]):
+        return len(self._subset_dofs(kind, mode, tags))
 
-    def _read_subset_devices(self, kind=None, mode=None):
-        return [device.read()[device.name]["value"] for device in self._subset_devices(kind, mode)]
+    def _subset_devices(self, kind=None, mode=None, tags=[]):
+        return [dof["device"] for dof in self._subset_dofs(kind, mode, tags)]
 
-    def _subset_dof_names(self, kind=None, mode=None):
-        return [device.name for device in self._subset_devices(kind, mode)]
+    def _read_subset_devices(self, kind=None, mode=None, tags=[]):
+        return [device.read()[device.name]["value"] for device in self._subset_devices(kind, mode, tags)]
 
-    def _subset_dof_limits(self, kind=None, mode=None):
-        dofs_subset = self._subset_dofs(kind, mode)
+    def _subset_dof_names(self, kind=None, mode=None, tags=[]):
+        return [device.name for device in self._subset_devices(kind, mode, tags)]
+
+    def _subset_dof_limits(self, kind=None, mode=None, tags=[]):
+        dofs_subset = self._subset_dofs(kind, mode, tags)
         if len(dofs_subset) > 0:
             return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
         return torch.empty((2, 0))
@@ -432,20 +448,20 @@ class Agent:
     def test_inputs(self, n=MAX_TEST_INPUTS):
         return utils.sobol_sampler(self._acq_func_bounds, n=n)
 
-    def _subset_input_transform(self, kind=None, mode=None):
-        limits = self._subset_dof_limits(kind, mode)
+    def _subset_input_transform(self, kind=None, mode=None, tags=[]):
+        limits = self._subset_dof_limits(kind, mode, tags)
         offset = limits.min(dim=0).values
         coefficient = limits.max(dim=0).values - offset
         return botorch.models.transforms.input.AffineInputTransform(
             d=limits.shape[-1], coefficient=coefficient, offset=offset
         )
 
-    def _subset_inputs_sampler(self, kind=None, mode=None, n=MAX_TEST_INPUTS):
+    def _subset_inputs_sampler(self, kind=None, mode=None, tags=[], n=MAX_TEST_INPUTS):
         """
         Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
         """
-        transform = self._subset_input_transform(kind=kind, mode=mode)
-        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._len_subset_dofs(kind=kind, mode=mode)))
+        transform = self._subset_input_transform(kind, mode, tags)
+        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._len_subset_dofs(kind, mode, tags)))
 
     def save_data(self, filepath="./self_data.h5"):
         """
@@ -734,9 +750,7 @@ class Agent:
             )
 
             new_table = yield from self.acquire(x)
-
             new_table.loc[:, "acq_func"] = acq_func_meta["name"]
-
             self.tell(new_table=new_table, train=train)
 
     @property
