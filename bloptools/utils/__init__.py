@@ -144,3 +144,44 @@ def get_principal_component_bounds(image, beam_prop=0.5):
         y_max,
         separability,
     )
+
+
+def get_beam_bounding_box(image, thresh=0.5):
+    """
+    Returns the bounding box in pixel units of an image, along with a goodness of fit parameter.
+    This should go off without a hitch as long as beam_prop is less than 1.
+    """
+
+    if image.sum() == 0:
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
+    # filter the image
+    zim = sp.ndimage.median_filter(image.astype(float), size=3)
+    zim -= np.median(zim, axis=0)
+    zim -= np.median(zim, axis=1)[:, None]
+
+    x_sum = zim.sum(axis=0)
+    y_sum = zim.sum(axis=1)
+
+    x_sum_min_val = thresh * x_sum.max()
+    y_sum_min_val = thresh * y_sum.max()
+
+    gtt_x = x_sum > x_sum_min_val
+    gtt_y = y_sum > y_sum_min_val
+
+    i_x_min_start = np.where(~gtt_x[:-1] & gtt_x[1:])[0][0]
+    i_x_max_start = np.where(gtt_x[:-1] & ~gtt_x[1:])[0][-1]
+    i_y_min_start = np.where(~gtt_y[:-1] & gtt_y[1:])[0][0]
+    i_y_max_start = np.where(gtt_y[:-1] & ~gtt_y[1:])[0][-1]
+
+    x_min = np.interp(x_sum_min_val, x_sum[[i_x_min_start, i_x_min_start + 1]], [i_x_min_start, i_x_min_start + 1])
+    y_min = np.interp(y_sum_min_val, y_sum[[i_y_min_start, i_y_min_start + 1]], [i_y_min_start, i_y_min_start + 1])
+    x_max = np.interp(x_sum_min_val, x_sum[[i_x_max_start + 1, i_x_max_start]], [i_x_max_start + 1, i_x_max_start])
+    y_max = np.interp(y_sum_min_val, y_sum[[i_y_max_start + 1, i_y_max_start]], [i_y_max_start + 1, i_y_max_start])
+
+    return (
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    )
