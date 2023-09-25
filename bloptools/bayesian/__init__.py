@@ -1,6 +1,7 @@
 import logging
 import os
 import time as ttime
+import uuid
 import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -32,8 +33,6 @@ warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputData
 
 mpl.rc("image", cmap="coolwarm")
 
-DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
-DEFAULT_COLORMAP = "turbo"
 
 MAX_TEST_INPUTS = 2**11
 
@@ -41,15 +40,20 @@ TASK_CONFIG = {}
 
 TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
 
+DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
+DEFAULT_COLORMAP = "turbo"
+DEFAULT_SCATTER_SIZE = 16
+
 
 def _validate_and_prepare_dofs(dofs):
-    for dof in dofs:
+    for i_dof, dof in enumerate(dofs):
         if not isinstance(dof, Mapping):
             raise ValueError("Supplied dofs must be an iterable of mappings (e.g. a dict)!")
         if "device" not in dof.keys():
             raise ValueError("Each DOF must have a device!")
 
         dof["device"].kind = "hinted"
+        dof["name"] = dof["device"].name if hasattr(dof["device"], "name") else f"x{i_dof+1}"
 
         if "limits" not in dof.keys():
             dof["limits"] = (-np.inf, np.inf)
@@ -60,6 +64,7 @@ def _validate_and_prepare_dofs(dofs):
         if dof["kind"] not in ["active", "passive"]:
             raise ValueError('DOF kinds must be one of "active" or "passive"')
 
+        # active dofs are on by default, passive dofs are off by default
         dof["mode"] = dof.get("mode", "on" if dof["kind"] == "active" else "off")
         if dof["mode"] not in ["on", "off"]:
             raise ValueError('DOF modes must be one of "on" or "off"')
@@ -81,6 +86,8 @@ def _validate_and_prepare_tasks(tasks):
             raise ValueError("Supplied tasks must be an iterable of mappings (e.g. a dict)!")
         if task["kind"] not in ["minimize", "maximize"]:
             raise ValueError('"mode" must be specified as either "minimize" or "maximize"')
+        if "name" not in task.keys():
+            task["name"] = task["key"]
         if "weight" not in task.keys():
             task["weight"] = 1
         if "limits" not in task.keys():
@@ -150,6 +157,8 @@ class Agent:
         self.digestion = kwargs.get("digestion", default_digestion_function)
         self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
 
+        self.trigger_delay = kwargs.get("trigger_delay", 0)
+
         self.acq_func_config = kwargs.get("acq_func_config", ACQ_FUNC_CONFIG)
 
         self.table = pd.DataFrame()
@@ -158,12 +167,14 @@ class Agent:
         self._train_models = True
         self.a_priori_hypers = None
 
-    def _subset_inputs_sampler(self, kind=None, mode=None, n=MAX_TEST_INPUTS):
+        self.plots = {"tasks": {}}
+
+    def reset(self):
         """
-        Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
+        Reset the agent.
         """
-        transform = self._subset_input_transform(kind=kind, mode=mode)
-        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._len_subset_dofs(kind=kind, mode=mode)))
+        self.table = pd.DataFrame()
+        self._initialized = False
 
     def initialize(
         self,
@@ -212,7 +223,7 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        skew_dims = [tuple(np.arange(self._len_subset_dofs(mode="on")))]
+        skew_dims = self.latent_dim_tuples
 
         if self._initialized:
             cached_hypers = self.hypers
@@ -407,6 +418,17 @@ class Agent:
             return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
         return torch.empty((2, 0))
 
+    @property
+    def latent_dim_tuples(self):
+        """
+        Returns a list of tuples, where each tuple represent a group of dimension to find a latent representation of.
+        """
+
+        latent_dim_labels = [dof.get("latent_group", str(uuid.uuid4())) for dof in self._subset_dofs(mode="on")]
+        u, uinv = np.unique(latent_dim_labels, return_inverse=True)
+
+        return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
+
     def test_inputs(self, n=MAX_TEST_INPUTS):
         return utils.sobol_sampler(self._acq_func_bounds, n=n)
 
@@ -417,6 +439,13 @@ class Agent:
         return botorch.models.transforms.input.AffineInputTransform(
             d=limits.shape[-1], coefficient=coefficient, offset=offset
         )
+
+    def _subset_inputs_sampler(self, kind=None, mode=None, n=MAX_TEST_INPUTS):
+        """
+        Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
+        """
+        transform = self._subset_input_transform(kind=kind, mode=mode)
+        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._len_subset_dofs(kind=kind, mode=mode)))
 
     def save_data(self, filepath="./self_data.h5"):
         """
@@ -601,8 +630,8 @@ class Agent:
             active_X = np.concatenate(active_x_list, axis=0)
             self.forget(self.table.index[-(n - 1) :])
 
-            if route:
-                active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
+        if route:
+            active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
         return (active_X, acq_func_meta) if return_metadata else active_X
 
@@ -622,7 +651,7 @@ class Agent:
         )
 
         BATCH_SIZE = 1
-        NUM_RESTARTS = 8
+        NUM_RESTARTS = 4
         RAW_SAMPLES = 256
 
         candidates, _ = botorch.optim.optimize_acqf(
@@ -656,7 +685,10 @@ class Agent:
             passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
 
             uid = yield from self.acquisition_plan(
-                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices]
+                active_devices,
+                active_inputs.astype(float),
+                [*self.dets, *passive_devices],
+                delay=self.trigger_delay,
             )
 
             products = self.digestion(self.db, uid)
@@ -685,6 +717,7 @@ class Agent:
         n_iter=1,
         n_per_iter=1,
         reuse_hypers=True,
+        train=True,
         upsample=1,
         verbose=True,
         plots=[],
@@ -695,7 +728,7 @@ class Agent:
         It should be passed to a Bluesky RunEngine.
         """
 
-        for iteration in range(n_iter):
+        for i in range(n_iter):
             x, acq_func_meta = self.ask(
                 n=n_per_iter, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
             )
@@ -704,7 +737,7 @@ class Agent:
 
             new_table.loc[:, "acq_func"] = acq_func_meta["name"]
 
-            self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
+            self.tell(new_table=new_table, train=train)
 
     @property
     def inputs(self):
@@ -716,9 +749,10 @@ class Agent:
 
     def go_to(self, inputs):
         args = []
-        for device, value in zip(self._subset_devices(kind="active"), np.atleast_1d(inputs).T):
-            args.append(device)
-            args.append(value)
+        for dof, value in zip(self._subset_dofs(mode="on"), np.atleast_1d(inputs).T):
+            if dof["kind"] == "active":
+                args.append(dof["device"])
+                args.append(value)
         yield from bps.mv(*args)
 
     def go_to_best(self):
@@ -742,6 +776,8 @@ class Agent:
         self.task_axes = np.atleast_1d(self.task_axes)
 
         for itask, task in enumerate(self.tasks):
+            task_plots = self.plots["tasks"][task["name"]] = {}
+
             color = DEFAULT_COLOR_LIST[itask]
 
             self.task_axes[itask].set_ylabel(task["key"])
@@ -751,12 +787,7 @@ class Agent:
             task_mean = task_posterior.mean.detach().numpy()
             task_sigma = task_posterior.variance.sqrt().detach().numpy()
 
-            self.task_axes[itask].scatter(
-                self.inputs.loc[:, self._subset_dof_names(kind="active", mode="on")],
-                self.table.loc[:, f'{task["key"]}_fitness'],
-                s=size,
-                color=color,
-            )
+            task_plots["sampled"] = self.task_axes[itask].scatter([], [], s=size, color=color)
 
             on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
@@ -777,9 +808,9 @@ class Agent:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         self.task_fig, self.task_axes = plt.subplots(
-            self.num_tasks,
+            len(self.tasks),
             3,
-            figsize=(10, 4 * self.num_tasks),
+            figsize=(10, 4 * len(self.tasks)),
             sharex=True,
             sharey=True,
             constrained_layout=True,

@@ -29,6 +29,34 @@ def constrained_himmelblau(x1, x2):
     return np.where(x1**2 + x2**2 < 50, himmelblau(x1, x2), np.nan)
 
 
+def binh_korn(x1, x2):
+    """
+    Binh and Korn function
+    """
+    f1 = 4 * x1**2 + 4 * x2**2
+    f2 = (x1 - 5) ** 2 + (x2 - 5) ** 2
+    g1 = (x1 - 5) ** 2 + x2**2 <= 25
+    g2 = (x1 - 8) ** 2 + (x2 + 3) ** 2 >= 7.7
+
+    c = g1 & g2
+
+    return np.where(c, f1, np.nan), np.where(c, f2, np.nan)
+
+
+def binh_korn_digestion(db, uid):
+    """
+    Digests Himmelblau's function into the feedback.
+    """
+    products = db[uid].table()
+
+    for index, entry in products.iterrows():
+        f1, f2 = binh_korn(entry.x1, entry.x2)
+        products.loc[index, "f1"] = f1
+        products.loc[index, "f2"] = f2
+
+    return products
+
+
 def skewed_himmelblau(x1, x2):
     """
     Himmelblau's function, with skewed coordinates
