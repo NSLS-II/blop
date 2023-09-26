@@ -870,16 +870,16 @@ class Agent:
                 if not x.ndim == 3:
                     raise ValueError()
                 self.task_axes[itask, 1].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
+                    x[..., 0].detach(),
+                    x[..., 1].detach(),
                     task_mean[..., 0].detach().numpy(),
                     shading=shading,
                     cmap=cmap,
                     norm=task_norm,
                 )
                 sigma_ax = self.task_axes[itask, 2].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
+                    x[..., 0].detach(),
+                    x[..., 1].detach(),
                     task_sigma[..., 0].detach().numpy(),
                     shading=shading,
                     cmap=cmap,
@@ -979,8 +979,8 @@ class Agent:
             if gridded:
                 self.acq_axes[iacq_func].set_title(acq_func_meta["name"])
                 obj_ax = self.acq_axes[iacq_func].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
+                    x[..., 0].detach(),
+                    x[..., 1].detach(),
                     obj.detach().numpy(),
                     shading=shading,
                     cmap=cmap,
@@ -1047,8 +1047,8 @@ class Agent:
 
         if gridded:
             self.valid_axes[1].pcolormesh(
-                x[..., 0],
-                x[..., 1],
+                x[..., 0].detach(),
+                x[..., 1].detach(),
                 constraint.detach().numpy(),
                 shading=shading,
                 cmap=cmap,
