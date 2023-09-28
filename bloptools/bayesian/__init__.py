@@ -24,7 +24,7 @@ from matplotlib.patches import Patch
 
 from .. import utils
 from . import acquisition, models
-from .acquisition import ACQ_FUNC_CONFIG, default_acquisition_plan
+from .acquisition import default_acquisition_plan
 from .digestion import default_digestion_function
 
 os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
@@ -166,7 +166,7 @@ class Agent:
 
         self.trigger_delay = kwargs.get("trigger_delay", 0)
 
-        self.acq_func_config = kwargs.get("acq_func_config", ACQ_FUNC_CONFIG)
+        self.acq_func_config = kwargs.get("acq_func_config", acquisition.config)
 
         self.sample_center_on_init = kwargs.get("sample_center_on_init", False)
 
@@ -214,7 +214,7 @@ class Agent:
         # now let's get bayesian
         elif acq_func in ["qr"]:
             if self.sample_center_on_init:
-                new_table = yield from self.acquire(self._acq_func_bounds.mean(axis=0))
+                new_table = yield from self.acquire(self.acq_func_bounds.mean(axis=0))
                 new_table.loc[:, "acq_func"] = "sample_center_on_init"
                 self.tell(new_table=new_table, train=False)
             yield from self.learn("qr", n_iter=1, n_per_iter=n_init, route=True)
@@ -374,7 +374,7 @@ class Agent:
         ).swapaxes(0, -1)
 
     @property
-    def _acq_func_bounds(self):
+    def acq_func_bounds(self):
         return torch.tensor(
             [
                 dof["limits"] if dof["kind"] == "active" else tuple(2 * [dof["device"].read()[dof["device"].name]["value"]])
@@ -463,7 +463,7 @@ class Agent:
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
 
     def test_inputs(self, n=MAX_TEST_INPUTS):
-        return utils.sobol_sampler(self._acq_func_bounds, n=n)
+        return utils.sobol_sampler(self.acq_func_bounds, n=n)
 
     def _subset_input_transform(self, kind=None, mode=None, tags=[]):
         limits = self._subset_dof_limits(kind, mode, tags)
@@ -558,25 +558,14 @@ class Agent:
 
         print("\n\n".join(entries))
 
-    def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, **acq_func_kwargs):
+    def get_acquisition_function(self, acq_func_identifier="qei", return_metadata=False, **acq_func_kwargs):
         """
         Generates an acquisition function from a supplied identifier.
         """
 
-        if not self._initialized:
-            raise RuntimeError(
-                f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
-            )
+        acq_func_name = acquisition.parse_acq_func(acq_func_identifier)
 
-        acq_func_name = None
-        for _acq_func_name in ACQ_FUNC_CONFIG.keys():
-            if acq_func_identifier.lower() in ACQ_FUNC_CONFIG[_acq_func_name]["identifiers"]:
-                acq_func_name = _acq_func_name
-
-        if acq_func_name is None:
-            raise ValueError(f'Unrecognized acquisition function "{acq_func_identifier}".')
-
-        if ACQ_FUNC_CONFIG[acq_func_name]["multitask_only"] and (self.num_tasks == 1):
+        if self.acq_func_config[acq_func_name]["multitask_only"] and (self.num_tasks == 1):
             raise ValueError(f'Acquisition function "{acq_func_name}" is only for multi-task optimization problems!')
 
         if acq_func_name == "expected_improvement":
@@ -625,7 +614,7 @@ class Agent:
             acq_func_meta = {"name": acq_func_name, "args": {}}
 
         elif acq_func_name == "upper_confidence_bound":
-            config = ACQ_FUNC_CONFIG["upper_confidence_bound"]
+            config = self.acq_func_config["upper_confidence_bound"]
             beta = acq_func_kwargs.get("beta", config["default_args"]["beta"])
 
             acq_func = acquisition.ConstrainedUpperConfidenceBound(
@@ -642,7 +631,7 @@ class Agent:
 
         return (acq_func, acq_func_meta) if return_metadata else acq_func
 
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, return_metadata=False):
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, return_metadata=False, **acq_func_kwargs):
         """
         Ask the agent for the best point to sample, given an acquisition function.
 
@@ -650,78 +639,56 @@ class Agent:
         n: how many points to get
         """
 
-        if acq_func_identifier.lower() == "qr":
-            active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
-            acq_func_meta = {"name": "quasi-random", "args": {}}
+        acq_func_name = acquisition.parse_acq_func(acq_func_identifier)
+        acq_func_type = acquisition.config[acq_func_name]["type"]
 
-        elif n == 1:
-            active_X, acq_func_meta = self.ask_single(acq_func_identifier, return_metadata=True)
+        start_time = ttime.monotonic()
 
-        elif n > 1:
-            active_x_list = []
-            for i in range(n):
-                active_x, acq_func_meta = self.ask_single(acq_func_identifier, return_metadata=True)
-                active_x_list.append(active_x)
+        if acq_func_type in ["analytic", "monte_carlo"]:
+            if not self._initialized:
+                raise RuntimeError(
+                    f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
+                )
 
-                if i < (n - 1):
-                    x = np.c_[active_x, acq_func_meta["passive_values"]]
-                    task_samples = [task["model"].posterior(torch.tensor(x)).sample().item() for task in self.tasks]
-                    fantasy_table = pd.DataFrame(
-                        np.c_[active_x, acq_func_meta["passive_values"], np.atleast_2d(task_samples)],
-                        columns=[
-                            *self._subset_dof_names(kind="active", mode="on"),
-                            *self._subset_dof_names(kind="passive", mode="on"),
-                            *self.task_keys,
-                        ],
-                    )
-                    self.tell(fantasy_table, train=False)
+            if acq_func_type == "analytic" and n > 1:
+                raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            active_X = np.concatenate(active_x_list, axis=0)
-            self.forget(self.table.index[-(n - 1) :])
+            acq_func, acq_func_meta = self.get_acquisition_function(
+                acq_func_identifier=acq_func_identifier, return_metadata=True
+            )
 
-        if route:
+            NUM_RESTARTS = 8
+            RAW_SAMPLES = 512
+
+            candidates, _ = botorch.optim.optimize_acqf(
+                acq_function=acq_func,
+                bounds=self.acq_func_bounds,
+                q=n,
+                sequential=sequential,
+                num_restarts=NUM_RESTARTS,
+                raw_samples=RAW_SAMPLES,  # used for intialization heuristic
+            )
+
+            x = candidates.numpy().astype(float)
+
+            active_X = x[..., [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]]
+            passive_X = x[..., [dof["kind"] != "active" for dof in self._subset_dofs(mode="on")]]
+            acq_func_meta["passive_values"] = passive_X
+
+        else:
+            if acq_func_identifier.lower() == "qr":
+                active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
+                acq_func_meta = {"name": "quasi-random", "args": {}}
+
+        acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
+
+        if self.verbose:
+            print(f"found points {active_X} in {duration:.02f} seconds")
+
+        if route and n > 1:
             active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
         return (active_X, acq_func_meta) if return_metadata else active_X
-
-    def ask_single(
-        self,
-        acq_func_identifier="ei",
-        return_metadata=False,
-    ):
-        """
-        The next $n$ points to sample, recommended by the self. Returns
-        """
-
-        t0 = ttime.monotonic()
-
-        acq_func, acq_func_meta = self.get_acquisition_function(
-            acq_func_identifier=acq_func_identifier, return_metadata=True
-        )
-
-        BATCH_SIZE = 1
-        NUM_RESTARTS = 8
-        RAW_SAMPLES = 512
-
-        candidates, _ = botorch.optim.optimize_acqf(
-            acq_function=acq_func,
-            bounds=self._acq_func_bounds,
-            q=BATCH_SIZE,
-            num_restarts=NUM_RESTARTS,
-            raw_samples=RAW_SAMPLES,  # used for intialization heuristic
-        )
-
-        x = candidates.numpy().astype(float)
-
-        active_x = x[..., [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]]
-        passive_x = x[..., [dof["kind"] != "active" for dof in self._subset_dofs(mode="on")]]
-
-        acq_func_meta["passive_values"] = passive_x
-
-        if self.verbose:
-            print(f"found point {x} in {ttime.monotonic() - t0:.02f} seconds")
-
-        return (active_x, acq_func_meta) if return_metadata else active_x
 
     def acquire(self, active_inputs):
         """
