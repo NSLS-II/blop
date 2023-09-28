@@ -44,6 +44,8 @@ DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
 DEFAULT_COLORMAP = "turbo"
 DEFAULT_SCATTER_SIZE = 16
 
+DEFAULT_MINIMUM_SNR = 2e1
+
 
 def _validate_and_prepare_dofs(dofs):
     for i_dof, dof in enumerate(dofs):
@@ -95,6 +97,8 @@ def _validate_and_prepare_tasks(tasks):
             task["weight"] = 1
         if "limits" not in task.keys():
             task["limits"] = (-np.inf, np.inf)
+        if "min_snr" not in task.keys():
+            task["min_snr"] = DEFAULT_MINIMUM_SNR
 
     task_keys = [task["key"] for task in tasks]
     unique_task_keys, counts = np.unique(task_keys, return_counts=True)
@@ -202,11 +206,6 @@ class Agent:
             self.a_priori_hypers = self.load_hypers(hypers)
 
         if data is not None:
-            new_table = yield from self.acquire(self._acq_func_bounds.mean(axis=0))
-            new_table.loc[:, "acq_func"] = "sample_center_on_init"
-            self.tell(new_table=new_table, train=False)
-
-        if data is not None:
             if type(data) == str:
                 self.tell(new_table=pd.read_hdf(data, key="table"))
             else:
@@ -214,6 +213,10 @@ class Agent:
 
         # now let's get bayesian
         elif acq_func in ["qr"]:
+            if self.sample_center_on_init:
+                new_table = yield from self.acquire(self._acq_func_bounds.mean(axis=0))
+                new_table.loc[:, "acq_func"] = "sample_center_on_init"
+                self.tell(new_table=new_table, train=False)
             yield from self.learn("qr", n_iter=1, n_per_iter=n_init, route=True)
 
         else:
@@ -250,11 +253,17 @@ class Agent:
             train_inputs = torch.tensor(inputs[train_index]).double()
             train_targets = torch.tensor(targets[train_index]).double().unsqueeze(-1)  # .unsqueeze(0)
 
+            # for constructing the log normal noise prior
+            target_snr = 2e2
+            scale = 1e0
+            loc = np.log(1 / target_snr**2) + scale**2
+
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
-                    torch.tensor(1e-6).square(),
-                    torch.tensor(1e0).square(),
+                    torch.tensor(1e-4).square(),
+                    torch.tensor(1 / task["min_snr"]).square(),
                 ),
+                noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
             ).double()
 
             outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
@@ -579,6 +588,15 @@ class Agent:
             )
             acq_func_meta = {"name": acq_func_name, "args": {}}
 
+        if acq_func_name == "monte_carlo_expected_improvement":
+            acq_func = acquisition.qConstrainedExpectedImprovement(
+                constraint=self.constraint,
+                model=self.model,
+                best_f=self.best_scalarized_fitness,
+                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
+            )
+            acq_func_meta = {"name": acq_func_name, "args": {}}
+
         elif acq_func_name == "probability_of_improvement":
             acq_func = acquisition.ConstrainedLogProbabilityOfImprovement(
                 constraint=self.constraint,
@@ -624,7 +642,14 @@ class Agent:
 
         return (acq_func, acq_func_meta) if return_metadata else acq_func
 
-    def ask(self, acq_func_identifier="ei", n=1, route=True, return_metadata=False):
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, return_metadata=False):
+        """
+        Ask the agent for the best point to sample, given an acquisition function.
+
+        acq_func_identifier: which acquisition function to use
+        n: how many points to get
+        """
+
         if acq_func_identifier.lower() == "qr":
             active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
             acq_func_meta = {"name": "quasi-random", "args": {}}
@@ -675,8 +700,8 @@ class Agent:
         )
 
         BATCH_SIZE = 1
-        NUM_RESTARTS = 4
-        RAW_SAMPLES = 256
+        NUM_RESTARTS = 8
+        RAW_SAMPLES = 512
 
         candidates, _ = botorch.optim.optimize_acqf(
             acq_function=acq_func,
