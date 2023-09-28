@@ -53,7 +53,7 @@ def default_acquisition_plan(dofs, inputs, dets, **kwargs):
 #     return uid
 
 
-class WeightedUpperConfidenceBound(UpperConfidenceBound):
+class ConstraintedUpperConfidenceBound(UpperConfidenceBound):
     def __init__(self, constraint, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.constraint = constraint
@@ -66,7 +66,7 @@ class WeightedUpperConfidenceBound(UpperConfidenceBound):
         return (mean if self.maximize else -mean) + sigma * np.sqrt(2) * torch.special.erfinv(2 * p_eff - 1)
 
 
-class WeightedLogExpectedImprovement(LogExpectedImprovement):
+class ConstraintedLogExpectedImprovement(LogExpectedImprovement):
     def __init__(self, constraint, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.constraint = constraint
@@ -75,7 +75,7 @@ class WeightedLogExpectedImprovement(LogExpectedImprovement):
         return super().forward(x) + self.constraint(x).log()
 
 
-class WeightedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
+class ConstraintedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
     def __init__(self, constraint, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.constraint = constraint

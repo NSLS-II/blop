@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
-from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
 from matplotlib import pyplot as plt
@@ -557,79 +556,6 @@ class Agent:
             entries.append(ret)
 
         print("\n\n".join(entries))
-
-    def get_acquisition_function(self, acq_func_identifier="qei", return_metadata=False, **acq_func_kwargs):
-        """
-        Generates an acquisition function from a supplied identifier.
-        """
-
-        acq_func_name = acquisition.parse_acq_func(acq_func_identifier)
-
-        if self.acq_func_config[acq_func_name]["multitask_only"] and (self.num_tasks == 1):
-            raise ValueError(f'Acquisition function "{acq_func_name}" is only for multi-task optimization problems!')
-
-        if acq_func_name == "expected_improvement":
-            acq_func = acquisition.ConstrainedLogExpectedImprovement(
-                constraint=self.constraint,
-                model=self.model,
-                best_f=self.best_scalarized_fitness,
-                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
-            )
-            acq_func_meta = {"name": acq_func_name, "args": {}}
-
-        if acq_func_name == "monte_carlo_expected_improvement":
-            acq_func = acquisition.qConstrainedExpectedImprovement(
-                constraint=self.constraint,
-                model=self.model,
-                best_f=self.best_scalarized_fitness,
-                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
-            )
-            acq_func_meta = {"name": acq_func_name, "args": {}}
-
-        elif acq_func_name == "probability_of_improvement":
-            acq_func = acquisition.ConstrainedLogProbabilityOfImprovement(
-                constraint=self.constraint,
-                model=self.model,
-                best_f=self.best_scalarized_fitness,
-                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
-            )
-            acq_func_meta = {"name": acq_func_name, "args": {}}
-
-        elif acq_func_name == "lower_bound_max_value_entropy":
-            acq_func = acquisition.qConstrainedLowerBoundMaxValueEntropy(
-                constraint=self.constraint,
-                model=self.model,
-                candidate_set=self.test_inputs(n=1024).squeeze(1),
-            )
-            acq_func_meta = {"name": acq_func_name, "args": {}}
-
-        elif acq_func_name == "noisy_expected_hypervolume_improvement":
-            acq_func = acquisition.qConstrainedNoisyExpectedHypervolumeImprovement(
-                constraint=self.constraint,
-                model=self.model,
-                ref_point=self.train_targets.min(dim=0).values,
-                X_baseline=self.train_inputs,
-                prune_baseline=True,
-            )
-            acq_func_meta = {"name": acq_func_name, "args": {}}
-
-        elif acq_func_name == "upper_confidence_bound":
-            config = self.acq_func_config["upper_confidence_bound"]
-            beta = acq_func_kwargs.get("beta", config["default_args"]["beta"])
-
-            acq_func = acquisition.ConstrainedUpperConfidenceBound(
-                constraint=self.constraint,
-                model=self.model,
-                beta=beta,
-                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
-            )
-            acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
-
-        elif acq_func_name == "expected_mean":
-            acq_func = self.get_acquisition_function(acq_func_identifier="ucb", beta=0, return_metadata=False)
-            acq_func_meta = {"name": acq_func_name, "args": {}}
-
-        return (acq_func, acq_func_meta) if return_metadata else acq_func
 
     def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, return_metadata=False, **acq_func_kwargs):
         """
