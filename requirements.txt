@@ -1,4 +1,4 @@
-bluesky>=1.6.1
+bluesky
 botorch
 databroker
 gpytorch
@@ -10,3 +10,4 @@ ortools
 scipy
 tables
 torch
+zict<3.0.0
