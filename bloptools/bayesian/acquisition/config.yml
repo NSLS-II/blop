@@ -2,8 +2,7 @@ expected_improvement:
   pretty_name: Expected improvement
   description: The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.
   identifiers:
-    - ei
-    - expected_improvement
+  - ei
   multitask_only: false
   type: analytic
 
@@ -11,7 +10,6 @@ expected_mean:
   description: The expected value at each input.
   identifiers:
   - em
-  - expected_mean
   multitask_only: false
   pretty_name: Expected mean
   type: analytic
@@ -22,17 +20,14 @@ lower_bound_max_value_entropy:
   - lbmve
   - lbmes
   - gibbon
-  - lower_bound_max_value_entropy
   multitask_only: false
   pretty_name: Lower bound max value entropy
   type: monte_carlo
 
 monte_carlo_expected_improvement:
-  description: The expected value of max(f(x) - \nu, 0), where \nu is the current
-    maximum.
+  description: The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.
   identifiers:
   - qei
-  - monte_carlo_expected_improvement
   multitask_only: false
   pretty_name: Monte Carlo Expected improvement
   type: monte_carlo
@@ -41,7 +36,6 @@ noisy_expected_hypervolume_improvement:
   description: It's like a big box. How big is the box?
   identifiers:
   - nehvi
-  - noisy_expected_hypervolume_improvement
   multitask_only: true
   pretty_name: Noisy expected hypervolume improvement
   type: analytic
@@ -50,17 +44,22 @@ probability_of_improvement:
   description: The probability that this input improves on the current maximum.
   identifiers:
   - pi
-  - probability_of_improvement
   multitask_only: false
   pretty_name: Probability of improvement
   type: analytic
 
+monte_carlo_probability_of_improvement:
+  description: The probability that this input improves on the current maximum.
+  identifiers:
+  - qpi
+  multitask_only: false
+  pretty_name: Monte Carlo probability of improvement
+  type: monte_carlo
 
 quasi-random:
   description: Sobol-sampled quasi-random points.
   identifiers:
   - qr
-  - quasi-random
   multitask_only: false
   pretty_name: Quasi-random
   type: none
@@ -68,11 +67,19 @@ quasi-random:
 upper_confidence_bound:
   default_args:
     beta: 4
-  description: The expected value, plus some multiple of the uncertainty (typically
-    \mu + 2\sigma).
+  description: The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).
   identifiers:
   - ucb
-  - upper_confidence_bound
   multitask_only: false
   pretty_name: Upper confidence bound
   type: analytic
+
+monte_carlo_upper_confidence_bound:
+  default_args:
+    beta: 4
+  description: The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).
+  identifiers:
+  - qucb
+  multitask_only: false
+  pretty_name: Monte Carlo upper confidence bound
+  type: monte_carlo

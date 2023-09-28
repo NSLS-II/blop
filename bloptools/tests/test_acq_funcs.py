@@ -22,6 +22,7 @@ def test_acq_funcs_single_task(RE, db):
         db=db,
     )
 
-    RE(agent.initialize("qr", n_init=64))
+    RE(agent.learn("qei", n_iter=2))
+    RE(agent.learn("qpi", n_iter=2))
     RE(agent.learn("ei", n_iter=2))
     RE(agent.learn("pi", n_iter=2))
