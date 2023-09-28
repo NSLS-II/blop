@@ -216,7 +216,7 @@ class Agent:
                 new_table = yield from self.acquire(self.acq_func_bounds.mean(axis=0))
                 new_table.loc[:, "acq_func"] = "sample_center_on_init"
                 self.tell(new_table=new_table, train=False)
-            yield from self.learn("qr", n_iter=1, n_per_iter=n_init, route=True)
+            yield from self.learn("qr", n_iter=1, n=n_init, route=True)
 
         else:
             raise Exception(
@@ -579,8 +579,8 @@ class Agent:
             if acq_func_type == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            acq_func, acq_func_meta = self.get_acquisition_function(
-                acq_func_identifier=acq_func_identifier, return_metadata=True
+            acq_func, acq_func_meta = acquisition.get_acquisition_function(
+                self, acq_func_identifier=acq_func_identifier, return_metadata=True
             )
 
             NUM_RESTARTS = 8
@@ -656,13 +656,10 @@ class Agent:
     def learn(
         self,
         acq_func_identifier,
+        n=1,
         n_iter=1,
-        n_per_iter=1,
-        reuse_hypers=True,
         train=True,
         upsample=1,
-        verbose=True,
-        plots=[],
         **kwargs,
     ):
         """
@@ -671,9 +668,7 @@ class Agent:
         """
 
         for i in range(n_iter):
-            x, acq_func_meta = self.ask(
-                n=n_per_iter, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
-            )
+            x, acq_func_meta = self.ask(n=n, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs)
 
             new_table = yield from self.acquire(x)
             new_table.loc[:, "acq_func"] = acq_func_meta["name"]
@@ -848,7 +843,7 @@ class Agent:
         for iacq_func, acq_func_identifier in enumerate(acq_funcs):
             color = DEFAULT_COLOR_LIST[iacq_func]
 
-            acq_func, acq_func_meta = self.get_acquisition_function(acq_func_identifier, return_metadata=True)
+            acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier, return_metadata=True)
 
             x = self.test_inputs_grid
             *input_shape, input_dim = x.shape
@@ -888,7 +883,7 @@ class Agent:
         *input_shape, input_dim = x.shape
 
         for iacq_func, acq_func_identifier in enumerate(acq_funcs):
-            acq_func, acq_func_meta = self.get_acquisition_function(acq_func_identifier, return_metadata=True)
+            acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier, return_metadata=True)
 
             obj = acq_func.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
             if acq_func_identifier in ["ei", "pi"]:
