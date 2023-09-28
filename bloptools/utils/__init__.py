@@ -50,7 +50,14 @@ def route(start_point, points):
     """
 
     total_points = np.r_[np.atleast_2d(start_point), points]
-    normalized_points = (total_points - total_points.min(axis=0)) / total_points.ptp(axis=0)
+    points_scale = total_points.ptp(axis=0)
+    dim_mask = points_scale > 0
+
+    if dim_mask.sum() == 0:
+        return np.arange(len(points))
+
+    normalized_points = (total_points - total_points.min(axis=0))[:, dim_mask] / points_scale[dim_mask]
+
     delay_matrix = np.sqrt(np.square(normalized_points[:, None, :] - normalized_points[None, :, :]).sum(axis=-1))
     delay_matrix = (1e4 * delay_matrix).astype(int)  # it likes integers idk
 
@@ -137,3 +144,84 @@ def get_principal_component_bounds(image, beam_prop=0.5):
         y_max,
         separability,
     )
+
+
+def get_beam_bounding_box(image, thresh=0.5):
+    """
+    Returns the bounding box in pixel units of an image, along with a goodness of fit parameter.
+    This should go off without a hitch as long as beam_prop is less than 1.
+    """
+
+    n_y, n_x = image.shape
+
+    if image.sum() == 0:
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+
+    # filter the image
+    zim = sp.ndimage.median_filter(image.astype(float), size=3)
+    zim -= np.median(zim, axis=0)
+    zim -= np.median(zim, axis=1)[:, None]
+
+    x_sum = zim.sum(axis=0)
+    y_sum = zim.sum(axis=1)
+
+    x_sum_min_val = thresh * x_sum.max()
+    y_sum_min_val = thresh * y_sum.max()
+
+    gtt_x = x_sum > x_sum_min_val
+    gtt_y = y_sum > y_sum_min_val
+
+    i_x_min_start = np.where(~gtt_x[:-1] & gtt_x[1:])[0][0]
+    i_x_max_start = np.where(gtt_x[:-1] & ~gtt_x[1:])[0][-1]
+    i_y_min_start = np.where(~gtt_y[:-1] & gtt_y[1:])[0][0]
+    i_y_max_start = np.where(gtt_y[:-1] & ~gtt_y[1:])[0][-1]
+
+    x_min = (
+        0
+        if gtt_x[0]
+        else np.interp(x_sum_min_val, x_sum[[i_x_min_start, i_x_min_start + 1]], [i_x_min_start, i_x_min_start + 1])
+    )
+    y_min = (
+        0
+        if gtt_y[0]
+        else np.interp(y_sum_min_val, y_sum[[i_y_min_start, i_y_min_start + 1]], [i_y_min_start, i_y_min_start + 1])
+    )
+    x_max = (
+        n_x - 2
+        if gtt_x[-1]
+        else np.interp(x_sum_min_val, x_sum[[i_x_max_start + 1, i_x_max_start]], [i_x_max_start + 1, i_x_max_start])
+    )
+    y_max = (
+        n_y - 2
+        if gtt_y[-1]
+        else np.interp(y_sum_min_val, y_sum[[i_y_max_start + 1, i_y_max_start]], [i_y_max_start + 1, i_y_max_start])
+    )
+
+    return (
+        x_min,
+        x_max,
+        y_min,
+        y_max,
+    )
+
+
+def best_image_feedback(image):
+    n_y, n_x = image.shape
+
+    fim = sp.ndimage.median_filter(image, size=3)
+
+    masked_image = fim * (fim - fim.mean() > 0.5 * fim.ptp())
+
+    x_weight = masked_image.sum(axis=0)
+    y_weight = masked_image.sum(axis=1)
+
+    x = np.arange(n_x)
+    y = np.arange(n_y)
+
+    x0 = np.sum(x_weight * x) / np.sum(x_weight)
+    y0 = np.sum(y_weight * y) / np.sum(y_weight)
+
+    xw = 2 * np.sqrt((np.sum(x_weight * x**2) / np.sum(x_weight) - x0**2))
+    yw = 2 * np.sqrt((np.sum(y_weight * y**2) / np.sum(y_weight) - y0**2))
+
+    return x0, xw, y0, yw

@@ -1,12 +1,13 @@
-bluesky>=1.6.1
+bluesky
 botorch
 databroker
 gpytorch
+h5py
 matplotlib
 numpy
 ophyd
 ortools
 scipy
-sirepo-bluesky>=0.7.0
 tables
 torch
+zict<3.0.0

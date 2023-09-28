@@ -20,7 +20,7 @@ def test_passive_dofs(RE, db):
     agent = Agent(
         dofs=dofs,
         tasks=tasks,
-        digestion=test_functions.himmelblau_digestion,
+        digestion=test_functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,
@@ -30,4 +30,4 @@ def test_passive_dofs(RE, db):
 
     agent.plot_tasks()
     agent.plot_acquisition()
-    agent.plot_feasibility()
+    agent.plot_validity()

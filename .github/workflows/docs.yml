@@ -33,19 +33,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Start MongoDB
-        uses: supercharge/mongodb-github-action@1.6.0
+      # - name: Start MongoDB
+      #   uses: supercharge/mongodb-github-action@1.6.0
 
-      - name: Start Sirepo Docker container
-        uses: NSLS-II/start-sirepo-action@v2
-        with:
-          docker-binary: docker
+      # - name: Start Sirepo Docker container
+      #   uses: NSLS-II/start-sirepo-action@v2
+      #   with:
+      #     docker-binary: docker
 
-      - name: Copy databroker config file
-        run: |
-          set -vxeuo pipefail
-          mkdir -v -p ~/.config/databroker/
-          wget https://raw.githubusercontent.com/NSLS-II/sirepo-bluesky/main/examples/local.yml -O ~/.config/databroker/local.yml
+      # - name: Copy databroker config file
+      #   run: |
+      #     set -vxeuo pipefail
+      #     mkdir -v -p ~/.config/databroker/
+      #     wget https://raw.githubusercontent.com/NSLS-II/sirepo-bluesky/main/examples/local.yml -O ~/.config/databroker/local.yml
 
       - name: Set up Python ${{ matrix.python-version }} with conda
         uses: conda-incubator/setup-miniconda@v2
@@ -57,19 +57,29 @@ jobs:
           mamba-version: "*"
           channels: conda-forge
 
-      - name: Install documentation-building requirements
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install documentation-building requirements with apt/dpkg
+        run: |
+          set -vxeuo pipefail
+          wget --progress=dot:giga "https://github.com/jgm/pandoc/releases/download/3.1.6.1/pandoc-3.1.6.1-1-amd64.deb" -O /tmp/pandoc.deb
+          sudo dpkg -i /tmp/pandoc.deb
+          # conda install -c conda-forge -y pandoc
+          which pandoc
+          pandoc --version
+
+      - name: Install documentation-building requirements with pip
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
           set -vxeo pipefail
 
-          conda env list
-          # mamba install -c conda-forge shadow3 srwpy pandoc
-          mamba install -c conda-forge pandoc
           pip install --upgrade pip wheel
           pip install -v .
           pip install -r requirements-dev.txt
           pip list
-          conda list
 
       - name: Build Docs
         run: make -C docs/ html

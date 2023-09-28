@@ -7,10 +7,6 @@ from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
-from sirepo_bluesky.madx_handler import MADXFileHandler
-from sirepo_bluesky.shadow_handler import ShadowFileHandler
-from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
-from sirepo_bluesky.srw_handler import SRWFileHandler
 
 from bloptools.bayesian import Agent
 
@@ -19,6 +15,41 @@ from .. import devices, test_functions
 
 @pytest.fixture(scope="function")
 def db():
+    """Return a data broker"""
+    # MongoDB backend:
+    db = Broker.named("temp")  # mongodb backend
+    try:
+        databroker.assets.utils.install_sentinels(db.reg.config, version=1)
+    except Exception:
+        pass
+
+    return db
+
+
+@pytest.fixture(scope="function")
+def RE(db):
+    loop = asyncio.new_event_loop()
+    loop.set_debug(True)
+    RE = RunEngine({}, loop=loop)
+    RE.subscribe(db.insert)
+
+    bec = best_effort.BestEffortCallback()
+    RE.subscribe(bec)
+
+    bec.disable_baseline()
+    bec.disable_heading()
+    bec.disable_table()
+    bec.disable_plots()
+
+    return RE
+
+
+@pytest.fixture(scope="function")
+def db_with_bluesky():
+    from sirepo_bluesky.madx_handler import MADXFileHandler
+    from sirepo_bluesky.shadow_handler import ShadowFileHandler
+    from sirepo_bluesky.srw_handler import SRWFileHandler
+
     """Return a data broker"""
     # MongoDB backend:
     db = Broker.named("local")  # mongodb backend
@@ -36,11 +67,11 @@ def db():
 
 
 @pytest.fixture(scope="function")
-def RE(db):
+def RE_with_bluesky(db_with_bluesky):
     loop = asyncio.new_event_loop()
     loop.set_debug(True)
     RE = RunEngine({}, loop=loop)
-    RE.subscribe(db.insert)
+    RE.subscribe(db_with_bluesky.insert)
 
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)
@@ -71,7 +102,7 @@ def agent(db):
     agent = Agent(
         dofs=dofs,
         tasks=tasks,
-        digestion=test_functions.himmelblau_digestion,
+        digestion=test_functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,
@@ -123,15 +154,17 @@ def make_dirs():
     _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 
 
-@pytest.fixture(scope="function")
-def srw_tes_simulation(make_dirs):
-    connection = SirepoBluesky("http://localhost:8000")
-    data, _ = connection.auth("srw", "00000002")
-    return connection
+# @pytest.fixture(scope="function")
+# def srw_tes_simulation(make_dirs):
+#     from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
+#     connection = SirepoBluesky("http://localhost:8000")
+#     data, _ = connection.auth("srw", "00000002")
+#     return connection
 
 
-@pytest.fixture(scope="function")
-def shadow_tes_simulation(make_dirs):
-    connection = SirepoBluesky("http://localhost:8000")
-    data, _ = connection.auth("shadow", "00000002")
-    return connection
+# @pytest.fixture(scope="function")
+# def shadow_tes_simulation(make_dirs):
+#     from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
+#     connection = SirepoBluesky("http://localhost:8000")
+#     data, _ = connection.auth("shadow", "00000002")
+#     return connection

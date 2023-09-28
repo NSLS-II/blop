@@ -1,5 +1,7 @@
 import logging
+import os
 import time as ttime
+import uuid
 import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -14,77 +16,58 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
+from botorch.acquisition.objective import ScalarizedPosteriorTransform
+from botorch.models.deterministic import GenericDeterministicModel
+from botorch.models.model_list_gp_regression import ModelListGP
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
 from .. import utils
-from . import models
-from .acquisition import default_acquisition_plan
+from . import acquisition, models
+from .acquisition import ACQ_FUNC_CONFIG, default_acquisition_plan
 from .digestion import default_digestion_function
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
 mpl.rc("image", cmap="coolwarm")
 
-DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
-DEFAULT_COLORMAP = "turbo"
-
 
 MAX_TEST_INPUTS = 2**11
 
-
 TASK_CONFIG = {}
-
-ACQ_FUNC_CONFIG = {
-    "quasi-random": {
-        "identifiers": ["qr", "quasi-random"],
-        "pretty_name": "Quasi-random",
-        "description": "Sobol-sampled quasi-random points.",
-    },
-    "expected_mean": {
-        "identifiers": ["em", "expected_mean"],
-        "pretty_name": "Expected mean",
-        "description": "The expected value at each input.",
-    },
-    "expected_improvement": {
-        "identifiers": ["ei", "expected_improvement"],
-        "pretty_name": "Expected improvement",
-        "description": r"The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.",
-    },
-    "probability_of_improvement": {
-        "identifiers": ["pi", "probability_of_improvement"],
-        "pretty_name": "Probability of improvement",
-        "description": "The probability that this input improves on the current maximum.",
-    },
-    "upper_confidence_bound": {
-        "identifiers": ["ucb", "upper_confidence_bound"],
-        "default_args": {"z": 2},
-        "pretty_name": "Upper confidence bound",
-        "description": r"The expected value, plus some multiple of the uncertainty (typically \mu + 2\sigma).",
-    },
-}
 
 TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
 
+DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
+DEFAULT_COLORMAP = "turbo"
+DEFAULT_SCATTER_SIZE = 16
+
 
 def _validate_and_prepare_dofs(dofs):
-    for dof in dofs:
+    for i_dof, dof in enumerate(dofs):
         if not isinstance(dof, Mapping):
             raise ValueError("Supplied dofs must be an iterable of mappings (e.g. a dict)!")
         if "device" not in dof.keys():
             raise ValueError("Each DOF must have a device!")
 
         dof["device"].kind = "hinted"
+        dof["name"] = dof["device"].name if hasattr(dof["device"], "name") else f"x{i_dof+1}"
 
         if "limits" not in dof.keys():
             dof["limits"] = (-np.inf, np.inf)
         dof["limits"] = tuple(np.array(dof["limits"], dtype=float))
+
+        if "tags" not in dof.keys():
+            dof["tags"] = []
 
         # dofs are passive by default
         dof["kind"] = dof.get("kind", "passive")
         if dof["kind"] not in ["active", "passive"]:
             raise ValueError('DOF kinds must be one of "active" or "passive"')
 
+        # active dofs are on by default, passive dofs are off by default
         dof["mode"] = dof.get("mode", "on" if dof["kind"] == "active" else "off")
         if dof["mode"] not in ["on", "off"]:
             raise ValueError('DOF modes must be one of "on" or "off"')
@@ -106,6 +89,8 @@ def _validate_and_prepare_tasks(tasks):
             raise ValueError("Supplied tasks must be an iterable of mappings (e.g. a dict)!")
         if task["kind"] not in ["minimize", "maximize"]:
             raise ValueError('"mode" must be specified as either "minimize" or "maximize"')
+        if "name" not in task.keys():
+            task["name"] = task["key"]
         if "weight" not in task.keys():
             task["weight"] = 1
         if "limits" not in task.keys():
@@ -175,7 +160,11 @@ class Agent:
         self.digestion = kwargs.get("digestion", default_digestion_function)
         self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
 
+        self.trigger_delay = kwargs.get("trigger_delay", 0)
+
         self.acq_func_config = kwargs.get("acq_func_config", ACQ_FUNC_CONFIG)
+
+        self.sample_center_on_init = kwargs.get("sample_center_on_init", False)
 
         self.table = pd.DataFrame()
 
@@ -183,12 +172,14 @@ class Agent:
         self._train_models = True
         self.a_priori_hypers = None
 
-    def _subset_inputs_sampler(self, kind=None, mode=None, n=MAX_TEST_INPUTS):
+        self.plots = {"tasks": {}}
+
+    def reset(self):
         """
-        Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
+        Reset the agent.
         """
-        transform = self._subset_input_transform(kind=kind, mode=mode)
-        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._len_subset_dofs(kind=kind, mode=mode)))
+        self.table = pd.DataFrame()
+        self._initialized = False
 
     def initialize(
         self,
@@ -209,6 +200,11 @@ class Agent:
 
         if hypers is not None:
             self.a_priori_hypers = self.load_hypers(hypers)
+
+        if data is not None:
+            new_table = yield from self.acquire(self._acq_func_bounds.mean(axis=0))
+            new_table.loc[:, "acq_func"] = "sample_center_on_init"
+            self.tell(new_table=new_table, train=False)
 
         if data is not None:
             if type(data) == str:
@@ -237,33 +233,27 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        fitnesses = self.task_fitnesses  # computes from self.table
-
-        # update fitness estimates
-        self.table.loc[:, fitnesses.columns] = fitnesses.values
-        self.table.loc[:, "total_fitness"] = fitnesses.values.sum(axis=1)
-
-        skew_dims = [tuple(np.arange(self._len_subset_dofs(mode="on")))]
+        skew_dims = self.latent_dim_tuples
 
         if self._initialized:
             cached_hypers = self.hypers
 
-        feasibility = ~fitnesses.isna().any(axis=1)
+        inputs = self.inputs.loc[:, self._subset_dof_names(mode="on")].values
 
-        if not feasibility.sum() >= 2:
-            raise ValueError("There must be at least two feasible data points per task!")
+        for i, task in enumerate(self.tasks):
+            self.table.loc[:, f"{task['key']}_fitness"] = targets = self._get_task_fitness(i)
+            train_index = ~np.isnan(targets)
 
-        inputs = self.inputs.loc[feasibility, self._subset_dof_names(mode="on")].values
-        train_inputs = torch.tensor(inputs).double()  # .unsqueeze(0)
+            if not train_index.sum() >= 2:
+                raise ValueError("There must be at least two valid data points per task!")
 
-        for task in self.tasks:
-            targets = self.table.loc[feasibility, f'{task["key"]}_fitness'].values
-            train_targets = torch.tensor(targets).double().unsqueeze(-1)  # .unsqueeze(0)
+            train_inputs = torch.tensor(inputs[train_index]).double()
+            train_targets = torch.tensor(targets[train_index]).double().unsqueeze(-1)  # .unsqueeze(0)
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
                     torch.tensor(1e-6).square(),
-                    torch.tensor(1e-2).square(),
+                    torch.tensor(1e0).square(),
                 ),
             ).double()
 
@@ -278,18 +268,12 @@ class Agent:
                 outcome_transform=outcome_transform,
             ).double()
 
-        # this ensures that we have equal weight between task fitness and feasibility fitness
-        self.task_scalarization = botorch.acquisition.objective.ScalarizedPosteriorTransform(
-            weights=torch.tensor([*torch.ones(self.n_tasks), self.fitness_variance.sum().sqrt()]).double(),
-            offset=0,
-        )
-
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            torch.tensor(feasibility).long(), learn_additional_noise=True
+            self.all_tasks_valid.long(), learn_additional_noise=True
         ).double()
 
         self.classifier = models.LatentDirichletClassifier(
-            train_inputs=torch.tensor(self.inputs.values).double(),
+            train_inputs=torch.tensor(inputs).double(),
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
@@ -309,66 +293,60 @@ class Agent:
                 else:
                     raise RuntimeError("Could not fit model on initialization!")
 
-        feasibility_fitness_model = botorch.models.deterministic.GenericDeterministicModel(
-            f=lambda X: -self.classifier.log_prob(X).square()
-        )
-
-        self.model_list = botorch.models.model.ModelList(*[task["model"] for task in self.tasks], feasibility_fitness_model)
+        self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1].squeeze(-1))
 
     @property
-    def task_fitnesses(self):
-        df = pd.DataFrame(index=self.table.index)
-        for task in self.tasks:
-            name = f'{task["key"]}_fitness'
+    def model(self):
+        """
+        A model encompassing all the tasks. A single GP in the single-task case, or a model list.
+        """
+        return ModelListGP(*[task["model"] for task in self.tasks]) if self.num_tasks > 1 else self.tasks[0]["model"]
 
-            df.loc[:, name] = task["weight"] * self.table.loc[:, task["key"]]
+    def _get_task_fitness(self, task_index):
+        """
+        Returns the fitness for a task given the task index.
+        """
+        task = self.tasks[task_index]
 
-            # check that task values are inside acceptable values
-            valid = (df.loc[:, name] > task["limits"][0]) & (df.loc[:, name] < task["limits"][1])
+        targets = self.table.loc[:, task["key"]].values.copy()
 
-            # transform if needed
-            if "transform" in task.keys():
-                if task["transform"] == "log":
-                    valid &= df.loc[:, name] > 0
-                    df.loc[valid, name] = np.log(df.loc[valid, name])
-                    df.loc[~valid, name] = np.nan
+        # check that task values are inside acceptable values
+        valid = (targets > task["limits"][0]) & (targets < task["limits"][1])
+        targets = np.where(valid, targets, np.nan)
 
-            if task["kind"] == "minimize":
-                df.loc[valid, name] *= -1
-        return df
+        # transform if needed
+        if "transform" in task.keys():
+            if task["transform"] == "log":
+                targets = np.where(targets > 0, np.log(targets), np.nan)
 
-    def _dof_kind_mask(self, kind=None):
-        return [dof["kind"] == kind if kind is not None else True for dof in self.dofs]
+        if task["kind"] == "minimize":
+            targets *= -1
 
-    def _dof_mode_mask(self, mode=None):
-        return [dof["mode"] == mode if mode is not None else True for dof in self.dofs]
+        return targets
 
-    def _dof_mask(self, kind=None, mode=None):
-        return [(k and m) for k, m in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode))]
+    @property
+    def fitnesses(self):
+        """
+        Returns a (num_tasks x n_obs) array of fitnesses
+        """
+        return torch.cat([torch.tensor(self._get_task_fitness(i))[..., None] for i in range(self.num_tasks)], dim=1)
 
-    def _subset_dofs(self, kind=None, mode=None):
-        return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode)) if m]
+    @property
+    def scalarized_fitness(self):
+        return (self.fitnesses * self.task_weights).sum(axis=-1)
 
-    def _len_subset_dofs(self, kind=None, mode=None):
-        return len(self._subset_dofs(kind, mode))
+    @property
+    def best_scalarized_fitness(self):
+        f = self.scalarized_fitness
+        return np.where(np.isnan(f), -np.inf, f).max()
 
-    def _subset_devices(self, kind=None, mode=None):
-        return [dof["device"] for dof in self._subset_dofs(kind, mode)]
+    @property
+    def all_tasks_valid(self):
+        return ~torch.isnan(self.scalarized_fitness)
 
-    def _read_subset_devices(self, kind=None, mode=None):
-        return [device.read()[device.name]["value"] for device in self._subset_devices(kind, mode)]
-
-    def _subset_dof_names(self, kind=None, mode=None):
-        return [device.name for device in self._subset_devices(kind, mode)]
-
-    def _subset_dof_limits(self, kind=None, mode=None):
-        dofs_subset = self._subset_dofs(kind, mode)
-        if len(dofs_subset) > 0:
-            return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
-        return torch.empty((2, 0))
-
-    def test_inputs(self, n=MAX_TEST_INPUTS):
-        return utils.sobol_sampler(self._acq_func_bounds, n=n)
+    @property
+    def target_names(self):
+        return [f'{task["key"]}_fitness' for task in self.tasks]
 
     @property
     def test_inputs_grid(self):
@@ -397,7 +375,7 @@ class Agent:
         ).T
 
     @property
-    def n_tasks(self):
+    def num_tasks(self):
         return len(self.tasks)
 
     @property
@@ -420,13 +398,78 @@ class Agent:
     def task_signs(self):
         return torch.tensor([(1 if task["kind"] == "maximize" else -1) for task in self.tasks], dtype=torch.long)
 
-    def _subset_input_transform(self, kind=None, mode=None):
-        limits = self._subset_dof_limits(kind, mode)
+    def _dof_kind_mask(self, kind=None):
+        return [dof["kind"] == kind if kind is not None else True for dof in self.dofs]
+
+    def _dof_mode_mask(self, mode=None):
+        return [dof["mode"] == mode if mode is not None else True for dof in self.dofs]
+
+    def _dof_tags_mask(self, tags=[]):
+        return [np.isin(dof["tags"], tags).any() if tags else True for dof in self.dofs]
+
+    def _dof_mask(self, kind=None, mode=None, tags=[]):
+        return [
+            (k and m and t)
+            for k, m, t in zip(self._dof_kind_mask(kind), self._dof_mode_mask(mode), self._dof_tags_mask(tags))
+        ]
+
+    def activate_dofs(self, kind=None, mode=None, tags=[]):
+        for dof in self._subset_dofs(kind, mode, tags):
+            dof["mode"] = "on"
+
+    def deactivate_dofs(self, kind=None, mode=None, tags=[]):
+        for dof in self._subset_dofs(kind, mode, tags):
+            dof["mode"] = "off"
+
+    def _subset_dofs(self, kind=None, mode=None, tags=[]):
+        return [dof for dof, m in zip(self.dofs, self._dof_mask(kind, mode, tags)) if m]
+
+    def _len_subset_dofs(self, kind=None, mode=None, tags=[]):
+        return len(self._subset_dofs(kind, mode, tags))
+
+    def _subset_devices(self, kind=None, mode=None, tags=[]):
+        return [dof["device"] for dof in self._subset_dofs(kind, mode, tags)]
+
+    def _read_subset_devices(self, kind=None, mode=None, tags=[]):
+        return [device.read()[device.name]["value"] for device in self._subset_devices(kind, mode, tags)]
+
+    def _subset_dof_names(self, kind=None, mode=None, tags=[]):
+        return [device.name for device in self._subset_devices(kind, mode, tags)]
+
+    def _subset_dof_limits(self, kind=None, mode=None, tags=[]):
+        dofs_subset = self._subset_dofs(kind, mode, tags)
+        if len(dofs_subset) > 0:
+            return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
+        return torch.empty((2, 0))
+
+    @property
+    def latent_dim_tuples(self):
+        """
+        Returns a list of tuples, where each tuple represent a group of dimension to find a latent representation of.
+        """
+
+        latent_dim_labels = [dof.get("latent_group", str(uuid.uuid4())) for dof in self._subset_dofs(mode="on")]
+        u, uinv = np.unique(latent_dim_labels, return_inverse=True)
+
+        return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
+
+    def test_inputs(self, n=MAX_TEST_INPUTS):
+        return utils.sobol_sampler(self._acq_func_bounds, n=n)
+
+    def _subset_input_transform(self, kind=None, mode=None, tags=[]):
+        limits = self._subset_dof_limits(kind, mode, tags)
         offset = limits.min(dim=0).values
         coefficient = limits.max(dim=0).values - offset
         return botorch.models.transforms.input.AffineInputTransform(
             d=limits.shape[-1], coefficient=coefficient, offset=offset
         )
+
+    def _subset_inputs_sampler(self, kind=None, mode=None, tags=[], n=MAX_TEST_INPUTS):
+        """
+        Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
+        """
+        transform = self._subset_input_transform(kind, mode, tags)
+        return transform.untransform(utils.normalized_sobol_sampler(n, d=self._len_subset_dofs(kind, mode, tags)))
 
     def save_data(self, filepath="./self_data.h5"):
         """
@@ -506,51 +549,78 @@ class Agent:
 
         print("\n\n".join(entries))
 
-    def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, acq_func_args={}, **kwargs):
+    def get_acquisition_function(self, acq_func_identifier="ei", return_metadata=False, **acq_func_kwargs):
+        """
+        Generates an acquisition function from a supplied identifier.
+        """
+
         if not self._initialized:
             raise RuntimeError(
                 f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
             )
 
-        if acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_improvement"]["identifiers"]:
-            acq_func = botorch.acquisition.analytic.LogExpectedImprovement(
-                self.model_list,
-                best_f=self.scalarized_fitness.max(),
-                posterior_transform=self.task_scalarization,
-                **kwargs,
-            )
-            acq_func_meta = {"name": "expected improvement", "args": {}}
+        acq_func_name = None
+        for _acq_func_name in ACQ_FUNC_CONFIG.keys():
+            if acq_func_identifier.lower() in ACQ_FUNC_CONFIG[_acq_func_name]["identifiers"]:
+                acq_func_name = _acq_func_name
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["probability_of_improvement"]["identifiers"]:
-            acq_func = botorch.acquisition.analytic.LogProbabilityOfImprovement(
-                self.model_list,
-                best_f=self.scalarized_fitness.max(),
-                posterior_transform=self.task_scalarization,
-                **kwargs,
-            )
-            acq_func_meta = {"name": "probability of improvement", "args": {}}
+        if acq_func_name is None:
+            raise ValueError(f'Unrecognized acquisition function "{acq_func_identifier}".')
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["expected_mean"]["identifiers"]:
-            acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
-                self.model_list,
-                beta=0,
-                posterior_transform=self.task_scalarization,
-                **kwargs,
-            )
-            acq_func_meta = {"name": "expected mean"}
+        if ACQ_FUNC_CONFIG[acq_func_name]["multitask_only"] and (self.num_tasks == 1):
+            raise ValueError(f'Acquisition function "{acq_func_name}" is only for multi-task optimization problems!')
 
-        elif acq_func_identifier.lower() in ACQ_FUNC_CONFIG["upper_confidence_bound"]["identifiers"]:
-            beta = ACQ_FUNC_CONFIG["upper_confidence_bound"]["default_args"]["z"] ** 2
-            acq_func = botorch.acquisition.analytic.UpperConfidenceBound(
-                self.model_list,
+        if acq_func_name == "expected_improvement":
+            acq_func = acquisition.ConstrainedLogExpectedImprovement(
+                constraint=self.constraint,
+                model=self.model,
+                best_f=self.best_scalarized_fitness,
+                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
+            )
+            acq_func_meta = {"name": acq_func_name, "args": {}}
+
+        elif acq_func_name == "probability_of_improvement":
+            acq_func = acquisition.ConstrainedLogProbabilityOfImprovement(
+                constraint=self.constraint,
+                model=self.model,
+                best_f=self.best_scalarized_fitness,
+                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
+            )
+            acq_func_meta = {"name": acq_func_name, "args": {}}
+
+        elif acq_func_name == "lower_bound_max_value_entropy":
+            acq_func = acquisition.qConstrainedLowerBoundMaxValueEntropy(
+                constraint=self.constraint,
+                model=self.model,
+                candidate_set=self.test_inputs(n=1024).squeeze(1),
+            )
+            acq_func_meta = {"name": acq_func_name, "args": {}}
+
+        elif acq_func_name == "noisy_expected_hypervolume_improvement":
+            acq_func = acquisition.qConstrainedNoisyExpectedHypervolumeImprovement(
+                constraint=self.constraint,
+                model=self.model,
+                ref_point=self.train_targets.min(dim=0).values,
+                X_baseline=self.train_inputs,
+                prune_baseline=True,
+            )
+            acq_func_meta = {"name": acq_func_name, "args": {}}
+
+        elif acq_func_name == "upper_confidence_bound":
+            config = ACQ_FUNC_CONFIG["upper_confidence_bound"]
+            beta = acq_func_kwargs.get("beta", config["default_args"]["beta"])
+
+            acq_func = acquisition.ConstrainedUpperConfidenceBound(
+                constraint=self.constraint,
+                model=self.model,
                 beta=beta,
-                posterior_transform=self.task_scalarization,
-                **kwargs,
+                posterior_transform=ScalarizedPosteriorTransform(weights=self.task_weights, offset=0),
             )
-            acq_func_meta = {"name": "upper confidence bound", "args": {"beta": beta}}
+            acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
-        else:
-            raise ValueError(f'Unrecognized acquisition acq_func_identifier "{acq_func_identifier}".')
+        elif acq_func_name == "expected_mean":
+            acq_func = self.get_acquisition_function(acq_func_identifier="ucb", beta=0, return_metadata=False)
+            acq_func_meta = {"name": acq_func_name, "args": {}}
 
         return (acq_func, acq_func_meta) if return_metadata else acq_func
 
@@ -584,8 +654,8 @@ class Agent:
             active_X = np.concatenate(active_x_list, axis=0)
             self.forget(self.table.index[-(n - 1) :])
 
-            if route:
-                active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
+        if route:
+            active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
         return (active_X, acq_func_meta) if return_metadata else active_X
 
@@ -605,7 +675,7 @@ class Agent:
         )
 
         BATCH_SIZE = 1
-        NUM_RESTARTS = 8
+        NUM_RESTARTS = 4
         RAW_SAMPLES = 256
 
         candidates, _ = botorch.optim.optimize_acqf(
@@ -639,7 +709,10 @@ class Agent:
             passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
 
             uid = yield from self.acquisition_plan(
-                active_devices, active_inputs.astype(float), [*self.dets, *passive_devices]
+                active_devices,
+                active_inputs.astype(float),
+                [*self.dets, *passive_devices],
+                delay=self.trigger_delay,
             )
 
             products = self.digestion(self.db, uid)
@@ -668,6 +741,7 @@ class Agent:
         n_iter=1,
         n_per_iter=1,
         reuse_hypers=True,
+        train=True,
         upsample=1,
         verbose=True,
         plots=[],
@@ -678,40 +752,33 @@ class Agent:
         It should be passed to a Bluesky RunEngine.
         """
 
-        for iteration in range(n_iter):
+        for i in range(n_iter):
             x, acq_func_meta = self.ask(
                 n=n_per_iter, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
             )
 
             new_table = yield from self.acquire(x)
-
             new_table.loc[:, "acq_func"] = acq_func_meta["name"]
-
-            self.tell(new_table=new_table, reuse_hypers=reuse_hypers)
+            self.tell(new_table=new_table, train=train)
 
     @property
     def inputs(self):
         return self.table.loc[:, self._subset_dof_names(mode="on")].astype(float)
 
     @property
-    def fitness_variance(self):
-        return torch.tensor(np.nanvar(self.task_fitnesses.values, axis=0))
+    def best_inputs(self):
+        return self.inputs.values[np.nanargmax(self.scalarized_fitness)]
 
-    @property
-    def scalarized_fitness(self):
-        return self.task_fitnesses.sum(axis=1)
-
-    # @property
-    # def best_sum_of_tasks_inputs(self):
-    #     return self.inputs[np.nanargmax(self.task_fitnesses.sum(axis=1))]
-
-    @property
     def go_to(self, inputs):
-        yield from bps.mv(*[_ for items in zip(self._subset_dofs(kind="active"), np.atleast_1d(inputs).T) for _ in items])
+        args = []
+        for dof, value in zip(self._subset_dofs(mode="on"), np.atleast_1d(inputs).T):
+            if dof["kind"] == "active":
+                args.append(dof["device"])
+                args.append(value)
+        yield from bps.mv(*args)
 
-    # @property
-    # def go_to_best_sum_of_tasks(self):
-    #     yield from self.go_to(self.best_sum_of_tasks_inputs)
+    def go_to_best(self):
+        yield from self.go_to(self.best_inputs)
 
     def plot_tasks(self, **kwargs):
         if self._len_subset_dofs(kind="active", mode="on") == 1:
@@ -721,9 +788,9 @@ class Agent:
 
     def _plot_tasks_one_dof(self, size=16, lw=1e0):
         self.task_fig, self.task_axes = plt.subplots(
-            self.n_tasks,
+            self.num_tasks,
             1,
-            figsize=(6, 4 * self.n_tasks),
+            figsize=(6, 4 * self.num_tasks),
             sharex=True,
             constrained_layout=True,
         )
@@ -731,6 +798,8 @@ class Agent:
         self.task_axes = np.atleast_1d(self.task_axes)
 
         for itask, task in enumerate(self.tasks):
+            task_plots = self.plots["tasks"][task["name"]] = {}
+
             color = DEFAULT_COLOR_LIST[itask]
 
             self.task_axes[itask].set_ylabel(task["key"])
@@ -740,12 +809,7 @@ class Agent:
             task_mean = task_posterior.mean.detach().numpy()
             task_sigma = task_posterior.variance.sqrt().detach().numpy()
 
-            self.task_axes[itask].scatter(
-                self.inputs.loc[:, self._subset_dof_names(kind="active", mode="on")],
-                self.table.loc[:, f'{task["key"]}_fitness'],
-                s=size,
-                color=color,
-            )
+            task_plots["sampled"] = self.task_axes[itask].scatter([], [], s=size, color=color)
 
             on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
@@ -766,9 +830,9 @@ class Agent:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         self.task_fig, self.task_axes = plt.subplots(
-            self.n_tasks,
+            len(self.tasks),
             3,
-            figsize=(10, 4 * self.n_tasks),
+            figsize=(10, 4 * len(self.tasks)),
             sharex=True,
             sharey=True,
             constrained_layout=True,
@@ -777,10 +841,8 @@ class Agent:
         self.task_axes = np.atleast_2d(self.task_axes)
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        feasible = ~self.task_fitnesses.isna().any(axis=1)
-
         for itask, task in enumerate(self.tasks):
-            sampled_fitness = np.where(feasible, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
+            sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
             task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
             task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
@@ -808,16 +870,16 @@ class Agent:
                 if not x.ndim == 3:
                     raise ValueError()
                 self.task_axes[itask, 1].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
+                    x[..., 0].detach().numpy(),
+                    x[..., 1].detach().numpy(),
                     task_mean[..., 0].detach().numpy(),
                     shading=shading,
                     cmap=cmap,
                     norm=task_norm,
                 )
                 sigma_ax = self.task_axes[itask, 2].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
+                    x[..., 0].detach().numpy(),
+                    x[..., 1].detach().numpy(),
                     task_sigma[..., 0].detach().numpy(),
                     shading=shading,
                     cmap=cmap,
@@ -917,8 +979,8 @@ class Agent:
             if gridded:
                 self.acq_axes[iacq_func].set_title(acq_func_meta["name"])
                 obj_ax = self.acq_axes[iacq_func].pcolormesh(
-                    x[..., 0],
-                    x[..., 1],
+                    x[..., 0].detach().numpy(),
+                    x[..., 1].detach().numpy(),
                     obj.detach().numpy(),
                     shading=shading,
                     cmap=cmap,
@@ -940,37 +1002,39 @@ class Agent:
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
-    def plot_feasibility(self, **kwargs):
+    def plot_validity(self, **kwargs):
         if self._len_subset_dofs(kind="active", mode="on") == 1:
-            self._plot_feas_one_dof(**kwargs)
+            self._plot_valid_one_dof(**kwargs)
 
         else:
-            self._plot_feas_many_dofs(**kwargs)
+            self._plot_valid_many_dofs(**kwargs)
 
-    def _plot_feas_one_dof(self, size=16, lw=1e0):
-        self.feas_fig, self.feas_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
+    def _plot_valid_one_dof(self, size=16, lw=1e0):
+        self.valid_fig, self.valid_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
 
         x = self.test_inputs_grid
         *input_shape, input_dim = x.shape
-        log_prob = self.classifier.log_prob(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+        constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
-        self.feas_ax.scatter(self.inputs.values, ~self.task_fitnesses.isna().any(axis=1), s=size)
+        self.valid_ax.scatter(self.inputs.values, self.all_tasks_valid, s=size)
 
         on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
-        self.feas_ax.plot(x[..., on_dofs_are_active_mask].squeeze(), log_prob.exp().detach().numpy(), lw=lw)
+        self.valid_ax.plot(x[..., on_dofs_are_active_mask].squeeze(), constraint.detach().numpy(), lw=lw)
 
-        self.feas_ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[0]["limits"])
+        self.valid_ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
-    def _plot_feas_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
-        self.feas_fig, self.feas_axes = plt.subplots(1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True)
+    def _plot_valid_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
+        self.valid_fig, self.valid_axes = plt.subplots(
+            1, 2, figsize=(8, 4), sharex=True, sharey=True, constrained_layout=True
+        )
 
         if gridded is None:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
-        data_ax = self.feas_axes[0].scatter(
+        data_ax = self.valid_axes[0].scatter(
             *self.inputs.values.T[:2],
-            c=~self.task_fitnesses.isna().any(axis=1),
+            c=self.all_tasks_valid,
             s=size,
             vmin=0,
             vmax=1,
@@ -979,32 +1043,32 @@ class Agent:
 
         x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
         *input_shape, input_dim = x.shape
-        log_prob = self.classifier.log_prob(x.reshape(-1, 1, input_dim)).reshape(input_shape)
+        constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
         if gridded:
-            self.feas_axes[1].pcolormesh(
-                x[..., 0],
-                x[..., 1],
-                log_prob.exp().detach().numpy(),
+            self.valid_axes[1].pcolormesh(
+                x[..., 0].detach().numpy(),
+                x[..., 1].detach().numpy(),
+                constraint.detach().numpy(),
                 shading=shading,
                 cmap=cmap,
                 vmin=0,
                 vmax=1,
             )
 
-            # self.acq_fig.colorbar(obj_ax, ax=self.feas_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
+            # self.acq_fig.colorbar(obj_ax, ax=self.valid_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
 
         else:
-            # self.feas_axes.set_title(acq_func_meta["name"])
-            self.feas_axes[1].scatter(
+            # self.valid_axes.set_title(acq_func_meta["name"])
+            self.valid_axes[1].scatter(
                 x.detach().numpy()[..., axes[0]],
                 x.detach().numpy()[..., axes[1]],
-                c=log_prob.exp().detach().numpy(),
+                c=constraint.detach().numpy(),
             )
 
-        self.feas_fig.colorbar(data_ax, ax=self.feas_axes[:2], location="bottom", aspect=32, shrink=0.8)
+        self.valid_fig.colorbar(data_ax, ax=self.valid_axes[:2], location="bottom", aspect=32, shrink=0.8)
 
-        for ax in self.feas_axes.ravel():
+        for ax in self.valid_axes.ravel():
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
             ax.set_ylim(*self._subset_dofs(kind="active", mode="on")[axes[1]]["limits"])
 
@@ -1031,9 +1095,9 @@ class Agent:
 
         num_task_plots = 1
         if show_all_tasks:
-            num_task_plots = self.n_tasks + 1
+            num_task_plots = self.num_tasks + 1
 
-        self.n_tasks + 1 if self.n_tasks > 1 else 1
+        self.num_tasks + 1 if self.num_tasks > 1 else 1
 
         hist_fig, hist_axes = plt.subplots(
             num_task_plots, 1, figsize=(6, 4 * num_task_plots), sharex=True, constrained_layout=True, dpi=200
@@ -1053,7 +1117,7 @@ class Agent:
                 hist_axes[itask].plot(x, y, lw=5e-1, c="k")
                 hist_axes[itask].set_ylabel(task["key"])
 
-        y = self.table.total_fitness
+        y = self.scalarized_fitness
 
         cummax_y = np.array([np.nanmax(y[: i + 1]) for i in range(len(y))])
 
