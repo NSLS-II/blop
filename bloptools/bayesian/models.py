@@ -25,7 +25,7 @@ class LatentDirichletClassifier(LatentGP):
     def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
         super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
 
-    def probabilities(self, x, n_samples=256):
+    def probabilities(self, x, n_samples=1024):
         """
         Takes in a (..., m) dimension tensor and returns a (..., n_classes) tensor
         """
