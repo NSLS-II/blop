@@ -187,7 +187,7 @@ class Agent:
     def initialize(
         self,
         acq_func=None,
-        n_init=4,
+        n=4,
         data=None,
         hypers=None,
     ):
@@ -216,7 +216,7 @@ class Agent:
                 new_table = yield from self.acquire(self.acq_func_bounds.mean(axis=0))
                 new_table.loc[:, "acq_func"] = "sample_center_on_init"
                 self.tell(new_table=new_table, train=False)
-            yield from self.learn("qr", n_iter=1, n_per_iter=n_init, route=True)
+            yield from self.learn("qr", iterations=1, n=n, route=True)
 
         else:
             raise Exception(
@@ -262,7 +262,7 @@ class Agent:
                     torch.tensor(1e-4).square(),
                     torch.tensor(1 / task["min_snr"]).square(),
                 ),
-                noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
+                #noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
             ).double()
 
             outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
@@ -656,8 +656,8 @@ class Agent:
     def learn(
         self,
         acq_func_identifier,
-        n_iter=1,
-        n_per_iter=1,
+        iterations=1,
+        n=1,
         reuse_hypers=True,
         train=True,
         upsample=1,
@@ -670,9 +670,9 @@ class Agent:
         It should be passed to a Bluesky RunEngine.
         """
 
-        for i in range(n_iter):
+        for i in range(iterations):
             x, acq_func_meta = self.ask(
-                n=n_per_iter, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
+                n=n, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
             )
 
             new_table = yield from self.acquire(x)
@@ -715,24 +715,27 @@ class Agent:
 
         self.task_axes = np.atleast_1d(self.task_axes)
 
-        for itask, task in enumerate(self.tasks):
+        for task_index, task in enumerate(self.tasks):
             task_plots = self.plots["tasks"][task["name"]] = {}
 
-            color = DEFAULT_COLOR_LIST[itask]
+            task_fitness = self._get_task_fitness(task_index=task_index)
 
-            self.task_axes[itask].set_ylabel(task["key"])
+            color = DEFAULT_COLOR_LIST[task_index]
+
+            self.task_axes[task_index].set_ylabel(task["key"])
 
             x = self.test_inputs_grid
             task_posterior = task["model"].posterior(x)
             task_mean = task_posterior.mean.detach().numpy()
             task_sigma = task_posterior.variance.sqrt().detach().numpy()
 
-            task_plots["sampled"] = self.task_axes[itask].scatter([], [], s=size, color=color)
+            sampled_inputs = self.inputs.values[:, self._dof_mask(kind="active", mode="on")][:,0]
+            task_plots["sampled"] = self.task_axes[task_index].scatter(sampled_inputs, task_fitness, s=size, color=color)
 
             on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
             for z in [0, 1, 2]:
-                self.task_axes[itask].fill_between(
+                self.task_axes[task_index].fill_between(
                     x[..., on_dofs_are_active_mask].squeeze(),
                     (task_mean - z * task_sigma).squeeze(),
                     (task_mean + z * task_sigma).squeeze(),
@@ -741,7 +744,7 @@ class Agent:
                     alpha=0.5**z,
                 )
 
-            self.task_axes[itask].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
+            self.task_axes[task_index].set_xlim(self._subset_dofs(kind="active", mode="on")[0]["limits"])
 
     def _plot_tasks_many_dofs(self, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16):
         if gridded is None:
@@ -759,23 +762,26 @@ class Agent:
         self.task_axes = np.atleast_2d(self.task_axes)
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        for itask, task in enumerate(self.tasks):
-            sampled_fitness = np.where(self.all_tasks_valid, self.table.loc[:, f'{task["key"]}_fitness'].values, np.nan)
-            task_vmin, task_vmax = np.nanpercentile(sampled_fitness, q=[1, 99])
+        for task_index, task in enumerate(self.tasks):
+
+            
+            task_fitness = self._get_task_fitness(task_index=task_index)
+            
+            task_vmin, task_vmax = np.nanpercentile(task_fitness, q=[1, 99])
             task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
             # if task["transform"] == "log":
             #     task_norm = mpl.colors.LogNorm(task_vmin, task_vmax)
             # else:
 
-            self.task_axes[itask, 0].set_ylabel(f'{task["key"]}_fitness')
+            self.task_axes[task_index, 0].set_ylabel(f'{task["key"]}_fitness')
 
-            self.task_axes[itask, 0].set_title("samples")
-            self.task_axes[itask, 1].set_title("posterior mean")
-            self.task_axes[itask, 2].set_title("posterior std. dev.")
+            self.task_axes[task_index, 0].set_title("samples")
+            self.task_axes[task_index, 1].set_title("posterior mean")
+            self.task_axes[task_index, 2].set_title("posterior std. dev.")
 
-            data_ax = self.task_axes[itask, 0].scatter(
-                *self.inputs.values.T[axes], s=size, c=sampled_fitness, norm=task_norm, cmap=cmap
+            data_ax = self.task_axes[task_index, 0].scatter(
+                *self.inputs.values.T[axes], s=size, c=task_fitness, norm=task_norm, cmap=cmap
             )
 
             x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
@@ -787,7 +793,7 @@ class Agent:
             if gridded:
                 if not x.ndim == 3:
                     raise ValueError()
-                self.task_axes[itask, 1].pcolormesh(
+                self.task_axes[task_index, 1].pcolormesh(
                     x[..., 0].detach().numpy(),
                     x[..., 1].detach().numpy(),
                     task_mean[..., 0].detach().numpy(),
@@ -795,7 +801,7 @@ class Agent:
                     cmap=cmap,
                     norm=task_norm,
                 )
-                sigma_ax = self.task_axes[itask, 2].pcolormesh(
+                sigma_ax = self.task_axes[task_index, 2].pcolormesh(
                     x[..., 0].detach().numpy(),
                     x[..., 1].detach().numpy(),
                     task_sigma[..., 0].detach().numpy(),
@@ -804,7 +810,7 @@ class Agent:
                 )
 
             else:
-                self.task_axes[itask, 1].scatter(
+                self.task_axes[task_index, 1].scatter(
                     x.detach().numpy()[..., axes[0]],
                     x.detach().numpy()[..., axes[1]],
                     c=task_mean[..., 0].detach().numpy(),
@@ -812,7 +818,7 @@ class Agent:
                     norm=task_norm,
                     cmap=cmap,
                 )
-                sigma_ax = self.task_axes[itask, 2].scatter(
+                sigma_ax = self.task_axes[task_index, 2].scatter(
                     x.detach().numpy()[..., axes[0]],
                     x.detach().numpy()[..., axes[1]],
                     c=task_sigma[..., 0].detach().numpy(),
@@ -820,8 +826,8 @@ class Agent:
                     cmap=cmap,
                 )
 
-            self.task_fig.colorbar(data_ax, ax=self.task_axes[itask, :2], location="bottom", aspect=32, shrink=0.8)
-            self.task_fig.colorbar(sigma_ax, ax=self.task_axes[itask, 2], location="bottom", aspect=32, shrink=0.8)
+            self.task_fig.colorbar(data_ax, ax=self.task_axes[task_index, :2], location="bottom", aspect=32, shrink=0.8)
+            self.task_fig.colorbar(sigma_ax, ax=self.task_axes[task_index, 2], location="bottom", aspect=32, shrink=0.8)
 
         for ax in self.task_axes.ravel():
             ax.set_xlim(*self._subset_dofs(kind="active", mode="on")[axes[0]]["limits"])
@@ -1029,11 +1035,11 @@ class Agent:
         sample_colors = np.array(DEFAULT_COLOR_LIST)[acq_func_inverse]
 
         if show_all_tasks:
-            for itask, task in enumerate(self.tasks):
+            for task_index, task in enumerate(self.tasks):
                 y = self.table.loc[:, f'{task["key"]}_fitness'].values
-                hist_axes[itask].scatter(x, y, c=sample_colors)
-                hist_axes[itask].plot(x, y, lw=5e-1, c="k")
-                hist_axes[itask].set_ylabel(task["key"])
+                hist_axes[task_index].scatter(x, y, c=sample_colors)
+                hist_axes[task_index].plot(x, y, lw=5e-1, c="k")
+                hist_axes[task_index].set_ylabel(task["key"])
 
         y = self.scalarized_fitness
 
