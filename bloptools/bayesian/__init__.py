@@ -584,7 +584,7 @@ class Agent:
             )
 
             NUM_RESTARTS = 8
-            RAW_SAMPLES = 512
+            RAW_SAMPLES = 1024
 
             candidates, _ = botorch.optim.optimize_acqf(
                 acq_function=acq_func,

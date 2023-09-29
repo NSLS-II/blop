@@ -6,6 +6,14 @@ expected_improvement:
   multitask_only: false
   type: analytic
 
+monte_carlo_expected_improvement:
+  description: The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.
+  identifiers:
+  - qei
+  multitask_only: false
+  pretty_name: Monte Carlo Expected improvement
+  type: monte_carlo
+
 expected_mean:
   description: The expected value at each input.
   identifiers:
@@ -13,6 +21,14 @@ expected_mean:
   multitask_only: false
   pretty_name: Expected mean
   type: analytic
+
+monte_carlo_expected_mean:
+  description: The expected value at each input.
+  identifiers:
+  - qem
+  multitask_only: false
+  pretty_name: Monte Carlo expected mean
+  type: monte_carlo
 
 lower_bound_max_value_entropy:
   description: Max entropy search, basically
@@ -22,14 +38,6 @@ lower_bound_max_value_entropy:
   - gibbon
   multitask_only: false
   pretty_name: Lower bound max value entropy
-  type: monte_carlo
-
-monte_carlo_expected_improvement:
-  description: The expected value of max(f(x) - \nu, 0), where \nu is the current maximum.
-  identifiers:
-  - qei
-  multitask_only: false
-  pretty_name: Monte Carlo Expected improvement
   type: monte_carlo
 
 noisy_expected_hypervolume_improvement:
