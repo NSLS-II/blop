@@ -53,7 +53,7 @@ def default_acquisition_plan(dofs, inputs, dets, **kwargs):
 #     return uid
 
 
-class ConstraintedUpperConfidenceBound(UpperConfidenceBound):
+class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
     def __init__(self, constraint, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.constraint = constraint
@@ -63,10 +63,10 @@ class ConstraintedUpperConfidenceBound(UpperConfidenceBound):
 
         p_eff = 0.5 * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2))) * torch.clamp(self.constraint(x), min=1e-6)
 
-        return (mean if self.maximize else -mean) + sigma * np.sqrt(2) * torch.special.erfinv(2 * p_eff - 1)
+        return mean + sigma * np.sqrt(2) * torch.special.erfinv(2 * p_eff - 1)
 
 
-class ConstraintedLogExpectedImprovement(LogExpectedImprovement):
+class ConstrainedLogExpectedImprovement(LogExpectedImprovement):
     def __init__(self, constraint, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.constraint = constraint
@@ -75,7 +75,7 @@ class ConstraintedLogExpectedImprovement(LogExpectedImprovement):
         return super().forward(x) + self.constraint(x).log()
 
 
-class ConstraintedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
+class ConstrainedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
     def __init__(self, constraint, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.constraint = constraint
