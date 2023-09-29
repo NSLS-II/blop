@@ -43,91 +43,87 @@ def get_acquisition_function(agent, acq_func_identifier="qei", return_metadata=F
 
     # there is probably a better way to structure this
     if acq_func_name == "expected_improvement":
-        acq_func = analytic.WeightedLogExpectedImprovement(
+        acq_func = analytic.ConstrainedLogExpectedImprovement(
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(constraints=agent.task_weights, offset=0),
-            **acq_func_kwargs,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "monte_carlo_expected_improvement":
-        acq_func = monte_carlo.qWeightedExpectedImprovement(
+        acq_func = monte_carlo.qConstrainedExpectedImprovement(
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(constraints=agent.task_weights, offset=0),
-            **acq_func_kwargs,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "probability_of_improvement":
-        acq_func = analytic.WeightedLogProbabilityOfImprovement(
+        acq_func = analytic.ConstrainedLogProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(constraints=agent.task_weights, offset=0),
-            **acq_func_kwargs,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "monte_carlo_probability_of_improvement":
-        acq_func = monte_carlo.qWeightedProbabilityOfImprovement(
+        acq_func = monte_carlo.qConstrainedProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(constraints=agent.task_weights, offset=0),
-            **acq_func_kwargs,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "lower_bound_max_value_entropy":
-        acq_func = monte_carlo.qWeightedLowerBoundMaxValueEntropy(
+        acq_func = monte_carlo.qConstrainedLowerBoundMaxValueEntropy(
             constraint=agent.constraint,
             model=agent.model,
             candidate_set=agent.test_inputs(n=1024).squeeze(1),
-            **acq_func_kwargs,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "noisy_expected_hypervolume_improvement":
-        acq_func = monte_carlo.qWeightedNoisyExpectedHypervolumeImprovement(
+        acq_func = monte_carlo.qConstrainedNoisyExpectedHypervolumeImprovement(
             constraint=agent.constraint,
             model=agent.model,
             ref_point=agent.train_targets.min(dim=0).values,
             X_baseline=agent.train_inputs,
             prune_baseline=True,
-            **acq_func_kwargs,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "upper_confidence_bound":
         beta = acq_func_kwargs.get("beta", acq_func_config["default_args"]["beta"])
 
-        acq_func = analytic.WeightedUpperConfidenceBound(
+        acq_func = analytic.ConstrainedUpperConfidenceBound(
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(constraints=agent.task_weights, offset=0),
-            **acq_func_kwargs,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
     elif acq_func_name == "monte_carlo_upper_confidence_bound":
         beta = acq_func_kwargs.get("beta", acq_func_config["default_args"]["beta"])
 
-        acq_func = monte_carlo.qWeightedUpperConfidenceBound(
+        acq_func = monte_carlo.qConstrainedUpperConfidenceBound(
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(constraints=agent.task_weights, offset=0),
-            **acq_func_kwargs,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
     elif acq_func_name == "expected_mean":
-        acq_func = agent.get_acquisition_function(acq_func_identifier="ucb", beta=0, return_metadata=False)
+        acq_func = get_acquisition_function(agent, acq_func_identifier="ucb", beta=0, return_metadata=False)
+        acq_func_meta = {"name": acq_func_name, "args": {}}
+
+    elif acq_func_name == "monte_carlo_expected_mean":
+        acq_func = get_acquisition_function(agent, acq_func_identifier="qucb", beta=0, return_metadata=False)
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     return (acq_func, acq_func_meta) if return_metadata else acq_func
