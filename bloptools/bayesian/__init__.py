@@ -256,7 +256,7 @@ class Agent:
 
             # for constructing the log normal noise prior
             target_snr = 2e2
-            scale = 1e0
+            scale = 2e0
             loc = np.log(1 / target_snr**2) + scale**2
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
@@ -264,7 +264,7 @@ class Agent:
                     torch.tensor(1e-4).square(),
                     torch.tensor(1 / task["min_snr"]).square(),
                 ),
-                #noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
+                noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
             ).double()
 
             outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
