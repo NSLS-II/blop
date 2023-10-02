@@ -191,7 +191,7 @@ class Agent:
         if self.initialized:
             cached_hypers = self.hypers
 
-        inputs = self.inputs.loc[:, self._subset_dof_names(mode="on")].values
+        inputs = self.model_inputs.values
 
         for i, task in enumerate(self.tasks):
             self.table.loc[:, f"{task['key']}_fitness"] = targets = self._get_task_fitness(i)
@@ -254,7 +254,7 @@ class Agent:
 
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1].squeeze(-1))
 
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, return_metadata=False, **acq_func_kwargs):
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, **acq_func_kwargs):
         """
         Ask the agent for the best point to sample, given an acquisition function.
 
@@ -270,15 +270,14 @@ class Agent:
         if acq_func_type in ["analytic", "monte_carlo"]:
             if not self.initialized:
                 raise RuntimeError(
-                    f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
+                    f'Can\'t construct non-trivial acquisition function "{acq_func_identifier}"'
+                    f" (the agent is not initialized!)"
                 )
 
             if acq_func_type == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            acq_func, acq_func_meta = acquisition.get_acquisition_function(
-                self, acq_func_identifier=acq_func_identifier, return_metadata=True
-            )
+            acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier=acq_func_identifier)
 
             NUM_RESTARTS = 8
             RAW_SAMPLES = 1024
@@ -299,9 +298,12 @@ class Agent:
             acq_func_meta["passive_values"] = passive_X
 
         else:
-            if acq_func_identifier.lower() == "qr":
+            if acq_func_name == "quasi-random":
                 active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
                 acq_func_meta = {"name": "quasi-random", "args": {}}
+
+            else:
+                raise ValueError()
 
         acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
 
@@ -311,7 +313,7 @@ class Agent:
         if route and n > 1:
             active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
 
-        return (active_X, acq_func_meta) if return_metadata else active_X
+        return active_X, acq_func_meta
 
     def acquire(self, active_inputs):
         """
@@ -377,7 +379,7 @@ class Agent:
             self.tell(new_table=new_table, train=False)
 
         for i in range(iterations):
-            x, acq_func_meta = self.ask(n=n, acq_func_identifier=acq_func, return_metadata=True, **kwargs)
+            x, acq_func_meta = self.ask(n=n, acq_func_identifier=acq_func, **kwargs)
 
             new_table = yield from self.acquire(x)
             new_table.loc[:, "acq_func"] = acq_func_meta["name"]
@@ -648,18 +650,25 @@ class Agent:
 
     @property
     def inputs(self):
+        return self.table.loc[:, self._subset_dof_names()].astype(float)
+
+    @property
+    def model_inputs(self):
         return self.table.loc[:, self._subset_dof_names(mode="on")].astype(float)
 
     @property
-    def best_inputs(self):
-        return self.inputs.values[np.nanargmax(self.scalarized_fitness)]
+    def active_inputs(self):
+        return self.table.loc[:, self._subset_dof_names(kind="active", mode="on")].astype(float)
 
-    def go_to(self, inputs):
+    @property
+    def best_inputs(self):
+        return self.active_inputs.values[np.nanargmax(self.scalarized_fitness)]
+
+    def go_to(self, active_inputs):
         args = []
-        for dof, value in zip(self._subset_dofs(mode="on"), np.atleast_1d(inputs).T):
-            if dof["kind"] == "active":
-                args.append(dof["device"])
-                args.append(value)
+        for dof, value in zip(self._subset_dofs(kind="active"), np.atleast_1d(active_inputs).T):
+            args.append(dof["device"])
+            args.append(value)
         yield from bps.mv(*args)
 
     def go_to_best(self):
@@ -696,7 +705,7 @@ class Agent:
             task_mean = task_posterior.mean.detach().numpy()
             task_sigma = task_posterior.variance.sqrt().detach().numpy()
 
-            sampled_inputs = self.inputs.values[:, self._dof_mask(kind="active", mode="on")][:, 0]
+            sampled_inputs = self.active_inputs.values
             task_plots["sampled"] = self.task_axes[task_index].scatter(sampled_inputs, task_fitness, s=size, color=color)
 
             on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
@@ -746,7 +755,7 @@ class Agent:
             self.task_axes[task_index, 2].set_title("posterior std. dev.")
 
             data_ax = self.task_axes[task_index, 0].scatter(
-                *self.inputs.values.T[axes], s=size, c=task_fitness, norm=task_norm, cmap=cmap
+                *self.active_inputs.values.T[axes], s=size, c=task_fitness, norm=task_norm, cmap=cmap
             )
 
             x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
@@ -819,7 +828,7 @@ class Agent:
         for iacq_func, acq_func_identifier in enumerate(acq_funcs):
             color = DEFAULT_COLOR_LIST[iacq_func]
 
-            acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier, return_metadata=True)
+            acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier)
 
             x = self.test_inputs_grid
             *input_shape, input_dim = x.shape
@@ -859,7 +868,7 @@ class Agent:
         *input_shape, input_dim = x.shape
 
         for iacq_func, acq_func_identifier in enumerate(acq_funcs):
-            acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier, return_metadata=True)
+            acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier)
 
             obj = acq_func.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
             if acq_func_identifier in ["ei", "pi"]:
@@ -905,7 +914,7 @@ class Agent:
         *input_shape, input_dim = x.shape
         constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
-        self.valid_ax.scatter(self.inputs.values, self.all_tasks_valid, s=size)
+        self.valid_ax.scatter(self.active_inputs.values, self.all_tasks_valid, s=size)
 
         on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
 
@@ -922,7 +931,7 @@ class Agent:
             gridded = self._len_subset_dofs(kind="active", mode="on") == 2
 
         data_ax = self.valid_axes[0].scatter(
-            *self.inputs.values.T[:2],
+            *self.active_inputs.values.T[:2],
             c=self.all_tasks_valid,
             s=size,
             vmin=0,

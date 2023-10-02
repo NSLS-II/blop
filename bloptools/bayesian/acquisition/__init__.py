@@ -30,7 +30,7 @@ def parse_acq_func(acq_func_identifier):
     return acq_func_name
 
 
-def get_acquisition_function(agent, acq_func_identifier="qei", return_metadata=False, **acq_func_kwargs):
+def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs):
     """
     Generates an acquisition function from a supplied identifier.
     """
@@ -126,4 +126,4 @@ def get_acquisition_function(agent, acq_func_identifier="qei", return_metadata=F
         acq_func = get_acquisition_function(agent, acq_func_identifier="qucb", beta=0, return_metadata=False)
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
-    return (acq_func, acq_func_meta) if return_metadata else acq_func
+    return acq_func, acq_func_meta
