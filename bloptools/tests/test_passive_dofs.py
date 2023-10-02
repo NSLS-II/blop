@@ -26,7 +26,7 @@ def test_passive_dofs(RE, db):
         tolerate_acquisition_errors=False,
     )
 
-    RE(agent.initialize("qr", n_init=32))
+    RE(agent.learn("qr", n=32))
 
     agent.plot_tasks()
     agent.plot_acquisition()

@@ -40,7 +40,7 @@ TASK_CONFIG = {}
 TASK_TRANSFORMS = {"log": lambda x: np.log(x)}
 
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
-DEFAULT_COLORMAP = "turbo"
+DEFAULT_COLORMAP = "viridis"
 DEFAULT_SCATTER_SIZE = 16
 
 DEFAULT_MINIMUM_SNR = 2e1
@@ -171,62 +171,11 @@ class Agent:
 
         self.table = pd.DataFrame()
 
-        self._initialized = False
+        self.initialized = False
         self._train_models = True
         self.a_priori_hypers = None
 
         self.plots = {"tasks": {}}
-
-    def reset(self):
-        """
-        Reset the agent.
-        """
-        self.table = pd.DataFrame()
-        self._initialized = False
-
-    def initialize(
-        self,
-        acq_func=None,
-        n=4,
-        data=None,
-        hypers=None,
-    ):
-        """
-        An initialization plan for the self.
-        This must be run before the agent can learn.
-        It should be passed to a Bluesky RunEngine.
-        """
-
-        # experiment-specific stuff
-        if self.initialization is not None:
-            yield from self.initialization()
-
-        if hypers is not None:
-            self.a_priori_hypers = self.load_hypers(hypers)
-
-        if data is not None:
-            if type(data) == str:
-                self.tell(new_table=pd.read_hdf(data, key="table"))
-            else:
-                self.tell(new_table=data)
-
-        # now let's get bayesian
-        elif acq_func in ["qr"]:
-            if self.sample_center_on_init:
-                new_table = yield from self.acquire(self.acq_func_bounds.mean(axis=0))
-                new_table.loc[:, "acq_func"] = "sample_center_on_init"
-                self.tell(new_table=new_table, train=False)
-
-            yield from self.learn("qr", iterations=1, n=n, route=True)
-
-
-        else:
-            raise Exception(
-                """Could not initialize model! Either load a table, or specify an acq_func from:
-['qr']."""
-            )
-
-        self._initialized = True
 
     def tell(self, new_table=None, append=True, train=True, **kwargs):
         """
@@ -239,7 +188,7 @@ class Agent:
 
         skew_dims = self.latent_dim_tuples
 
-        if self._initialized:
+        if self.initialized:
             cached_hypers = self.hypers
 
         inputs = self.inputs.loc[:, self._subset_dof_names(mode="on")].values
@@ -298,12 +247,150 @@ class Agent:
             try:
                 self.train_models()
             except botorch.exceptions.errors.ModelFittingError:
-                if self._initialized:
+                if self.initialized:
                     self._set_hypers(cached_hypers)
                 else:
                     raise RuntimeError("Could not fit model on initialization!")
 
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1].squeeze(-1))
+
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, return_metadata=False, **acq_func_kwargs):
+        """
+        Ask the agent for the best point to sample, given an acquisition function.
+
+        acq_func_identifier: which acquisition function to use
+        n: how many points to get
+        """
+
+        acq_func_name = acquisition.parse_acq_func(acq_func_identifier)
+        acq_func_type = acquisition.config[acq_func_name]["type"]
+
+        start_time = ttime.monotonic()
+
+        if acq_func_type in ["analytic", "monte_carlo"]:
+            if not self.initialized:
+                raise RuntimeError(
+                    f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
+                )
+
+            if acq_func_type == "analytic" and n > 1:
+                raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
+
+            acq_func, acq_func_meta = acquisition.get_acquisition_function(
+                self, acq_func_identifier=acq_func_identifier, return_metadata=True
+            )
+
+            NUM_RESTARTS = 8
+            RAW_SAMPLES = 1024
+
+            candidates, _ = botorch.optim.optimize_acqf(
+                acq_function=acq_func,
+                bounds=self.acq_func_bounds,
+                q=n,
+                sequential=sequential,
+                num_restarts=NUM_RESTARTS,
+                raw_samples=RAW_SAMPLES,  # used for intialization heuristic
+            )
+
+            x = candidates.numpy().astype(float)
+
+            active_X = x[..., [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]]
+            passive_X = x[..., [dof["kind"] != "active" for dof in self._subset_dofs(mode="on")]]
+            acq_func_meta["passive_values"] = passive_X
+
+        else:
+            if acq_func_identifier.lower() == "qr":
+                active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
+                acq_func_meta = {"name": "quasi-random", "args": {}}
+
+        acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
+
+        if self.verbose:
+            print(f"found points {active_X} in {duration:.01f} seconds")
+
+        if route and n > 1:
+            active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
+
+        return (active_X, acq_func_meta) if return_metadata else active_X
+
+    def acquire(self, active_inputs):
+        """
+        Acquire and digest according to the self's acquisition and digestion plans.
+
+        This should yield a table of sampled tasks with the same length as the sampled inputs.
+        """
+        try:
+            active_devices = self._subset_devices(kind="active", mode="on")
+            passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
+
+            uid = yield from self.acquisition_plan(
+                active_devices,
+                active_inputs.astype(float),
+                [*self.dets, *passive_devices],
+                delay=self.trigger_delay,
+            )
+
+            products = self.digestion(self.db, uid)
+
+            # compute the fitness for each task
+            # for index, entry in products.iterrows():
+            #     for task in self.tasks:
+            #         products.loc[index, task["key"]] = getattr(entry, task["key"])
+
+        except Exception as error:
+            if not self.allow_acquisition_errors:
+                raise error
+            logging.warning(f"Error in acquisition/digestion: {repr(error)}")
+            products = pd.DataFrame(active_inputs, columns=self._subset_dof_names(kind="active", mode="on"))
+            for task in self.tasks:
+                products.loc[:, task["key"]] = np.nan
+
+        if not len(active_inputs) == len(products):
+            raise ValueError("The table returned by the digestion must be the same length as the sampled inputs!")
+
+        return products
+
+    def learn(
+        self,
+        acq_func,
+        n=1,
+        iterations=1,
+        upsample=1,
+        train=True,
+        data=None,
+        **kwargs,
+    ):
+        """
+        This iterates the learning algorithm, looping over ask -> acquire -> tell.
+        It should be passed to a Bluesky RunEngine.
+        """
+
+        if data is not None:
+            if type(data) == str:
+                self.tell(new_table=pd.read_hdf(data, key="table"))
+            else:
+                self.tell(new_table=data)
+
+        if self.sample_center_on_init and not self.initialized:
+            new_table = yield from self.acquire(self.acq_func_bounds.mean(axis=0))
+            new_table.loc[:, "acq_func"] = "sample_center_on_init"
+            self.tell(new_table=new_table, train=False)
+
+        for i in range(iterations):
+            x, acq_func_meta = self.ask(n=n, acq_func_identifier=acq_func, return_metadata=True, **kwargs)
+
+            new_table = yield from self.acquire(x)
+            new_table.loc[:, "acq_func"] = acq_func_meta["name"]
+            self.tell(new_table=new_table, train=train)
+
+        self.initialized = True
+
+    def reset(self):
+        """
+        Reset the agent.
+        """
+        self.table = pd.DataFrame()
+        self.initialized = False
 
     @property
     def model(self):
@@ -546,7 +633,7 @@ class Agent:
             gpytorch.mlls.ExactMarginalLogLikelihood(self.classifier.likelihood, self.classifier), **kwargs
         )
         if self.verbose:
-            print(f"trained models in {ttime.monotonic() - t0:.02f} seconds")
+            print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
     @property
     def acq_func_info(self):
@@ -558,126 +645,6 @@ class Agent:
             entries.append(ret)
 
         print("\n\n".join(entries))
-
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, return_metadata=False, **acq_func_kwargs):
-        """
-        Ask the agent for the best point to sample, given an acquisition function.
-
-        acq_func_identifier: which acquisition function to use
-        n: how many points to get
-        """
-
-        acq_func_name = acquisition.parse_acq_func(acq_func_identifier)
-        acq_func_type = acquisition.config[acq_func_name]["type"]
-
-        start_time = ttime.monotonic()
-
-        if acq_func_type in ["analytic", "monte_carlo"]:
-            if not self._initialized:
-                raise RuntimeError(
-                    f'Can\'t construct acquisition function "{acq_func_identifier}" (the agent is not initialized!)'
-                )
-
-            if acq_func_type == "analytic" and n > 1:
-                raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
-
-            acq_func, acq_func_meta = acquisition.get_acquisition_function(
-                self, acq_func_identifier=acq_func_identifier, return_metadata=True
-            )
-
-            NUM_RESTARTS = 8
-            RAW_SAMPLES = 1024
-
-            candidates, _ = botorch.optim.optimize_acqf(
-                acq_function=acq_func,
-                bounds=self.acq_func_bounds,
-                q=n,
-                sequential=sequential,
-                num_restarts=NUM_RESTARTS,
-                raw_samples=RAW_SAMPLES,  # used for intialization heuristic
-            )
-
-            x = candidates.numpy().astype(float)
-
-            active_X = x[..., [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]]
-            passive_X = x[..., [dof["kind"] != "active" for dof in self._subset_dofs(mode="on")]]
-            acq_func_meta["passive_values"] = passive_X
-
-        else:
-            if acq_func_identifier.lower() == "qr":
-                active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
-                acq_func_meta = {"name": "quasi-random", "args": {}}
-
-        acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
-
-        if self.verbose:
-            print(f"found points {active_X} in {duration:.02f} seconds")
-
-        if route and n > 1:
-            active_X = active_X[utils.route(self._read_subset_devices(kind="active", mode="on"), active_X)]
-
-        return (active_X, acq_func_meta) if return_metadata else active_X
-
-    def acquire(self, active_inputs):
-        """
-        Acquire and digest according to the self's acquisition and digestion plans.
-
-        This should yield a table of sampled tasks with the same length as the sampled inputs.
-        """
-        try:
-            active_devices = self._subset_devices(kind="active", mode="on")
-            passive_devices = [*self._subset_devices(kind="passive"), *self._subset_devices(kind="active", mode="off")]
-
-            uid = yield from self.acquisition_plan(
-                active_devices,
-                active_inputs.astype(float),
-                [*self.dets, *passive_devices],
-                delay=self.trigger_delay,
-            )
-
-            products = self.digestion(self.db, uid)
-
-            # compute the fitness for each task
-            # for index, entry in products.iterrows():
-            #     for task in self.tasks:
-            #         products.loc[index, task["key"]] = getattr(entry, task["key"])
-
-        except Exception as error:
-            if not self.allow_acquisition_errors:
-                raise error
-            logging.warning(f"Error in acquisition/digestion: {repr(error)}")
-            products = pd.DataFrame(active_inputs, columns=self._subset_dof_names(kind="active", mode="on"))
-            for task in self.tasks:
-                products.loc[:, task["key"]] = np.nan
-
-        if not len(active_inputs) == len(products):
-            raise ValueError("The table returned by the digestion must be the same length as the sampled inputs!")
-
-        return products
-
-    def learn(
-        self,
-        acq_func_identifier,
-        n=1,
-        iterations=1,
-        n_iter=1,
-        train=True,
-        upsample=1,
-        **kwargs,
-    ):
-        """
-        This iterates the learning algorithm, looping over ask -> acquire -> tell.
-        It should be passed to a Bluesky RunEngine.
-        """
-
-        for i in range(iterations):
-            x, acq_func_meta = self.ask(
-                n=n, acq_func_identifier=acq_func_identifier, return_metadata=True, **kwargs
-            )
-
-            new_table = yield from self.acquire(x)
-            new_table.loc[:, "acq_func"] = acq_func_meta["name"]
-            self.tell(new_table=new_table, train=train)
 
     @property
     def inputs(self):
@@ -729,7 +696,7 @@ class Agent:
             task_mean = task_posterior.mean.detach().numpy()
             task_sigma = task_posterior.variance.sqrt().detach().numpy()
 
-            sampled_inputs = self.inputs.values[:, self._dof_mask(kind="active", mode="on")][:,0]
+            sampled_inputs = self.inputs.values[:, self._dof_mask(kind="active", mode="on")][:, 0]
             task_plots["sampled"] = self.task_axes[task_index].scatter(sampled_inputs, task_fitness, s=size, color=color)
 
             on_dofs_are_active_mask = [dof["kind"] == "active" for dof in self._subset_dofs(mode="on")]
@@ -763,10 +730,8 @@ class Agent:
         # self.task_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
         for task_index, task in enumerate(self.tasks):
-
-            
             task_fitness = self._get_task_fitness(task_index=task_index)
-            
+
             task_vmin, task_vmax = np.nanpercentile(task_fitness, q=[1, 99])
             task_norm = mpl.colors.Normalize(task_vmin, task_vmax)
 
