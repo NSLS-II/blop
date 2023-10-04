@@ -14,6 +14,21 @@ class qConstrainedUpperConfidenceBound(qUpperConfidenceBound):
         self.beta = torch.tensor(beta)
 
     def forward(self, x):
+        *input_shape, _, _ = x.shape
+
+        posterior = self.model.posterior(x)
+        mean, sigma = posterior.mean, posterior.variance.sqrt()
+
+        p_eff = (
+            0.5
+            * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2)))
+            * torch.clamp(self.constraint(x).reshape(input_shape), min=1e-6)
+        )
+
+        return mean.reshape(*input_shape) + sigma.reshape(*input_shape) * np.sqrt(2) * torch.special.erfinv(
+            2 * p_eff.reshape(*input_shape) - 1
+        )
+
         posterior = self.model.posterior(x)
         mean, sigma = posterior.mean, posterior.variance.sqrt()
 
@@ -28,7 +43,7 @@ class qConstrainedExpectedImprovement(qExpectedImprovement):
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
 class qConstrainedProbabilityOfImprovement(qProbabilityOfImprovement):
@@ -37,7 +52,7 @@ class qConstrainedProbabilityOfImprovement(qProbabilityOfImprovement):
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
 class qConstrainedNoisyExpectedHypervolumeImprovement(qNoisyExpectedHypervolumeImprovement):
@@ -46,7 +61,7 @@ class qConstrainedNoisyExpectedHypervolumeImprovement(qNoisyExpectedHypervolumeI
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
 class qConstrainedLowerBoundMaxValueEntropy(qLowerBoundMaxValueEntropy):
@@ -55,4 +70,4 @@ class qConstrainedLowerBoundMaxValueEntropy(qLowerBoundMaxValueEntropy):
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
