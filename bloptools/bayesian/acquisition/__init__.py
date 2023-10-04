@@ -119,11 +119,11 @@ def get_acquisition_function(agent, acq_func_identifier="qei", return_metadata=T
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
     elif acq_func_name == "expected_mean":
-        acq_func = get_acquisition_function(agent, acq_func_identifier="ucb", beta=0, return_metadata=False)
+        acq_func, _ = get_acquisition_function(agent, acq_func_identifier="ucb", beta=0, return_metadata=False)
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "monte_carlo_expected_mean":
-        acq_func = get_acquisition_function(agent, acq_func_identifier="qucb", beta=0, return_metadata=False)
+        acq_func, _ = get_acquisition_function(agent, acq_func_identifier="qucb", beta=0, return_metadata=False)
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     return (acq_func, acq_func_meta) if return_metadata else acq_func
