@@ -11,6 +11,7 @@ import bluesky.plans as bp  # noqa F401
 import botorch
 import gpytorch
 import h5py
+import IPython as ip
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
@@ -252,7 +253,7 @@ class Agent:
                 else:
                     raise RuntimeError("Could not fit model on initialization!")
 
-        self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1].squeeze(-1))
+        self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
 
     def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, **acq_func_kwargs):
         """
@@ -393,6 +394,26 @@ class Agent:
         """
         self.table = pd.DataFrame()
         self.initialized = False
+
+    def benchmark(
+        self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
+    ):
+        cache_limits = {dof["name"]: dof["limits"] for dof in self.dofs}
+
+        for run in range(runs):
+            for dof in self.dofs:
+                dof["limits"] = cache_limits[dof["name"]] + 0.25 * np.ptp(dof["limits"]) * np.random.uniform(low=-1, high=1)
+
+            self.reset()
+
+            yield from self.learn("qr", n=n_init)
+
+            for kwargs in learning_kwargs_list:
+                yield from self.learn(**kwargs)
+
+            self.save_data(output_dir + f"benchmark-{int(ttime.time())}.h5")
+
+            ip.display.clear_output(wait=True)
 
     @property
     def model(self):

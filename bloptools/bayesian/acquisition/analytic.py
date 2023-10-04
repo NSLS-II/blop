@@ -59,9 +59,15 @@ class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
         self.constraint = constraint
 
     def forward(self, x):
+        *input_shape, _, _ = x.shape
+
         mean, sigma = self._mean_and_sigma(x)
 
-        p_eff = 0.5 * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2))) * torch.clamp(self.constraint(x), min=1e-6)
+        p_eff = (
+            0.5
+            * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2)))
+            * torch.clamp(self.constraint(x).reshape(input_shape), min=1e-6)
+        )
 
         return mean + sigma * np.sqrt(2) * torch.special.erfinv(2 * p_eff - 1)
 
@@ -72,7 +78,7 @@ class ConstrainedLogExpectedImprovement(LogExpectedImprovement):
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) + self.constraint(x).log()
+        return super().forward(x) + self.constraint(x).log().squeeze(-1)
 
 
 class ConstrainedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
@@ -81,4 +87,4 @@ class ConstrainedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) + self.constraint(x).log()
+        return super().forward(x) + self.constraint(x).log().squeeze(-1)
