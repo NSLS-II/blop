@@ -44,7 +44,7 @@ DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
 DEFAULT_COLORMAP = "viridis"
 DEFAULT_SCATTER_SIZE = 16
 
-DEFAULT_MINIMUM_SNR = 2e1
+DEFAULT_MINIMUM_SNR = 1e1
 
 
 def _validate_and_prepare_dofs(dofs):
@@ -205,16 +205,16 @@ class Agent:
             train_targets = torch.tensor(targets[train_index]).double().unsqueeze(-1)  # .unsqueeze(0)
 
             # for constructing the log normal noise prior
-            target_snr = 2e2
-            scale = 2e0
-            loc = np.log(1 / target_snr**2) + scale**2
+            # target_snr = 2e2
+            # scale = 2e0
+            # loc = np.log(1 / target_snr**2) + scale**2
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
                     torch.tensor(1e-4).square(),
                     torch.tensor(1 / task["min_snr"]).square(),
                 ),
-                noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
+                # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
             ).double()
 
             outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
@@ -303,6 +303,11 @@ class Agent:
                 active_X = self._subset_inputs_sampler(n=n, kind="active", mode="on").squeeze(1).numpy()
                 acq_func_meta = {"name": "quasi-random", "args": {}}
 
+            elif acq_func_name == "grid":
+                n_active_dims = self._len_subset_dofs(kind="active", mode="on")
+                active_X = self.test_inputs_grid(max_inputs=n).reshape(-1, n_active_dims).numpy()
+                acq_func_meta = {"name": "grid", "args": {}}
+
             else:
                 raise ValueError()
 
@@ -355,7 +360,7 @@ class Agent:
 
     def learn(
         self,
-        acq_func,
+        acq_func=None,
         n=1,
         iterations=1,
         upsample=1,
@@ -379,12 +384,13 @@ class Agent:
             new_table.loc[:, "acq_func"] = "sample_center_on_init"
             self.tell(new_table=new_table, train=False)
 
-        for i in range(iterations):
-            x, acq_func_meta = self.ask(n=n, acq_func_identifier=acq_func, **kwargs)
+        if acq_func is not None:
+            for i in range(iterations):
+                x, acq_func_meta = self.ask(n=n, acq_func_identifier=acq_func, **kwargs)
 
-            new_table = yield from self.acquire(x)
-            new_table.loc[:, "acq_func"] = acq_func_meta["name"]
-            self.tell(new_table=new_table, train=train)
+                new_table = yield from self.acquire(x)
+                new_table.loc[:, "acq_func"] = acq_func_meta["name"]
+                self.tell(new_table=new_table, train=train)
 
         self.initialized = True
 
@@ -468,9 +474,8 @@ class Agent:
     def target_names(self):
         return [f'{task["key"]}_fitness' for task in self.tasks]
 
-    @property
-    def test_inputs_grid(self):
-        n_side = int(MAX_TEST_INPUTS ** (1 / self._len_subset_dofs(kind="active", mode="on")))
+    def test_inputs_grid(self, max_inputs=MAX_TEST_INPUTS):
+        n_side = int(np.power(max_inputs, self._len_subset_dofs(kind="active", mode="on") ** -1))
         return torch.tensor(
             np.r_[
                 np.meshgrid(
@@ -721,7 +726,7 @@ class Agent:
 
             self.task_axes[task_index].set_ylabel(task["key"])
 
-            x = self.test_inputs_grid
+            x = self.test_inputs_grid()
             task_posterior = task["model"].posterior(x)
             task_mean = task_posterior.mean.detach().numpy()
             task_sigma = task_posterior.variance.sqrt().detach().numpy()
@@ -779,7 +784,7 @@ class Agent:
                 *self.active_inputs.values.T[axes], s=size, c=task_fitness, norm=task_norm, cmap=cmap
             )
 
-            x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
+            x = self.test_inputs_grid().squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
 
             task_posterior = task["model"].posterior(x)
             task_mean = task_posterior.mean
@@ -851,7 +856,7 @@ class Agent:
 
             acq_func, acq_func_meta = acquisition.get_acquisition_function(self, acq_func_identifier)
 
-            x = self.test_inputs_grid
+            x = self.test_inputs_grid()
             *input_shape, input_dim = x.shape
             obj = acq_func.forward(x.reshape(-1, 1, input_dim)).reshape(input_shape)
 
@@ -885,7 +890,7 @@ class Agent:
         self.acq_axes = np.atleast_1d(self.acq_axes)
         # self.acq_fig.suptitle(f"(x,y)=({self.dofs[axes[0]].name},{self.dofs[axes[1]].name})")
 
-        x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
+        x = self.test_inputs_grid().squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
         *input_shape, input_dim = x.shape
 
         for iacq_func, acq_func_identifier in enumerate(acq_funcs):
@@ -931,7 +936,7 @@ class Agent:
     def _plot_valid_one_dof(self, size=16, lw=1e0):
         self.valid_fig, self.valid_ax = plt.subplots(1, 1, figsize=(4, 4), sharex=True, constrained_layout=True)
 
-        x = self.test_inputs_grid
+        x = self.test_inputs_grid()
         *input_shape, input_dim = x.shape
         constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
@@ -960,7 +965,7 @@ class Agent:
             cmap=cmap,
         )
 
-        x = self.test_inputs_grid.squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
+        x = self.test_inputs_grid().squeeze() if gridded else self.test_inputs(n=MAX_TEST_INPUTS)
         *input_shape, input_dim = x.shape
         constraint = self.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
 
