@@ -12,10 +12,14 @@ def test_passive_dofs(RE, db):
         DOF(name="x3", limits=(-5.0, 5.0), active=False),
         DOF(BrownianMotion(name="brownian1"), read_only=True),
 <<<<<<< HEAD
+<<<<<<< HEAD
         DOF(BrownianMotion(name="brownian2"), read_only=True, active=False),
 =======
         DOF(BrownianMotion(name="brownian2"), read_only=True),
 >>>>>>> 39a579f (make sure DOF bounds are cast to floats)
+=======
+        DOF(BrownianMotion(name="brownian2"), read_only=True, active=False),
+>>>>>>> 05b8e73 (fixed shapes in grid plots)
     ]
 
     objectives = [
