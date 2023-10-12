@@ -33,8 +33,6 @@ mpl.rc("image", cmap="coolwarm")
 
 MAX_TEST_INPUTS = 2**11
 
-os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
-
 
 class Agent:
     def __init__(
@@ -126,8 +124,8 @@ class Agent:
             if not train_index.sum() >= 2:
                 raise ValueError("There must be at least two valid data points per objective!")
 
-            train_inputs = torch.tensor(inputs[train_index]).double()
-            train_targets = torch.tensor(targets[train_index]).double().unsqueeze(-1)  # .unsqueeze(0)
+            train_inputs = torch.tensor(inputs[train_index], dtype=torch.double)
+            train_targets = torch.tensor(targets[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
 
             # for constructing the log normal noise prior
             # target_snr = 2e2
@@ -212,7 +210,7 @@ class Agent:
 
             candidates, _ = botorch.optim.optimize_acqf(
                 acq_function=acq_func,
-                bounds=self._active_bounds_torch,
+                bounds=self.acquisition_function_bounds,
                 q=n,
                 sequential=sequential,
                 num_restarts=NUM_RESTARTS,
@@ -392,22 +390,6 @@ class Agent:
 
         return targets
 
-    # @property
-    # def acquisition_dofs(self):
-    #     """
-    #     Returns the acquisition DOFs, which are the DOFs to optimize over (that is, active and not read-only).
-    #     """
-    #     return self.dofs.subset(active=True, read_only=False)
-
-    # @property
-    # def acquisition_dof_limits(self):
-    #     """
-    #     Returns the acquisition limits, which are the ranges optimize over (that is, active and not read-only).
-    #     This has shape (n_acq_dofs, 2).
-    #     """
-    #     acq_dofs = self.dofs.subset(active=True, read_only=False)
-    #     return np.c_[acq_dofs.summary.lower_limit.values, acq_dofs.summary.upper_limit.values]
-
     @property
     def n_objs(self):
         """
@@ -441,17 +423,19 @@ class Agent:
 
     def test_inputs_grid(self, max_inputs=MAX_TEST_INPUTS):
         """
-        Returns a (n_side, ..., n_side, 1, n_active_dof) grid of test_inputs
+        Returns a (n_side, ..., n_side, 1, n_active_dof) grid of test_inputs.
+        n_side is 1 if a dof is read-only
         """
-        n_acq_dofs = len(self.dofs.subset(active=True, read_only=False))
-        n_side = int(np.power(max_inputs, n_acq_dofs**-1))
+        n_settable_acq_func_dofs = len(self.dofs.subset(active=True, read_only=False))
+        n_side_settable = int(np.power(max_inputs, n_settable_acq_func_dofs**-1))
+        n_sides = [1 if dof.read_only else n_side_settable for dof in self.dofs.subset(active=True)]
         return torch.cat(
             [
                 tensor.unsqueeze(-1)
                 for tensor in torch.meshgrid(
                     *[
-                        torch.linspace(dof.lower_limit, dof.upper_limit, n_side) if not dof.read_only else dof.readback
-                        for dof in self.dofs.subset(active=True)
+                        torch.linspace(lower_limit, upper_limit, n_side)
+                        for (lower_limit, upper_limit), n_side in zip(self.dofs.subset(active=True).limits, n_sides)
                     ],
                     indexing="ij",
                 )
@@ -463,10 +447,18 @@ class Agent:
         """
         Returns a (n, 1, n_active_dof) grid of test_inputs
         """
-        return utils.sobol_sampler(self._active_bounds_torch, n=n)
+        return utils.sobol_sampler(self.acquisition_function_bounds, n=n)
 
     @property
-    def _active_bounds_torch(self):
+    def acquisition_function_bounds(self):
+        """
+        Returns a (2, n_active_dof) array of bounds for the acquisition function
+        """
+        acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in self.dofs]
+        acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in self.dofs]
+
+        return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
+
         return torch.tensor(
             [dof.limits if not dof.read_only else tuple(2 * [dof.readback]) for dof in self.dofs.subset(active=True)]
         ).T
@@ -644,48 +636,5 @@ class Agent:
         else:
             plotting._plot_valid_many_dofs(self, **kwargs)
 
-    # def plot_history(self, x_key="index", show_all_objs=False):
-    #     x = getattr(self.table, x_key).values
-
-    #     num_obj_plots = 1
-    #     if show_all_objs:
-    #         num_obj_plots = self.n_objs + 1
-
-    #     self.n_objs + 1 if self.n_objs > 1 else 1
-
-    #     hist_fig, hist_axes = plt.subplots(
-    #         num_obj_plots, 1, figsize=(6, 4 * num_obj_plots), sharex=True, constrained_layout=True, dpi=200
-    #     )
-    #     hist_axes = np.atleast_1d(hist_axes)
-
-    #     unique_strategies, acq_func_index, acq_func_inverse = np.unique(
-    #         self.table.acq_func, return_index=True, return_inverse=True
-    #     )
-
-    #     sample_colors = np.array(DEFAULT_COLOR_LIST)[acq_func_inverse]
-
-    #     if show_all_objs:
-    #         for obj_index, obj in enumerate(self.objectives):
-    #             y = self.table.loc[:, f"{obj.key}_fitness"].values
-    #             hist_axes[obj_index].scatter(x, y, c=sample_colors)
-    #             hist_axes[obj_index].plot(x, y, lw=5e-1, c="k")
-    #             hist_axes[obj_index].set_ylabel(obj.key)
-
-    #     y = self.scalarized_objectives
-
-    #     cummax_y = np.array([np.nanmax(y[: i + 1]) for i in range(len(y))])
-
-    #     hist_axes[-1].scatter(x, y, c=sample_colors)
-    #     hist_axes[-1].plot(x, y, lw=5e-1, c="k")
-
-    #     hist_axes[-1].plot(x, cummax_y, lw=5e-1, c="k", ls=":")
-
-    #     hist_axes[-1].set_ylabel("total_fitness")
-    #     hist_axes[-1].set_xlabel(x_key)
-
-    #     handles = []
-    #     for i_acq_func, acq_func in enumerate(unique_strategies):
-    #         #        i_acq_func = np.argsort(acq_func_index)[i_handle]
-    #         handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acq_func], label=acq_func))
-    #     legend = hist_axes[0].legend(handles=handles, fontsize=8)
-    #     legend.set_title("acquisition function")
+    def plot_history(self, **kwargs):
+        plotting._plot_history(self, **kwargs)

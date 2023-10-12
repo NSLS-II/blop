@@ -1,6 +1,7 @@
 import matplotlib as mpl
-import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib.patches import Patch
 
 from . import acquisition
 
@@ -194,7 +195,7 @@ def _plot_acq_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
         acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
         test_acqf = acq_func(test_inputs).detach().numpy()
 
-        agent.acq_axes[iacq_func].plot(test_inputs.squeeze(), test_acqf, lw=lw, color=color)
+        agent.acq_axes[iacq_func].plot(test_inputs.squeeze(-2), test_acqf, lw=lw, color=color)
 
         agent.acq_axes[iacq_func].set_xlim(*x_dof.limits)
         agent.acq_axes[iacq_func].set_xlabel(x_dof.label)
@@ -269,7 +270,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     constraint = agent.constraint(test_inputs)[..., 0]
 
     agent.valid_ax.scatter(x_values, agent.all_objectives_valid, s=size)
-    agent.valid_ax.plot(test_inputs.squeeze(), constraint, lw=lw)
+    agent.valid_ax.plot(test_inputs.squeeze(-2), constraint, lw=lw)
     agent.valid_ax.set_xlim(*x_dof.limits)
 
 
@@ -316,45 +317,51 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
         ax.set_xlim(*x_dof.limits)
         ax.set_ylim(*y_dof.limits)
 
-    # data_ax = agent.valid_axes[0].scatter(
-    #     *agent.acquisition_inputs.values.T[:2],
-    #     c=agent.all_objectives_valid,
-    #     s=size,
-    #     vmin=0,
-    #     vmax=1,
-    #     cmap=cmap,
-    # )
 
-    # x = agent.test_inputs_grid().squeeze() if gridded else agent.test_inputs(n=MAX_TEST_INPUTS)
-    # *input_shape, input_dim = x.shape
-    # constraint = agent.classifier.probabilities(x.reshape(-1, 1, input_dim))[..., -1].reshape(input_shape)
+def _plot_history(agent, x_key="index", show_all_objs=False):
+    x = getattr(agent.table, x_key).values
 
-    # if gridded:
-    #     agent.valid_axes[1].pcolormesh(
-    #         x[..., 0].detach().numpy(),
-    #         x[..., 1].detach().numpy(),
-    #         constraint.detach().numpy(),
-    #         shading=shading,
-    #         cmap=cmap,
-    #         vmin=0,
-    #         vmax=1,
-    #     )
+    num_obj_plots = 1
+    if show_all_objs:
+        num_obj_plots = agent.n_objs + 1
 
-    #     # agent.acq_fig.colorbar(obj_ax, ax=agent.valid_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
+    agent.n_objs + 1 if agent.n_objs > 1 else 1
 
-    # else:
-    #     # agent.valid_axes.set_title(acq_func_meta["name"])
-    #     agent.valid_axes[1].scatter(
-    #         x.detach().numpy()[..., axes[0]],
-    #         x.detach().numpy()[..., axes[1]],
-    #         c=constraint.detach().numpy(),
-    #     )
+    hist_fig, hist_axes = plt.subplots(
+        num_obj_plots, 1, figsize=(6, 4 * num_obj_plots), sharex=True, constrained_layout=True, dpi=200
+    )
+    hist_axes = np.atleast_1d(hist_axes)
 
-    # agent.valid_fig.colorbar(data_ax, ax=agent.valid_axes[:2], location="bottom", aspect=32, shrink=0.8)
+    unique_strategies, acq_func_index, acq_func_inverse = np.unique(
+        agent.table.acq_func, return_index=True, return_inverse=True
+    )
 
-    # for ax in agent.valid_axes.ravel():
-    #     ax.set_xlim(*agent.dofs.subset(active=True, read_only=False)[axes[0]].limits)
-    #     ax.set_ylim(*agent.dofs.subset(active=True, read_only=False)[axes[1]].limits)
+    sample_colors = np.array(DEFAULT_COLOR_LIST)[acq_func_inverse]
+
+    if show_all_objs:
+        for obj_index, obj in enumerate(agent.objectives):
+            y = agent.table.loc[:, f"{obj.key}_fitness"].values
+            hist_axes[obj_index].scatter(x, y, c=sample_colors)
+            hist_axes[obj_index].plot(x, y, lw=5e-1, c="k")
+            hist_axes[obj_index].set_ylabel(obj.key)
+
+    y = agent.scalarized_objectives
+
+    cummax_y = np.array([np.nanmax(y[: i + 1]) for i in range(len(y))])
+
+    hist_axes[-1].scatter(x, y, c=sample_colors)
+    hist_axes[-1].plot(x, y, lw=5e-1, c="k")
+
+    hist_axes[-1].plot(x, cummax_y, lw=5e-1, c="k", ls=":")
+
+    hist_axes[-1].set_ylabel("total_fitness")
+    hist_axes[-1].set_xlabel(x_key)
+
+    handles = []
+    for i_acq_func, acq_func in enumerate(unique_strategies):
+        handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acq_func], label=acq_func))
+    legend = hist_axes[0].legend(handles=handles, fontsize=8)
+    legend.set_title("acquisition function")
 
 
 def inspect_beam(agent, index, border=None):
