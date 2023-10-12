@@ -470,10 +470,15 @@ class Agent:
         """
         Returns a (2, n_active_dof) array of bounds for the acquisition function
         """
+<<<<<<< HEAD
         active_dofs = self.dofs.subset(active=True)
 
         acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in active_dofs]
         acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in active_dofs]
+=======
+        acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in self.dofs]
+        acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in self.dofs]
+>>>>>>> 39a579f (make sure DOF bounds are cast to floats)
 
         return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
 
@@ -658,4 +663,8 @@ class Agent:
             plotting._plot_valid_many_dofs(self, **kwargs)
 
     def plot_history(self, **kwargs):
+<<<<<<< HEAD
         plotting._plot_history(self, **kwargs)
+=======
+        plotting._plot_history(self, **kwargs)
+>>>>>>> 39a579f (make sure DOF bounds are cast to floats)
