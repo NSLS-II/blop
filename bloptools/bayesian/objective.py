@@ -7,8 +7,12 @@ import pandas as pd
 numeric = Union[float, int]
 
 DEFAULT_MINIMUM_SNR = 2e1
+<<<<<<< HEAD
 OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log", "noise"]
 
+=======
+OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log"]
+>>>>>>> 39a579f (make sure DOF bounds are cast to floats)
 
 
 class DuplicateKeyError(ValueError):
