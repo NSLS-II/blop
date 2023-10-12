@@ -23,7 +23,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
 
     agent.obj_axes = np.atleast_1d(agent.obj_axes)
 
-    x_dof = agent.dofs[0]
+    x_dof = agent.dofs.subset(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     for obj_index, obj in enumerate(agent.objectives):
@@ -68,8 +68,8 @@ def _plot_objs_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COL
     )
 
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
-
-    x_dof, y_dof = agent.dofs[axes[0]], agent.dofs[axes[1]]
+    
+    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
     x_values = agent.table.loc[:, x_dof.device.name].values
     y_values = agent.table.loc[:, y_dof.device.name].values
 
@@ -185,7 +185,7 @@ def _plot_acq_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
     )
 
     agent.acq_axes = np.atleast_1d(agent.acq_axes)
-    x_dof = agent.dofs[0]
+    x_dof = agent.dofs.subset(active=True)[0]
 
     test_inputs = agent.test_inputs_grid()
 
@@ -219,7 +219,7 @@ def _plot_acq_many_dofs(
 
     agent.acq_axes = np.atleast_1d(agent.acq_axes)
 
-    x_dof, y_dof = agent.dofs[axes[0]], agent.dofs[axes[1]]
+    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
@@ -263,7 +263,7 @@ def _plot_acq_many_dofs(
 def _plot_valid_one_dof(agent, size=16, lw=1e0):
     agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * agent.n_objs), constrained_layout=True)
 
-    x_dof = agent.dofs[0]
+    x_dof = agent.dofs.subset(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.test_inputs_grid()
@@ -280,7 +280,7 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
     if gridded is None:
         gridded = len(agent.dofs.subset(active=True, read_only=False)) == 2
 
-    x_dof, y_dof = agent.dofs[axes[0]], agent.dofs[axes[1]]
+    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)

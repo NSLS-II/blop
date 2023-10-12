@@ -7,7 +7,7 @@ import pandas as pd
 numeric = Union[float, int]
 
 DEFAULT_MINIMUM_SNR = 2e1
-OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log"]
+OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log", "noise"]
 
 
 class DuplicateKeyError(ValueError):
@@ -62,8 +62,8 @@ class Objective:
         return self.summary.__repr__()
 
     @property
-    def has_model(self):
-        return hasattr(self, "model")
+    def noise(self):
+        return self.model.likelihood.noise.item() if hasattr(self, "model") else None
 
 
 class ObjectiveList(Sequence):
