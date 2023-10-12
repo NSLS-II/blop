@@ -56,8 +56,14 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
 
 
 def _plot_objs_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, grid_zoom=1):
+    """
+    Axes represents which active, non-read-only axes to plot with
+    """
+
+    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+
     if gridded is None:
-        gridded = len(agent.dofs.subset(active=True, read_only=False)) == 2
+        gridded = len(plottable_dofs) == 2
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(agent.objectives),
@@ -68,15 +74,16 @@ def _plot_objs_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COL
     )
 
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
-    
-    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
+
+    x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
     x_values = agent.table.loc[:, x_dof.device.name].values
     y_values = agent.table.loc[:, y_dof.device.name].values
 
     # test_inputs has shape (*input_shape, 1, n_active_dofs)
+    # test_x and test_y should be squeezeable
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
-    test_x = test_inputs[..., 0, axes[0]].detach().numpy()
-    test_y = test_inputs[..., 0, axes[1]].detach().numpy()
+    test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
+    test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for obj_index, obj in enumerate(agent.objectives):
         obj_values = agent._get_objective_targets(obj_index)
@@ -88,8 +95,8 @@ def _plot_objs_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COL
 
         # mean and sigma will have shape (*input_shape,)
         test_posterior = obj.model.posterior(test_inputs)
-        test_mean = test_posterior.mean[..., 0, 0].detach().numpy()
-        test_sigma = test_posterior.variance.sqrt()[..., 0, 0].detach().numpy()
+        test_mean = test_posterior.mean[..., 0, 0].detach().squeeze().numpy()
+        test_sigma = test_posterior.variance.sqrt()[..., 0, 0].detach().squeeze().numpy()
 
         if gridded:
             _ = agent.obj_axes[obj_index, 1].pcolormesh(
@@ -214,22 +221,24 @@ def _plot_acq_many_dofs(
         constrained_layout=True,
     )
 
+    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+
     if gridded is None:
-        gridded = len(agent.dofs.subset(active=True, read_only=False)) == 2
+        gridded = len(plottable_dofs) == 2
 
     agent.acq_axes = np.atleast_1d(agent.acq_axes)
 
-    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
+    x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
-    test_x = test_inputs[..., 0, axes[0]].detach().numpy()
-    test_y = test_inputs[..., 0, axes[1]].detach().numpy()
+    test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
+    test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for iacq_func, acq_func_identifier in enumerate(acq_funcs):
         acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
 
-        test_acqf = acq_func(test_inputs).detach().numpy()
+        test_acqf = acq_func(test_inputs).detach().squeeze().numpy()
 
         if gridded:
             agent.acq_axes[iacq_func].set_title(acq_func_meta["name"])
@@ -277,17 +286,19 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
 def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
     agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4 * agent.n_objs), constrained_layout=True)
 
-    if gridded is None:
-        gridded = len(agent.dofs.subset(active=True, read_only=False)) == 2
+    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
 
-    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
+    if gridded is None:
+        gridded = len(plottable_dofs) == 2
+
+    x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
-    test_x = test_inputs[..., 0, axes[0]].detach().numpy()
-    test_y = test_inputs[..., 0, axes[1]].detach().numpy()
+    test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
+    test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    constraint = agent.constraint(test_inputs)[..., 0]
+    constraint = agent.constraint(test_inputs)[..., 0].squeeze().numpy()
 
     if gridded:
         _ = agent.valid_axes[1].pcolormesh(

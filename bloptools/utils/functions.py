@@ -1,6 +1,10 @@
 import numpy as np
 
 
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
 def booth(x1, x2):
     """
     The Booth function (https://en.wikipedia.org/wiki/Test_functions_for_optimization)

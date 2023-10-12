@@ -1,7 +1,7 @@
 import pytest
 
-from bloptools import test_functions
 from bloptools.bayesian import DOF, Agent, BrownianMotion, Objective
+from bloptools.utils import functions
 
 
 @pytest.mark.test_func
@@ -9,8 +9,9 @@ def test_passive_dofs(RE, db):
     dofs = [
         DOF(name="x1", limits=(-5.0, 5.0)),
         DOF(name="x2", limits=(-5.0, 5.0)),
+        DOF(name="x3", limits=(-5.0, 5.0), active=False),
         DOF(BrownianMotion(name="brownian1"), read_only=True),
-        DOF(BrownianMotion(name="brownian2"), read_only=True),
+        DOF(BrownianMotion(name="brownian2"), read_only=True, active=False),
     ]
 
     objectives = [
@@ -20,7 +21,7 @@ def test_passive_dofs(RE, db):
     agent = Agent(
         dofs=dofs,
         objectives=objectives,
-        digestion=test_functions.constrained_himmelblau_digestion,
+        digestion=functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,
