@@ -30,7 +30,7 @@ def parse_acq_func(acq_func_identifier):
     return acq_func_name
 
 
-def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs):
+def get_acquisition_function(agent, acq_func_identifier="qei", return_metadata=True, **acq_func_kwargs):
     """
     Generates an acquisition function from a supplied identifier.
     """
@@ -46,8 +46,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = analytic.ConstrainedLogExpectedImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.best_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -55,8 +55,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = monte_carlo.qConstrainedExpectedImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.best_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -64,8 +64,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = analytic.ConstrainedLogProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.best_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -73,8 +73,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = monte_carlo.qConstrainedProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.best_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -103,7 +103,7 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
@@ -114,7 +114,7 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
@@ -126,4 +126,4 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func, _ = get_acquisition_function(agent, acq_func_identifier="qucb", beta=0, return_metadata=False)
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
-    return acq_func, acq_func_meta
+    return (acq_func, acq_func_meta) if return_metadata else acq_func
