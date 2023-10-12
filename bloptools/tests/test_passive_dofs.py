@@ -10,7 +10,7 @@ def test_passive_dofs(RE, db):
         DOF(name="x1", limits=(-5.0, 5.0)),
         DOF(name="x2", limits=(-5.0, 5.0)),
         DOF(BrownianMotion(name="brownian1"), read_only=True),
-        DOF(BrownianMotion(name="brownian1"), read_only=True),
+        DOF(BrownianMotion(name="brownian2"), read_only=True),
     ]
 
     objectives = [
@@ -28,6 +28,6 @@ def test_passive_dofs(RE, db):
 
     RE(agent.learn("qr", n=32))
 
-    agent.plot_tasks()
+    agent.plot_objectives()
     agent.plot_acquisition()
     agent.plot_validity()

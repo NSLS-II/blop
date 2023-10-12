@@ -6,7 +6,7 @@ import pandas as pd
 
 numeric = Union[float, int]
 
-DEFAULT_MINIMUM_SNR = 1e1
+DEFAULT_MINIMUM_SNR = 2e1
 OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log"]
 
 
@@ -59,7 +59,7 @@ class Objective:
         return series
 
     def __repr__(self):
-        return self.params.__repr__()
+        return self.summary.__repr__()
 
     @property
     def has_model(self):
@@ -87,6 +87,8 @@ class ObjectiveList(Sequence):
         # convert dtypes
         for attr in ["minimize", "log"]:
             summary[attr] = summary[attr].astype(bool)
+
+        return summary
 
     def __repr__(self):
         return self.summary.__repr__()

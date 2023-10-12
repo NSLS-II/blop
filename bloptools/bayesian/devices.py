@@ -33,7 +33,7 @@ class DOF:
     def __init__(
         self,
         device: Signal = None,
-        limits: Tuple[numeric, numeric] = (-10.0, 10.0),
+        limits: Tuple[float, float] = (-10.0, 10.0),
         name: str = None,
         units: str = None,
         read_only: bool = None,
@@ -53,11 +53,11 @@ class DOF:
 
     @property
     def lower_limit(self):
-        return self.limits[0]
+        return float(self.limits[0])
 
     @property
     def upper_limit(self):
-        return self.limits[1]
+        return float(self.limits[1])
 
     @property
     def readback(self):
