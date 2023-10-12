@@ -8,8 +8,9 @@ from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
 
-from bloptools.bayesian import DOF, Agent, Objective
-from bloptools.utils import functions
+from bloptools.bayesian import Agent
+
+from .. import devices, test_functions
 
 
 @pytest.fixture(scope="function")
@@ -58,8 +59,8 @@ def agent(db):
 
     agent = Agent(
         dofs=dofs,
-        objectives=objectives,
-        digestion=functions.constrained_himmelblau_digestion,
+        tasks=tasks,
+        digestion=test_functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,
