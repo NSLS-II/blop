@@ -104,6 +104,8 @@ class Agent:
     def tell(self, new_table=None, append=True, train=True, **kwargs):
         """
         Inform the agent about new inputs and targets for the model.
+
+        If run with no arguments, it will just reconstruct all the models. 
         """
 
         new_table = pd.DataFrame() if new_table is None else new_table
@@ -208,7 +210,7 @@ class Agent:
             NUM_RESTARTS = 8
             RAW_SAMPLES = 1024
 
-            candidates, _ = botorch.optim.optimize_acqf(
+            candidates, acqf_objective = botorch.optim.optimize_acqf(
                 acq_function=acq_func,
                 bounds=self.acquisition_function_bounds,
                 q=n,
@@ -226,6 +228,13 @@ class Agent:
             acq_func_meta["read_only_values"] = read_only_X
 
         else:
+
+            acqf_objective = None
+
+            if acq_func_name == "random":
+                acquisition_X = torch.rand()
+                acq_func_meta = {"name": "random", "args": {}}
+
             if acq_func_name == "quasi-random":
                 acquisition_X = self._subset_inputs_sampler(n=n, active=True, read_only=False).squeeze(1).numpy()
                 acq_func_meta = {"name": "quasi-random", "args": {}}
@@ -241,7 +250,7 @@ class Agent:
         acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
 
         if self.verbose:
-            print(f"found points {acquisition_X} in {duration:.01f} seconds")
+            print(f"found points {acquisition_X} with acqf {acq_func_meta['name']} in {duration:.01f} seconds (obj = {acqf_objective})")
 
         if route and n > 1:
             routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, acquisition_X)
@@ -257,7 +266,7 @@ class Agent:
         """
         try:
             acquisition_devices = self.dofs.subset(active=True, read_only=False).devices
-            read_only_devices = self.dofs.subset(active=True, read_only=True).devices
+            #read_only_devices = self.dofs.subset(active=True, read_only=True).devices
 
             # the acquisition plan always takes as arguments:
             # (things to move, where to move them, things to trigger once you get there)
@@ -266,7 +275,7 @@ class Agent:
             uid = yield from self.acquisition_plan(
                 acquisition_devices,
                 acquisition_inputs.astype(float),
-                [*self.dets, *read_only_devices],
+                [*self.dets, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
 
@@ -341,11 +350,12 @@ class Agent:
     def benchmark(
         self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
     ):
-        cache_limits = {dof["name"]: dof["limits"] for dof in self.dofs}
+        cache_limits = {dof.name:dof.limits for dof in self.dofs}
 
         for run in range(runs):
             for dof in self.dofs:
-                dof["limits"] = cache_limits[dof["name"]] + 0.25 * np.ptp(dof["limits"]) * np.random.uniform(low=-1, high=1)
+                offset = 0.25 * np.ptp(dof.limits) * np.random.uniform(low=-1, high=1)
+                dof.limits = (dof.limits[0] + offset, dof.limits[1] + offset)
 
             self.reset()
 
@@ -367,7 +377,7 @@ class Agent:
 
     @property
     def objective_weights_torch(self):
-        return torch.tensor(self.objectives.weights, dtype=torch.float)
+        return torch.tensor(self.objectives.weights, dtype=torch.double)
 
     def _get_objective_targets(self, i):
         """
@@ -454,8 +464,10 @@ class Agent:
         """
         Returns a (2, n_active_dof) array of bounds for the acquisition function
         """
-        acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in self.dofs]
-        acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in self.dofs]
+        active_dofs = self.dofs.subset(active=True)
+
+        acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in active_dofs]
+        acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in active_dofs]
 
         return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
 
@@ -598,20 +610,23 @@ class Agent:
     def active_inputs(self):
         return self.table.loc[:, self.dofs.subset(active=True).device_names].astype(float)
 
-    # @property
-    # def acquisition_inputs(self):
-    #     return self.table.loc[:, self.dofs.subset(active=True, read_only=False).names].astype(float)
+    @property
+    def acquisition_inputs(self):
+        return self.table.loc[:, self.dofs.subset(active=True, read_only=False).names].astype(float)
 
-    # @property
-    # def best_inputs(self):
-    #     return self.acquisition_inputs.values[np.nanargmax(self.scalarized_objectives)]
+    @property
+    def best_inputs(self):
+        """
+        Returns a value for each currently active and non-read-only degree of freedom
+        """
+        return self.table.loc[np.nanargmax(self.scalarized_objectives), self.dofs.subset(active=True, read_only=False).names]
 
-    # def go_to(self, acquisition_inputs):
-    #     args = []
-    #     for dof, value in zip(self.dofs.subset(read_only=False), np.atleast_1d(acquisition_inputs).T):
-    #         args.append(dof.device)
-    #         args.append(value)
-    #     yield from bps.mv(*args)
+    def go_to(self, positions):
+        args = []
+        for dof, value in zip(self.dofs.subset(active=True, read_only=False), np.atleast_1d(positions)):
+            args.append(dof.device)
+            args.append(value)
+        yield from bps.mv(*args)
 
     def go_to_best(self):
         yield from self.go_to(self.best_inputs)
