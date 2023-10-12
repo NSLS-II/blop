@@ -8,8 +8,8 @@ from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
 
-from bloptools import test_functions
 from bloptools.bayesian import DOF, Agent, Objective
+from bloptools.utils import functions
 
 
 @pytest.fixture(scope="function")
@@ -59,7 +59,7 @@ def agent(db):
     agent = Agent(
         dofs=dofs,
         objectives=objectives,
-        digestion=test_functions.constrained_himmelblau_digestion,
+        digestion=functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,
@@ -78,8 +78,8 @@ def multitask_agent(db):
         products = db[uid].table()
 
         for index, entry in products.iterrows():
-            products.loc[index, "ST1"] = test_functions.styblinski_tang(entry.x1, entry.x2)
-            products.loc[index, "ST2"] = test_functions.styblinski_tang(entry.x1, -entry.x2)
+            products.loc[index, "ST1"] = functions.styblinski_tang(entry.x1, entry.x2)
+            products.loc[index, "ST2"] = functions.styblinski_tang(entry.x1, -entry.x2)
 
         return products
 
