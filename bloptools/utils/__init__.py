@@ -4,6 +4,8 @@ import scipy as sp
 import torch
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
+from .functions import *  # noqa F401
+
 
 def sobol_sampler(bounds, n, q=1):
     """
