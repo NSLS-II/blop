@@ -78,7 +78,7 @@ class ConstrainedLogExpectedImprovement(LogExpectedImprovement):
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) + self.constraint(x).log().squeeze(-1)
+        return (super().forward(x) + self.constraint(x).log().squeeze(-1)).exp()
 
 
 class ConstrainedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
@@ -87,4 +87,4 @@ class ConstrainedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) + self.constraint(x).log().squeeze(-1)
+        return (super().forward(x) + self.constraint(x).log().squeeze(-1)).exp()
