@@ -74,8 +74,13 @@ def _plot_objs_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COL
     )
 
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
+<<<<<<< HEAD
 
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
+=======
+    
+    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
+>>>>>>> 6fffe33 (work at ATF on Oct 12)
     x_values = agent.table.loc[:, x_dof.device.name].values
     y_values = agent.table.loc[:, y_dof.device.name].values
 
@@ -228,7 +233,11 @@ def _plot_acq_many_dofs(
 
     agent.acq_axes = np.atleast_1d(agent.acq_axes)
 
+<<<<<<< HEAD
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
+=======
+    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
+>>>>>>> 6fffe33 (work at ATF on Oct 12)
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
@@ -291,7 +300,11 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
     if gridded is None:
         gridded = len(plottable_dofs) == 2
 
+<<<<<<< HEAD
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
+=======
+    x_dof, y_dof = agent.dofs.subset(active=True)[axes[0]], agent.dofs.subset(active=True)[axes[1]]
+>>>>>>> 6fffe33 (work at ATF on Oct 12)
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
