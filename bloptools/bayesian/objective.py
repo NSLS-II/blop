@@ -6,17 +6,8 @@ import pandas as pd
 
 numeric = Union[float, int]
 
-DEFAULT_MINIMUM_SNR = 2e1
-<<<<<<< HEAD
-<<<<<<< HEAD
-OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log", "noise"]
-
-=======
+DEFAULT_MINIMUM_SNR = 1e1
 OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log"]
->>>>>>> 39a579f (make sure DOF bounds are cast to floats)
-=======
-OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log", "noise"]
->>>>>>> 6fffe33 (work at ATF on Oct 12)
 
 
 class DuplicateKeyError(ValueError):
@@ -73,10 +64,6 @@ class Objective:
     @property
     def noise(self):
         return self.model.likelihood.noise.item() if hasattr(self, "model") else None
-<<<<<<< HEAD
-
-=======
->>>>>>> 6fffe33 (work at ATF on Oct 12)
 
 
 class ObjectiveList(Sequence):
