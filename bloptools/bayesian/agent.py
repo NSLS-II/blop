@@ -105,7 +105,7 @@ class Agent:
         """
         Inform the agent about new inputs and targets for the model.
 
-        If run with no arguments, it will just reconstruct all the models. 
+        If run with no arguments, it will just reconstruct all the models.
         """
 
         new_table = pd.DataFrame() if new_table is None else new_table
@@ -213,7 +213,7 @@ class Agent:
             NUM_RESTARTS = 8
             RAW_SAMPLES = 1024
 
-            candidates, acqf_objective = botorch.optim.optimize_acqf(
+            candidates, acqf_obj = botorch.optim.optimize_acqf(
                 acq_function=acq_func,
                 bounds=self.acquisition_function_bounds,
                 q=n,
@@ -226,43 +226,44 @@ class Agent:
 
             active_dofs_are_read_only = np.array([dof.read_only for dof in self.dofs.subset(active=True)])
 
-            acquisition_X = x[..., ~active_dofs_are_read_only]
+            acq_points = x[..., ~active_dofs_are_read_only]
             read_only_X = x[..., active_dofs_are_read_only]
             acq_func_meta["read_only_values"] = read_only_X
 
         else:
-
-            acqf_objective = None
+            acqf_obj = None
 
             if acq_func_name == "random":
-                acquisition_X = torch.rand()
+                acq_points = torch.rand()
                 acq_func_meta = {"name": "random", "args": {}}
 
             if acq_func_name == "quasi-random":
-                acquisition_X = self._subset_inputs_sampler(n=n, active=True, read_only=False).squeeze(1).numpy()
+                acq_points = self._subset_inputs_sampler(n=n, active=True, read_only=False).squeeze(1).numpy()
                 acq_func_meta = {"name": "quasi-random", "args": {}}
 
             elif acq_func_name == "grid":
                 n_active_dims = len(self.dofs.subset(active=True, read_only=False))
-                acquisition_X = self.test_inputs_grid(max_inputs=n).reshape(-1, n_active_dims).numpy()
+                acq_points = self.test_inputs_grid(max_inputs=n).reshape(-1, n_active_dims).numpy()
                 acq_func_meta = {"name": "grid", "args": {}}
 
             else:
                 raise ValueError()
 
             # define dummy acqf objective
-            acqf_objective = None
+            acqf_obj = None
 
         acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
 
         if self.verbose:
-            print(f"found points {acquisition_X} with acqf {acq_func_meta['name']} in {duration:.01f} seconds (obj = {acqf_objective})")
+            print(
+                f"found points {acq_points} with acqf {acq_func_meta['name']} in {duration:.01f} seconds (obj = {acqf_obj})"
+            )
 
         if route and n > 1:
-            routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, acquisition_X)
-            acquisition_X = acquisition_X[routing_index]
+            routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, acq_points)
+            acq_points = acq_points[routing_index]
 
-        return acquisition_X, acq_func_meta
+        return acq_points, acq_func_meta
 
     def acquire(self, acquisition_inputs):
         """
@@ -272,7 +273,7 @@ class Agent:
         """
         try:
             acquisition_devices = self.dofs.subset(active=True, read_only=False).devices
-            #read_only_devices = self.dofs.subset(active=True, read_only=True).devices
+            # read_only_devices = self.dofs.subset(active=True, read_only=True).devices
 
             # the acquisition plan always takes as arguments:
             # (things to move, where to move them, things to trigger once you get there)
@@ -356,12 +357,12 @@ class Agent:
     def benchmark(
         self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
     ):
-        cache_limits = {dof.name:dof.limits for dof in self.dofs}
+        cache_limits = {dof.name: dof.limits for dof in self.dofs}
 
         for run in range(runs):
             for dof in self.dofs:
                 offset = 0.25 * np.ptp(dof.limits) * np.random.uniform(low=-1, high=1)
-                dof.limits = (dof.limits[0] + offset, dof.limits[1] + offset)
+                dof.limits = (cache_limits[dof.name] + offset, cache_limits[dof.name] + offset)
 
             self.reset()
 
@@ -470,27 +471,12 @@ class Agent:
         """
         Returns a (2, n_active_dof) array of bounds for the acquisition function
         """
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 6fffe33 (work at ATF on Oct 12)
         active_dofs = self.dofs.subset(active=True)
 
         acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in active_dofs]
         acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in active_dofs]
-<<<<<<< HEAD
-=======
-        acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in self.dofs]
-        acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in self.dofs]
->>>>>>> 39a579f (make sure DOF bounds are cast to floats)
-=======
->>>>>>> 6fffe33 (work at ATF on Oct 12)
 
         return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
-
-        return torch.tensor(
-            [dof.limits if not dof.read_only else tuple(2 * [dof.readback]) for dof in self.dofs.subset(active=True)]
-        ).T
 
     # @property
     # def num_objectives(self):
@@ -669,8 +655,4 @@ class Agent:
             plotting._plot_valid_many_dofs(self, **kwargs)
 
     def plot_history(self, **kwargs):
-<<<<<<< HEAD
         plotting._plot_history(self, **kwargs)
-=======
-        plotting._plot_history(self, **kwargs)
->>>>>>> 39a579f (make sure DOF bounds are cast to floats)

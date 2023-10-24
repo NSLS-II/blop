@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-from .agent import *  # noqa F401
-from .devices import *  # noqa F401
-from .objective import *  # noqa F401
-=======
 import os
 
 import yaml
@@ -132,4 +127,3 @@ def get_acquisition_function(agent, acq_func_identifier="qei", return_metadata=T
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     return (acq_func, acq_func_meta) if return_metadata else acq_func
->>>>>>> 39a579f (make sure DOF bounds are cast to floats)

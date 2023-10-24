@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import botorch
 import numpy as np
 import scipy as sp
@@ -226,7 +225,3 @@ def best_image_feedback(image):
     yw = 2 * np.sqrt((np.sum(y_weight * y**2) / np.sum(y_weight) - y0**2))
 
     return x0, xw, y0, yw
-=======
-from .functions import *  # noqa F401
-from .misc import *  # noqa F401
->>>>>>> 05b8e73 (fixed shapes in grid plots)
