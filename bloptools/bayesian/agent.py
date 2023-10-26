@@ -124,7 +124,11 @@ class Agent:
             train_index = ~np.isnan(targets)
 
             if not train_index.sum() >= 2:
-                raise ValueError("There must be at least two valid data points per objective!")
+                warnings.warn(
+                    f"There is only one valid data point for objective '{obj.name}'; a model will not be constructed."
+                )
+
+                return
 
             train_inputs = torch.tensor(inputs[train_index], dtype=torch.double)
             train_targets = torch.tensor(targets[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
@@ -399,10 +403,13 @@ class Agent:
         targets = np.where(valid, targets, np.nan)
 
         # transform if needed
+        if obj.mode == "target":
+            targets = np.square(targets - obj.target)
+
         if obj.log:
             targets = np.where(valid, np.log(targets), np.nan)
 
-        if obj.minimize:
+        if obj.mode == "minimize":
             targets *= -1
 
         return targets

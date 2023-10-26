@@ -28,6 +28,7 @@ class Objective:
         key: str,
         name: str = None,
         minimize: bool = False,
+        target: bool = None,
         log: bool = False,
         weight: numeric = 1.0,
         limits: Tuple[numeric, numeric] = None,
@@ -35,6 +36,12 @@ class Objective:
     ):
         self.name = name if name is not None else key
         self.key = key
+        self.target = target
+
+        if target is not None:
+            self.mode = "target"
+            self.minimize = True  # this overwrites the passed value
+
         self.minimize = minimize
         self.log = log
         self.weight = weight
