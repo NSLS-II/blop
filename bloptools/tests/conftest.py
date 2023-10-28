@@ -69,7 +69,7 @@ def agent(db):
 
 
 @pytest.fixture(scope="function")
-def multitask_agent(db):
+def multi_agent(db):
     """
     A simple agent minimizing two Styblinski-Tang functions
     """

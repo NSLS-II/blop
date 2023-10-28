@@ -16,23 +16,15 @@ class qConstrainedUpperConfidenceBound(qUpperConfidenceBound):
     def forward(self, x):
         *input_shape, _, _ = x.shape
 
-        posterior = self.model.posterior(x)
-        mean, sigma = posterior.mean, posterior.variance.sqrt()
+        transformed_posterior = self.posterior_transform(self.model.posterior(x))
+        mean = transformed_posterior.mean.reshape(input_shape)
+        sigma = transformed_posterior.variance.sqrt().reshape(input_shape)
 
         p_eff = (
             0.5
             * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2)))
             * torch.clamp(self.constraint(x).reshape(input_shape), min=1e-6)
         )
-
-        return mean.reshape(*input_shape) + sigma.reshape(*input_shape) * np.sqrt(2) * torch.special.erfinv(
-            2 * p_eff.reshape(*input_shape) - 1
-        )
-
-        posterior = self.model.posterior(x)
-        mean, sigma = posterior.mean, posterior.variance.sqrt()
-
-        p_eff = 0.5 * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2))) * torch.clamp(self.constraint(x), min=1e-6)
 
         return mean + sigma * np.sqrt(2) * torch.special.erfinv(2 * p_eff - 1)
 

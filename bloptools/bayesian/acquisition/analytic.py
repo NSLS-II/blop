@@ -60,8 +60,9 @@ class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
 
     def forward(self, x):
         *input_shape, _, _ = x.shape
-
-        mean, sigma = self._mean_and_sigma(x)
+        transformed_posterior = self.posterior_transform(self.model.posterior(x))
+        mean = transformed_posterior.mean.reshape(input_shape)
+        sigma = transformed_posterior.variance.sqrt().reshape(input_shape)
 
         p_eff = (
             0.5
