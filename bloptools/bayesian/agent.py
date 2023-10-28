@@ -117,7 +117,7 @@ class Agent:
         if self.initialized:
             cached_hypers = self.hypers
 
-        inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
+        inputs = self.table.loc[:, self.dofs.subset(active=True).device_names].values.astype(float)
 
         for i, obj in enumerate(self.objectives):
             self.table.loc[:, f"{obj.key}_fitness"] = targets = self._get_objective_targets(i)
@@ -297,7 +297,7 @@ class Agent:
             if not self.allow_acquisition_errors:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
-            products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).names)
+            products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).device_names)
             for obj in self.objectives:
                 products.loc[:, obj.key] = np.nan
 
@@ -615,14 +615,16 @@ class Agent:
 
     @property
     def acquisition_inputs(self):
-        return self.table.loc[:, self.dofs.subset(active=True, read_only=False).names].astype(float)
+        return self.table.loc[:, self.dofs.subset(active=True, read_only=False).device_names].astype(float)
 
     @property
     def best_inputs(self):
         """
         Returns a value for each currently active and non-read-only degree of freedom
         """
-        return self.table.loc[np.nanargmax(self.scalarized_objectives), self.dofs.subset(active=True, read_only=False).names]
+        return self.table.loc[
+            np.nanargmax(self.scalarized_objectives), self.dofs.subset(active=True, read_only=False).device_names
+        ]
 
     def go_to(self, positions):
         args = []
