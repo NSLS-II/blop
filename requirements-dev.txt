@@ -2,11 +2,14 @@
 # the documentation) but not necessarily required for _using_ it.
 black
 pytest-codecov
+chardet
 coverage
 flake8
 furo
 isort
+markupsafe
 nbstripout
+numpydoc
 pre-commit
 pre-commit-hooks
 pytest

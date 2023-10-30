@@ -136,7 +136,7 @@ class Agent:
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
-                    torch.tensor(1e-4).square(),
+                    torch.tensor(1e-2).square(),
                     torch.tensor(1 / obj.min_snr).square(),
                 ),
                 # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
@@ -293,6 +293,9 @@ class Agent:
             #     for obj in self.objectives:
             #         products.loc[index, objective["key"]] = getattr(entry, objective["key"])
 
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt()
+
         except Exception as error:
             if not self.allow_acquisition_errors:
                 raise error
@@ -334,11 +337,12 @@ class Agent:
 
         if acq_func is not None:
             for i in range(iterations):
-                x, acq_func_meta = self.ask(n=n, acq_func_identifier=acq_func, **kwargs)
-
-                new_table = yield from self.acquire(x)
-                new_table.loc[:, "acq_func"] = acq_func_meta["name"]
-                self.tell(new_table=new_table, train=train)
+                print(f"running iteration {i + 1} / {iterations}")
+                for single_acq_func in np.atleast_1d(acq_func):
+                    x, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func, **kwargs)
+                    new_table = yield from self.acquire(x)
+                    new_table.loc[:, "acq_func"] = acq_func_meta["name"]
+                    self.tell(new_table=new_table, train=train)
 
         self.initialized = True
 
@@ -357,12 +361,12 @@ class Agent:
     def benchmark(
         self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
     ):
-        cache_limits = {dof.name: dof.limits for dof in self.dofs}
+        # cache_limits = {dof.name: dof.limits for dof in self.dofs}
 
         for run in range(runs):
-            for dof in self.dofs:
-                offset = 0.25 * np.ptp(dof.limits) * np.random.uniform(low=-1, high=1)
-                dof.limits = (cache_limits[dof.name] + offset, cache_limits[dof.name] + offset)
+            # for dof in self.dofs:
+            #     offset = 0.25 * np.ptp(dof.limits) * np.random.uniform(low=-1, high=1)
+            #     dof.limits = (cache_limits[dof.name][0] + offset, cache_limits[dof.name][1] + offset)
 
             self.reset()
 

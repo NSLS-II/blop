@@ -3,6 +3,7 @@ botorch
 databroker
 gpytorch
 h5py
+IPython
 matplotlib
 numpy
 ophyd
