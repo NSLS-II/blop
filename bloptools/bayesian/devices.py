@@ -51,6 +51,8 @@ class DOF:
         self.active = active
         self.latent_group = latent_group if latent_group is not None else str(uuid.uuid4())
 
+        self.device.kind = "hinted"
+
     @property
     def lower_limit(self):
         return float(self.limits[0])
