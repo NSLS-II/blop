@@ -139,7 +139,7 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        self._update_models(train=train_models, a_priori_hypers=hypers)
+        skew_dims = self.latent_dim_tuples
 
     def _update_models(self, train=True, skew_dims=None, a_priori_hypers=None):
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
@@ -234,7 +234,7 @@ class Agent:
             print(f'finding points with acquisition function "{acq_func_name}" ...')
 
         if acq_func_type in ["analytic", "monte_carlo"]:
-            if not self.initialized:
+            if not self.has_models:
                 raise RuntimeError(
                     f'Can\'t construct non-trivial acquisition function "{acq_func_identifier}"'
                     f" (the agent is not initialized!)"
@@ -361,40 +361,18 @@ class Agent:
         hypers_file=None,
         append=True,
     ):
-        """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
-
-        For example:
-
-        RE(agent.learn("qr", n=16))
-        RE(agent.learn("qei", n=4, iterations=4))
-
-        Parameters
-        ----------
-        acq_func : str
-            A valid identifier for an implemented acquisition function.
-        n : int
-            How many points to sample on each iteration.
-        iterations: int
-            How many iterations of the learning loop to perform.
-        train: bool
-            Whether to train the models upon telling the agent.
-        append: bool
-            If `True`, add the new data to the old data. If `False`, replace the old data with the new data.
-        data_file: str
-            If supplied, read a saved data file instead of running the acquisition plan.
-        hypers_file: str
-            If supplied, read a saved hyperparameter file instead of fitting models. NOTE: The agent will assume these
-            hyperparameters a priori for the rest of the run, and not try to fit a model.
+        """
+        This iterates the learning algorithm, looping over ask -> acquire -> tell.
+        It should be passed to a Bluesky RunEngine.
         """
 
         if data_file is not None:
             new_table = pd.read_hdf(data_file, key="table")
 
-        elif acq_func is not None:
-            if self.sample_center_on_init and not self.initialized:
-                center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
-                new_table = yield from self.acquire(center_inputs)
-                new_table.loc[:, "acq_func"] = "sample_center_on_init"
+        if self.sample_center_on_init and not self.has_models:
+            new_table = yield from self.acquire(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
+            new_table.loc[:, "acq_func"] = "sample_center_on_init"
+            self.tell(new_table=new_table, train=False)
 
             for i in range(iterations):
                 print(f"running iteration {i + 1} / {iterations}")
@@ -423,7 +401,8 @@ class Agent:
     def reset(self):
         """Reset the agent."""
         self.table = pd.DataFrame()
-        self.initialized = False
+        for obj in self.objectives:
+            del obj.model
 
     def benchmark(
         self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]

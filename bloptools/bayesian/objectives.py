@@ -28,7 +28,7 @@ def _validate_objectives(objectives):
 class Objective:
     key: str
     name: str = None
-    target: float | str = "max"
+    target: Union[float, str] = "max"
     log: bool = False
     weight: numeric = 1.0
     limits: Tuple[numeric, numeric] = None
