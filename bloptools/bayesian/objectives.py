@@ -1,8 +1,10 @@
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Tuple, Union
 
 import numpy as np
 import pandas as pd
+from ophyd import Signal
 
 numeric = Union[float, int]
 
@@ -22,63 +24,36 @@ def _validate_objectives(objectives):
         raise DuplicateKeyError(f'Duplicate key(s) in supplied objectives: "{duplicate_keys}"')
 
 
+@dataclass
 class Objective:
-    """A degree of freedom (DOF), to be used by an agent.
+    key: str
+    name: str = None
+    target: float | str = "max"
+    log: bool = False
+    weight: numeric = 1.0
+    limits: Tuple[numeric, numeric] = None
+    min_snr: numeric = DEFAULT_MINIMUM_SNR
+    units: str = None
 
-    Parameters
-    ----------
-    description: str
-        The description of the DOF. This is used as a key.
-    description: str
-        A longer description for the DOF.
-    device: Signal, optional
-        An ophyd device. If None, a dummy ophyd device is generated.
-    limits: tuple, optional
-        A tuple of the lower and upper limit of the DOF. If the DOF is not read-only, the agent
-        will not explore outside the limits. If the DOF is read-only, the agent will reject all
-        sampled data where the DOF is outside the limits.
-    read_only: bool
-        If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
-        device is read-only.
-    active: bool
-        If True, the agent will try to use the DOF in its optimization. If False, the agent will
-        still read the DOF but not include it any model or acquisition function.
-    units: str
-        The units of the DOF (e.g. mm or deg). This is only for plotting and general housekeeping.
-    tags: list
-        A list of tags. These make it easier to subset large groups of dofs.
-    latent_group: optional
-        An agent will fit latent dimensions to all DOFs with the same latent_group. If None, the
-        DOF will be modeled independently.
-    """
+    def __post_init__(self):
+        if self.name is None:
+            self.name = self.key
 
-    def __init__(
-        self,
-        key: str,
-        description: str = "",
-        minimize: bool = False,
-        log: bool = False,
-        weight: numeric = 1.0,
-        limits: Tuple[numeric, numeric] = None,
-        min_snr: numeric = DEFAULT_MINIMUM_SNR,
-    ):
-        self.description = description if description is not None else key
-        self.key = key
-        self.minimize = minimize
-        self.log = log
-        self.weight = weight
-        self.min_snr = min_snr
+        if self.limits is None:
+            if self.log:
+                self.limits = (0, np.inf)
+            else:
+                self.limits = (-np.inf, np.inf)
 
-        if limits is not None:
-            self.limits = limits
-        elif self.log:
-            self.limits = (0, np.inf)
-        else:
-            self.limits = (-np.inf, np.inf)
+        if type(self.target) is str:
+            if self.target not in ["min", "max"]:
+                raise ValueError("'target' must be either 'min', 'max', or a number.")
+
+        self.device = Signal(name=self.name)
 
     @property
     def label(self):
-        return f"{'neg ' if self.minimize else ''}{'log ' if self.log else ''}{self.description}"
+        return f"{'neg ' if self.target == 'min' else ''}{'log ' if self.log else ''}{self.name}"
 
     @property
     def summary(self):
@@ -114,7 +89,7 @@ class ObjectiveList(Sequence):
                 summary.loc[i, col] = getattr(obj, col)
 
         # convert dtypes
-        for attr in ["minimize", "log"]:
+        for attr in ["log"]:
             summary[attr] = summary[attr].astype(bool)
 
         return summary
