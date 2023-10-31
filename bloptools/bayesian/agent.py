@@ -22,10 +22,12 @@ from ophyd import Signal
 
 from .. import utils
 from . import acquisition, models, plotting
-from .acquisition import default_acquisition_plan
-from .devices import DOF, DOFList
 from .digestion import default_digestion_function
-from .objective import Objective, ObjectiveList
+from .dofs import DOFList
+from .objectives import ObjectiveList
+from .plans import default_acquisition_plan
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -477,8 +479,14 @@ class Agent:
         # transform if needed
         if obj.log:
             targets = np.where(valid, np.log(targets), np.nan)
+            if obj.target not in ["min", "max"]:
+                targets = -np.square(np.log(targets) - np.log(obj.target))
 
-        if obj.minimize:
+        else:
+            if obj.target not in ["min", "max"]:
+                targets = -np.square(targets - obj.target)
+
+        if obj.target == "min":
             targets *= -1
 
         return targets
