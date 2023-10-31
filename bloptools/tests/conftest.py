@@ -54,7 +54,7 @@ def agent(db):
         DOF(name="x2", limits=(-8.0, 8.0)),
     ]
 
-    objectives = [Objective(key="himmelblau", minimize=True)]
+    objectives = [Objective(key="himmelblau", target="min")]
 
     agent = Agent(
         dofs=dofs,
@@ -88,7 +88,7 @@ def multi_agent(db):
         DOF(name="x2", limits=(-5.0, 5.0)),
     ]
 
-    objectives = [Objective(key="ST1", minimize=True), Objective(key="ST2", minimize=True)]
+    objectives = [Objective(key="ST1", target="min"), Objective(key="ST2", target="min")]
 
     agent = Agent(
         dofs=dofs,
