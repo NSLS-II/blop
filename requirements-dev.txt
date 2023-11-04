@@ -6,7 +6,6 @@ coverage
 flake8
 furo
 isort
-markupsafe
 nbstripout
 pre-commit
 pre-commit-hooks
@@ -18,6 +17,7 @@ ipython
 jupyter
 matplotlib
 nbsphinx
+numpydoc
 pandoc
 # sirepo-bluesky
 sphinx-copybutton
