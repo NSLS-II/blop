@@ -54,8 +54,19 @@ def default_acquisition_plan(dofs, inputs, dets, **kwargs):
 
 
 class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
-    def __init__(self, constraint, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Upper confidence bound, but scaled by some constraint.
+    NOTE: Because the UCB can be negative, we constrain it by adjusting the Gaussian quantile.
+
+    Parameters
+    ----------
+    model:
+        A BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, model, constraint, **kwargs):
+        super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
     def forward(self, x):
@@ -74,8 +85,18 @@ class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
 
 
 class ConstrainedLogExpectedImprovement(LogExpectedImprovement):
-    def __init__(self, constraint, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Log expected improvement, but scaled by some constraint.
+
+    Parameters
+    ----------
+    model:
+        A BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, model, constraint, **kwargs):
+        super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
     def forward(self, x):
@@ -83,8 +104,18 @@ class ConstrainedLogExpectedImprovement(LogExpectedImprovement):
 
 
 class ConstrainedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
-    def __init__(self, constraint, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Log probability of improvement acquisition function, but scaled by some constraint.
+
+    Parameters
+    ----------
+    model:
+        A BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, model, constraint, **kwargs):
+        super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
     def forward(self, x):

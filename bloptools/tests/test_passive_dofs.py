@@ -31,4 +31,4 @@ def test_passive_dofs(RE, db):
 
     agent.plot_objectives()
     agent.plot_acquisition()
-    agent.plot_validity()
+    agent.plot_constraint()

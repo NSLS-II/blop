@@ -7,5 +7,5 @@ def test_plots(RE, agent):
 
     agent.plot_objectives()
     agent.plot_acquisition()
-    agent.plot_validity()
+    agent.plot_constraint()
     agent.plot_history()

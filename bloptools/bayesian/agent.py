@@ -1,15 +1,15 @@
 import logging
-import os
 import time as ttime
 import warnings
 from collections import OrderedDict
+from collections.abc import Mapping
+from typing import Callable, Sequence, Tuple
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
 import botorch
 import gpytorch
 import h5py
-import IPython as ip
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
@@ -17,15 +17,15 @@ import scipy as sp
 import torch
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
+from databroker import Broker
+from ophyd import Signal
 
 from .. import utils
 from . import acquisition, models, plotting
 from .acquisition import default_acquisition_plan
-from .devices import DOFList
+from .devices import DOF, DOFList
 from .digestion import default_digestion_function
-from .objective import ObjectiveList
-
-os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
+from .objective import Objective, ObjectiveList
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -37,27 +37,42 @@ MAX_TEST_INPUTS = 2**11
 class Agent:
     def __init__(
         self,
-        dofs,
-        objectives,
-        db,
-        **kwargs,
+        dofs: Sequence[DOF] | DOFList,
+        objectives: Sequence[Objective] | ObjectiveList,
+        db: Broker = None,
+        dets: Sequence[Signal] = [],
+        acquistion_plan=default_acquisition_plan,
+        digestion: Callable = default_digestion_function,
+        verbose: bool = False,
+        tolerate_acquisition_errors=False,
+        sample_center_on_init=False,
+        trigger_delay: float = 0,
     ):
         """
-        A Bayesian optimization self.
+        A Bayesian optimization agent.
 
         Parameters
         ----------
-        dofs : iterable of ophyd objects
+        dofs : iterable of DOF objects
             The degrees of freedom that the agent can control, which determine the output of the model.
-        bounds : iterable of lower and upper bounds
-            The bounds on each degree of freedom. This should be an array of shape (n_dofs, 2).
-        objectives : iterable of objectives
+        objectives : iterable of Objective objects
             The objectives which the agent will try to optimize.
-        acquisition : Bluesky plan generator that takes arguments (dofs, inputs, dets)
+        dets : iterable of ophyd objects
+            Detectors to trigger during acquisition.
+        acquisition_plan : optional
             A plan that samples the beamline for some given inputs.
-        digestion : function that takes arguments (db, uid)
-            A function to digest the output of the acquisition.
-        db : A databroker instance.
+        digestion :
+            A function to digest the output of the acquisition, taking arguments (db, uid).
+        db : optional
+            A databroker instance.
+        verbose : bool
+            To be verbose or not.
+        tolerate_acquisition_errors : bool
+            Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
+        sample_center_on_init : bool
+            Whether to sample the center of the DOF limits when the agent has no data yet.
+        trigger_delay : float
+            How many seconds to wait between moving DOFs and triggering detectors.
         """
 
         # DOFs are parametrized by whether they are active and whether they are read-only
@@ -82,42 +97,55 @@ class Agent:
         self.objectives = ObjectiveList(list(np.atleast_1d(objectives)))
         self.db = db
 
-        self.verbose = kwargs.get("verbose", False)
-        self.allow_acquisition_errors = kwargs.get("allow_acquisition_errors", True)
-        self.initialization = kwargs.get("initialization", None)
-        self.acquisition_plan = kwargs.get("acquisition_plan", default_acquisition_plan)
-        self.digestion = kwargs.get("digestion", default_digestion_function)
-        self.dets = list(np.atleast_1d(kwargs.get("dets", [])))
+        self.dets = dets
+        self.acquisition_plan = acquistion_plan
+        self.digestion = digestion
 
-        self.trigger_delay = kwargs.get("trigger_delay", 0)
-        self.acq_func_config = kwargs.get("acq_func_config", acquisition.config)
-        self.sample_center_on_init = kwargs.get("sample_center_on_init", False)
+        self.verbose = verbose
+
+        self.tolerate_acquisition_errors = tolerate_acquisition_errors
+
+        self.trigger_delay = trigger_delay
+        self.sample_center_on_init = sample_center_on_init
 
         self.table = pd.DataFrame()
 
         self.initialized = False
-        self._train_models = True
         self.a_priori_hypers = None
 
-        self.plots = {"objectives": {}}
-
-    def tell(self, new_table=None, append=True, train=True, **kwargs):
+    def tell(self, x: Mapping, y: Mapping, metadata=None, append=True, train_models=True, hypers=None):
         """
         Inform the agent about new inputs and targets for the model.
 
         If run with no arguments, it will just reconstruct all the models.
+
+        Parameters
+        ----------
+        x : dict
+            A dict keyed by the name of each DOF, with a list of values for each DOF.
+        y : dict
+            A dict keyed by the name of each objective, with a list of values for each objective.
+        append: bool
+            If `True`, will append new data to old data. If `False`, will replace old data with new data.
+        train_models: bool
+            Whether to train the models on construction.
+        hypers:
+            A dict of hyperparameters for the model to assume a priori.
         """
 
-        new_table = pd.DataFrame() if new_table is None else new_table
+        new_table = pd.DataFrame({**x, **y, **metadata} if metadata is not None else {**x, **y})
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        skew_dims = self.latent_dim_tuples
+        self._update_models(train=train_models, a_priori_hypers=hypers)
 
-        if self.initialized:
-            cached_hypers = self.hypers
+    def _update_models(self, train=True, skew_dims=None, a_priori_hypers=None):
+        skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
 
-        inputs = self.table.loc[:, self.dofs.subset(active=True).device_names].values.astype(float)
+        # if self.initialized:
+        #     cached_hypers = self.hypers
+
+        inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
 
         for i, obj in enumerate(self.objectives):
             self.table.loc[:, f"{obj.key}_fitness"] = targets = self._get_objective_targets(i)
@@ -140,7 +168,7 @@ class Agent:
                     torch.tensor(1 / obj.min_snr).square(),
                 ),
                 # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
-            ).double()
+            )
 
             outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
 
@@ -151,11 +179,11 @@ class Agent:
                 skew_dims=skew_dims,
                 input_transform=self._subset_input_transform(active=True),
                 outcome_transform=outcome_transform,
-            ).double()
+            )
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
             self.all_objectives_valid.long(), learn_additional_noise=True
-        ).double()
+        )
 
         self.classifier = models.LatentDirichletClassifier(
             train_inputs=torch.tensor(inputs).double(),
@@ -163,32 +191,39 @@ class Agent:
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
             input_transform=self._subset_input_transform(active=True),
-        ).double()
+        )
 
-        if self.a_priori_hypers is not None:
-            self._set_hypers(self.a_priori_hypers)
-        elif not train:
-            self._set_hypers(cached_hypers)
+        if a_priori_hypers is not None:
+            self._set_hypers(a_priori_hypers)
         else:
-            try:
-                self.train_models()
-            except botorch.exceptions.errors.ModelFittingError:
-                if self.initialized:
-                    self._set_hypers(cached_hypers)
-                else:
-                    raise RuntimeError("Could not fit model on initialization!")
+            self._train_models()
+            # try:
+
+            # except botorch.exceptions.errors.ModelFittingError:
+            #     if self.initialized:
+            #         self._set_hypers(cached_hypers)
+            #     else:
+            #         raise RuntimeError("Could not fit model on initialization!")
 
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
 
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, **acq_func_kwargs):
-        """
-        Ask the agent for the best point to sample, given an acquisition function.
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True):
+        """Ask the agent for the best point to sample, given an acquisition function.
 
-        acq_func_identifier: which acquisition function to use
-        n: how many points to get
+        Parameters
+        ----------
+        acq_func_identifier :
+            Which acquisition function to use. Supported values can be found in `agent.all_acq_funcs`
+        n : int
+            How many points you want
+        route : bool
+            Whether to route the supplied points to make a more efficient path.
+        sequential : bool
+            Whether to generate points sequentially (as opposed to in parallel). Sequential generation involves
+            finding one points and constructing a fantasy posterior about its value to generate the next point.
         """
 
-        acq_func_name = acquisition.parse_acq_func(acq_func_identifier)
+        acq_func_name = acquisition.parse_acq_func_identifier(acq_func_identifier)
         acq_func_type = acquisition.config[acq_func_name]["type"]
 
         start_time = ttime.monotonic()
@@ -206,9 +241,7 @@ class Agent:
             if acq_func_type == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            acq_func, acq_func_meta = self.get_acquisition_function(
-                acq_func_identifier=acq_func_identifier, return_metadata=True
-            )
+            acq_func, acq_func_meta = self.get_acquisition_function(identifier=acq_func_identifier, return_metadata=True)
 
             NUM_RESTARTS = 8
             RAW_SAMPLES = 1024
@@ -266,11 +299,17 @@ class Agent:
         return acq_points, acq_func_meta
 
     def acquire(self, acquisition_inputs):
-        """
-        Acquire and digest according to the self's acquisition and digestion plans.
+        """Acquire and digest according to the self's acquisition and digestion plans.
 
-        This should yield a table of sampled objectives with the same length as the sampled inputs.
+        Parameters
+        ----------
+        acquisition_inputs :
+            A 2D numpy array comprising inputs for the active and non-read-only DOFs to sample.
         """
+
+        if self.db is None:
+            raise ValueError("Cannot run acquistion without databroker instance!")
+
         try:
             acquisition_devices = self.dofs.subset(active=True, read_only=False).devices
             # read_only_devices = self.dofs.subset(active=True, read_only=True).devices
@@ -293,14 +332,14 @@ class Agent:
             #     for obj in self.objectives:
             #         products.loc[index, objective["key"]] = getattr(entry, objective["key"])
 
-        except KeyboardInterrupt:
-            raise KeyboardInterrupt()
+        except KeyboardInterrupt as interrupt:
+            raise interrupt
 
         except Exception as error:
-            if not self.allow_acquisition_errors:
+            if not self.tolerate_acquisition_errors:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
-            products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).device_names)
+            products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).names)
             for obj in self.objectives:
                 products.loc[:, obj.key] = np.nan
 
@@ -316,51 +355,90 @@ class Agent:
         iterations=1,
         upsample=1,
         train=True,
-        data=None,
-        **kwargs,
+        data_file=None,
+        hypers_file=None,
+        append=True,
     ):
+        """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
+
+        For example:
+
+        RE(agent.learn("qr", n=16))
+        RE(agent.learn("qei", n=4, iterations=4))
+
+        Parameters
+        ----------
+        acq_func : str
+            A valid identifier for an implemented acquisition function.
+        n : int
+            How many points to sample on each iteration.
+        iterations: int
+            How many iterations of the learning loop to perform.
+        train: bool
+            Whether to train the models upon telling the agent.
+        append: bool
+            If `True`, add the new data to the old data. If `False`, replace the old data with the new data.
+        data_file: str
+            If supplied, read a saved data file instead of running the acquisition plan.
+        hypers_file: str
+            If supplied, read a saved hyperparameter file instead of fitting models. NOTE: The agent will assume these
+            hyperparameters a priori for the rest of the run, and not try to fit a model.
         """
-        This iterates the learning algorithm, looping over ask -> acquire -> tell.
-        It should be passed to a Bluesky RunEngine.
-        """
 
-        if data is not None:
-            if type(data) == str:
-                self.tell(new_table=pd.read_hdf(data, key="table"))
-            else:
-                self.tell(new_table=data)
+        if data_file is not None:
+            new_table = pd.read_hdf(data_file, key="table")
 
-        if self.sample_center_on_init and not self.initialized:
-            new_table = yield from self.acquire(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
-            new_table.loc[:, "acq_func"] = "sample_center_on_init"
-            self.tell(new_table=new_table, train=False)
+        elif acq_func is not None:
+            if self.sample_center_on_init and not self.initialized:
+                center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
+                new_table = yield from self.acquire(center_inputs)
+                new_table.loc[:, "acq_func"] = "sample_center_on_init"
 
-        if acq_func is not None:
             for i in range(iterations):
                 print(f"running iteration {i + 1} / {iterations}")
                 for single_acq_func in np.atleast_1d(acq_func):
-                    x, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func, **kwargs)
+                    x, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func)
                     new_table = yield from self.acquire(x)
                     new_table.loc[:, "acq_func"] = acq_func_meta["name"]
-                    self.tell(new_table=new_table, train=train)
+
+        else:
+            raise ValueError("You must supply either an acquisition function or a filepath!")
+
+        x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
+        y = {key: new_table.pop(key).tolist() for key in self.objectives.keys}
+        metadata = new_table.to_dict(orient="list")
+
+        self.tell(x=x, y=y, metadata=metadata, append=append, train_models=True)
 
         self.initialized = True
 
-    def get_acquisition_function(self, acq_func_identifier, return_metadata=False):
-        return acquisition.get_acquisition_function(
-            self, acq_func_identifier=acq_func_identifier, return_metadata=return_metadata
-        )
+    def get_acquisition_function(self, identifier, return_metadata=False):
+        """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
+        found in `agent.all_acq_funcs`.
+        """
+        return acquisition.get_acquisition_function(self, identifier=identifier, return_metadata=return_metadata)
 
     def reset(self):
-        """
-        Reset the agent.
-        """
+        """Reset the agent."""
         self.table = pd.DataFrame()
         self.initialized = False
 
     def benchmark(
         self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
     ):
+        """Iterate over having the agent learn from scratch, and save the results to an output directory.
+
+        Parameters
+        ----------
+        output_dir :
+            Where to save the optimized agents
+        runs : int
+            How many benchmarks to run
+        n_init : int
+            How many points to sample on reseting the agent.
+        learning_kwargs_list:
+            A list of kwargs which the agent will run sequentially for each run.
+        """
         # cache_limits = {dof.name: dof.limits for dof in self.dofs}
 
         for run in range(runs):
@@ -377,13 +455,9 @@ class Agent:
 
             self.save_data(output_dir + f"benchmark-{int(ttime.time())}.h5")
 
-            ip.display.clear_output(wait=True)
-
     @property
     def model(self):
-        """
-        A model encompassing all the objectives. A single GP in the single-objective case, or a model list.
-        """
+        """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
         return ModelListGP(*[obj.model for obj in self.objectives]) if len(self.objectives) > 1 else self.objectives[0].model
 
     @property
@@ -391,9 +465,7 @@ class Agent:
         return torch.tensor(self.objectives.weights, dtype=torch.double)
 
     def _get_objective_targets(self, i):
-        """
-        Returns the targets (what we fit to) for an objective, given the objective index.
-        """
+        """Returns the targets (what we fit to) for an objective, given the objective index."""
         obj = self.objectives[i]
 
         targets = self.table.loc[:, obj.key].values.copy()
@@ -413,39 +485,39 @@ class Agent:
 
     @property
     def n_objs(self):
-        """
-        Returns a (num_objectives x n_observations) array of objectives
-        """
+        """Returns a (num_objectives x n_observations) array of objectives"""
         return len(self.objectives)
 
     @property
     def objectives_targets(self):
-        """
-        Returns a (num_objectives x n_obs) array of objectives
-        """
+        """Returns a (num_objectives x n_obs) array of objectives"""
         return torch.cat([torch.tensor(self._get_objective_targets(i))[..., None] for i in range(self.n_objs)], dim=1)
 
     @property
     def scalarized_objectives(self):
+        """Returns a (n_obs,) array of scalarized objectives"""
         return (self.objectives_targets * self.objectives.weights).sum(axis=-1)
 
     @property
-    def best_scalarized_objective(self):
+    def max_scalarized_objective(self):
+        """Returns the value of the best scalarized objective seen so far."""
         f = self.scalarized_objectives
-        return np.where(np.isnan(f), -np.inf, f).max()
+        return np.max(np.where(np.isnan(f), -np.inf, f))
+
+    @property
+    def argmax_scalarized_objective(self):
+        """Returns the index of the best scalarized objective seen so far."""
+        f = self.scalarized_objectives
+        return np.argmax(np.where(np.isnan(f), -np.inf, f))
 
     @property
     def all_objectives_valid(self):
+        """A mask of whether all objectives are valid for each data point."""
         return ~torch.isnan(self.scalarized_objectives)
 
-    @property
-    def target_names(self):
-        return [f"{obj.key}_fitness" for obj in self.objectives]
-
     def test_inputs_grid(self, max_inputs=MAX_TEST_INPUTS):
-        """
-        Returns a (n_side, ..., n_side, 1, n_active_dof) grid of test_inputs.
-        n_side is 1 if a dof is read-only
+        """Returns a (`n_side`, ..., `n_side`, 1, `n_active_dofs`) grid of test_inputs; `n_side` is 1 if a dof is read-only.
+        The value of `n_side` is the largest value such that the entire grid has less than `max_inputs` inputs.
         """
         n_settable_acq_func_dofs = len(self.dofs.subset(active=True, read_only=False))
         n_side_settable = int(np.power(max_inputs, n_settable_acq_func_dofs**-1))
@@ -465,46 +537,18 @@ class Agent:
         ).unsqueeze(-2)
 
     def test_inputs(self, n=MAX_TEST_INPUTS):
-        """
-        Returns a (n, 1, n_active_dof) grid of test_inputs
-        """
+        """Returns a (n, 1, n_active_dof) grid of test_inputs"""
         return utils.sobol_sampler(self.acquisition_function_bounds, n=n)
 
     @property
     def acquisition_function_bounds(self):
-        """
-        Returns a (2, n_active_dof) array of bounds for the acquisition function
-        """
+        """Returns a (2, n_active_dof) array of bounds for the acquisition function"""
         active_dofs = self.dofs.subset(active=True)
 
         acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in active_dofs]
         acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in active_dofs]
 
         return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
-
-    # @property
-    # def num_objectives(self):
-    #     return len(self.objectives)
-
-    # @property
-    # def det_names(self):
-    #     return [det.name for det in self.dets]
-
-    # @property
-    # def objective_keys(self):
-    #     return [obj.key for obj in self.objectives]
-
-    # @property
-    # def objective_models(self):
-    #     return [obj.model for obj in self.objectives]
-
-    # @property
-    # def objective_weights(self):
-    #     return torch.tensor([objective["weight"] for obj in self.objectives], dtype=torch.float64)
-
-    # @property
-    # def objective_signs(self):
-    #     return torch.tensor([(-1 if objective["minimize"] else +1) for obj in self.objectives], dtype=torch.long)
 
     @property
     def latent_dim_tuples(self):
@@ -541,8 +585,20 @@ class Agent:
 
         self.table.to_hdf(filepath, key="table")
 
-    def forget(self, index):
-        self.tell(new_table=self.table.drop(index=index), append=False, train=False)
+    def forget(self, index, train=True):
+        """
+        Make the agent forget some index of the data table.
+        """
+        self.table.drop(index=index, inplace=True)
+        self._update_models(train=train)
+
+    def forget_last_n(self, n, train=True):
+        """
+        Make the agent forget the last `n` data points taken.
+        """
+        if n > len(self.table):
+            raise ValueError(f"Cannot forget {n} data points (only {len(self.table)} have been taken).")
+        self.forget(self.table.index.iloc[-n:], train=train)
 
     def sampler(self, n, d):
         """
@@ -559,6 +615,7 @@ class Agent:
 
     @property
     def hypers(self):
+        """Returns a dict of all the hyperparameters in all the agent's models."""
         hypers = {"classifier": {}}
         for key, value in self.classifier.state_dict().items():
             hypers["classifier"][key] = value
@@ -570,6 +627,7 @@ class Agent:
         return hypers
 
     def save_hypers(self, filepath):
+        """Save the agent's fitted hyperparameters to a given filepath."""
         hypers = self.hypers
         with h5py.File(filepath, "w") as f:
             for model_key in hypers.keys():
@@ -579,6 +637,7 @@ class Agent:
 
     @staticmethod
     def load_hypers(filepath):
+        """Load hyperparameters from a file."""
         hypers = {}
         with h5py.File(filepath, "r") as f:
             for model_key in f.keys():
@@ -587,7 +646,8 @@ class Agent:
                     hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
         return hypers
 
-    def train_models(self, **kwargs):
+    def _train_models(self, **kwargs):
+        """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
         t0 = ttime.monotonic()
         for obj in self.objectives:
             model = obj.model
@@ -599,9 +659,10 @@ class Agent:
             print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
     @property
-    def acq_func_info(self):
+    def all_acq_funcs(self):
+        """Description and identifiers for all supported acquisition functions."""
         entries = []
-        for k, d in self.acq_func_config.items():
+        for k, d in acquisition.config.items():
             ret = ""
             ret += f'{d["pretty_name"].upper()} (identifiers: {d["identifiers"]})\n'
             ret += f'-> {d["description"]}'
@@ -611,54 +672,93 @@ class Agent:
 
     @property
     def inputs(self):
-        return self.table.loc[:, self.dofs.device_names].astype(float)
+        """A two-dimensional array of all DOF values."""
+        return self.table.loc[:, self.dofs.names].astype(float)
 
     @property
     def active_inputs(self):
-        return self.table.loc[:, self.dofs.subset(active=True).device_names].astype(float)
+        """A two-dimensional array of all inputs for model fitting."""
+        return self.table.loc[:, self.dofs.subset(active=True).names].astype(float)
 
     @property
     def acquisition_inputs(self):
-        return self.table.loc[:, self.dofs.subset(active=True, read_only=False).device_names].astype(float)
+        """A two-dimensional array of all inputs for computing acquisition functions."""
+        return self.table.loc[:, self.dofs.subset(active=True, read_only=False).names].astype(float)
+
+    @property
+    def best(self):
+        """Returns all data for the best point."""
+        return self.table.loc[self.argmax_scalarized_objective]
 
     @property
     def best_inputs(self):
-        """
-        Returns a value for each currently active and non-read-only degree of freedom
-        """
-        return self.table.loc[
-            np.nanargmax(self.scalarized_objectives), self.dofs.subset(active=True, read_only=False).device_names
-        ]
+        """Returns the value of each DOF at the best point."""
+        return self.table.loc[self.argmax_scalarized_objective, self.dofs.names].to_dict()
 
-    def go_to(self, positions):
-        args = []
-        for dof, value in zip(self.dofs.subset(active=True, read_only=False), np.atleast_1d(positions)):
-            args.append(dof.device)
-            args.append(value)
-        yield from bps.mv(*args)
+    def go_to(self, **positions):
+        """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as
+
+        RE(agent.go_to(some_dof=x1, some_other_dof=x2, ...))
+        """
+        mv_args = []
+        for dof_name, dof_value in positions.items():
+            if dof_name not in self.dofs.names:
+                raise ValueError(f"There is no DOF named {dof_name}")
+            dof = self.dofs[dof_name]
+            if dof.read_only:
+                raise ValueError(f"Cannot move DOF {dof_name} as it is read-only.")
+            mv_args.append(dof.device)
+            mv_args.append(dof_value)
+
+        yield from bps.mv(*mv_args)
 
     def go_to_best(self):
-        yield from self.go_to(self.best_inputs)
+        """Go to the position of the best input seen so far."""
+        yield from self.go_to(**self.best_inputs)
 
-    def plot_objectives(self, **kwargs):
+    def plot_objectives(self, axes: Tuple = (0, 1), **kwargs):
+        """Plot the sampled objectives
+
+        Parameters
+        ----------
+        axes :
+            A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
+        """
         if len(self.dofs.subset(active=True, read_only=False)) == 1:
             plotting._plot_objs_one_dof(self, **kwargs)
         else:
-            plotting._plot_objs_many_dofs(self, **kwargs)
+            plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)
 
-    def plot_acquisition(self, acq_funcs=["ei"], **kwargs):
+    def plot_acquisition(self, acq_func="ei", axes: Tuple = (0, 1), **kwargs):
+        """Plot an acquisition function over test inputs sampling the limits of the parameter space.
+
+        Parameters
+        ----------
+        acq_func :
+            Which acquisition function to plot. Can also take a list of acquisition functions.
+        axes :
+            A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
+        """
         if len(self.dofs.subset(active=True, read_only=False)) == 1:
-            plotting._plot_acq_one_dof(self, acq_funcs=acq_funcs, **kwargs)
+            plotting._plot_acqf_one_dof(self, acq_funcs=np.atleast_1d(acq_func), **kwargs)
 
         else:
-            plotting._plot_acq_many_dofs(self, acq_funcs=acq_funcs, **kwargs)
+            plotting._plot_acqf_many_dofs(self, acq_funcs=np.atleast_1d(acq_func), axes=axes, **kwargs)
 
-    def plot_validity(self, **kwargs):
+    def plot_constraint(self, axes: Tuple = (0, 1), **kwargs):
+        """Plot the modeled constraint over test inputs sampling the limits of the parameter space.
+
+        Parameters
+        ----------
+        axes :
+            A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
+        """
         if len(self.dofs.subset(active=True, read_only=False)) == 1:
             plotting._plot_valid_one_dof(self, **kwargs)
 
         else:
-            plotting._plot_valid_many_dofs(self, **kwargs)
+            plotting._plot_valid_many_dofs(self, axes=axes, **kwargs)
 
     def plot_history(self, **kwargs):
+        """Plot the improvement of the agent over time."""
         plotting._plot_history(self, **kwargs)

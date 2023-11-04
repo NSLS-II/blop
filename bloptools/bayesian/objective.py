@@ -7,7 +7,7 @@ import pandas as pd
 numeric = Union[float, int]
 
 DEFAULT_MINIMUM_SNR = 1e1
-OBJ_FIELDS = ["name", "key", "limits", "weight", "minimize", "log"]
+OBJ_FIELDS = ["description", "key", "limits", "weight", "minimize", "log"]
 
 
 class DuplicateKeyError(ValueError):
@@ -23,17 +23,46 @@ def _validate_objectives(objectives):
 
 
 class Objective:
+    """A degree of freedom (DOF), to be used by an agent.
+
+    Parameters
+    ----------
+    description: str
+        The description of the DOF. This is used as a key.
+    description: str
+        A longer description for the DOF.
+    device: Signal, optional
+        An ophyd device. If None, a dummy ophyd device is generated.
+    limits: tuple, optional
+        A tuple of the lower and upper limit of the DOF. If the DOF is not read-only, the agent
+        will not explore outside the limits. If the DOF is read-only, the agent will reject all
+        sampled data where the DOF is outside the limits.
+    read_only: bool
+        If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
+        device is read-only.
+    active: bool
+        If True, the agent will try to use the DOF in its optimization. If False, the agent will
+        still read the DOF but not include it any model or acquisition function.
+    units: str
+        The units of the DOF (e.g. mm or deg). This is only for plotting and general housekeeping.
+    tags: list
+        A list of tags. These make it easier to subset large groups of dofs.
+    latent_group: optional
+        An agent will fit latent dimensions to all DOFs with the same latent_group. If None, the
+        DOF will be modeled independently.
+    """
+
     def __init__(
         self,
         key: str,
-        name: str = None,
+        description: str = "",
         minimize: bool = False,
         log: bool = False,
         weight: numeric = 1.0,
         limits: Tuple[numeric, numeric] = None,
         min_snr: numeric = DEFAULT_MINIMUM_SNR,
     ):
-        self.name = name if name is not None else key
+        self.description = description if description is not None else key
         self.key = key
         self.minimize = minimize
         self.log = log
@@ -49,7 +78,7 @@ class Objective:
 
     @property
     def label(self):
-        return f"{'neg ' if self.minimize else ''}{'log ' if self.log else ''}{self.name}"
+        return f"{'neg ' if self.minimize else ''}{'log ' if self.log else ''}{self.description}"
 
     @property
     def summary(self):
@@ -93,9 +122,16 @@ class ObjectiveList(Sequence):
     def __repr__(self):
         return self.summary.__repr__()
 
+    # @property
+    # def descriptions(self) -> list:
+    #     return [obj.description for obj in self.objectives]
+
     @property
-    def names(self) -> list:
-        return [obj.name for obj in self.objectives]
+    def keys(self) -> list:
+        """
+        Returns an array of the objective weights.
+        """
+        return [obj.key for obj in self.objectives]
 
     @property
     def weights(self) -> np.array:
