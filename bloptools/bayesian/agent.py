@@ -37,8 +37,8 @@ MAX_TEST_INPUTS = 2**11
 class Agent:
     def __init__(
         self,
-        dofs: Sequence[DOF] | DOFList,
-        objectives: Sequence[Objective] | ObjectiveList,
+        dofs: Sequence[DOF],
+        objectives: Sequence[Objective],
         db: Broker = None,
         dets: Sequence[Signal] = [],
         acquistion_plan=default_acquisition_plan,
