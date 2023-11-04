@@ -55,7 +55,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
         agent.obj_axes[obj_index].set_ylabel(obj.label)
 
 
-def _plot_objs_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, grid_zoom=1):
+def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, grid_zoom=1):
     """
     Axes represents which active, non-read-only axes to plot with
     """
@@ -183,7 +183,7 @@ def _plot_objs_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COL
         ax.set_ylim(*y_dof.limits)
 
 
-def _plot_acq_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
+def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
     agent.acq_fig, agent.acq_axes = plt.subplots(
         1,
         len(acq_funcs),
@@ -210,7 +210,7 @@ def _plot_acq_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
         agent.acq_axes[iacq_func].set_ylabel(acq_func_meta["name"])
 
 
-def _plot_acq_many_dofs(
+def _plot_acqf_many_dofs(
     agent, acq_funcs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
 ):
     agent.acq_fig, agent.acq_axes = plt.subplots(

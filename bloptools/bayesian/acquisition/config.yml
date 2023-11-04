@@ -65,7 +65,7 @@ monte_carlo_probability_of_improvement:
   type: monte_carlo
 
 random:
-  description: A uniform random sampel of the parameters.
+  description: Uniformly-sampled random points.
   identifiers:
   - r
   multitask_only: false
