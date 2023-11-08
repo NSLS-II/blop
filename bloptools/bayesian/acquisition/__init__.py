@@ -18,27 +18,27 @@ for acq_func_name in config.keys():
     config[acq_func_name]["identifiers"].append(acq_func_name)
 
 
-def parse_acq_func(acq_func_identifier):
+def parse_acq_func_identifier(identifier):
     acq_func_name = None
     for _acq_func_name in config.keys():
-        if acq_func_identifier.lower() in config[_acq_func_name]["identifiers"]:
+        if identifier.lower() in config[_acq_func_name]["identifiers"]:
             acq_func_name = _acq_func_name
 
     if acq_func_name is None:
-        raise ValueError(f'Unrecognized acquisition function identifier "{acq_func_identifier}".')
+        raise ValueError(f'Unrecognized acquisition function identifier "{identifier}".')
 
     return acq_func_name
 
 
-def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs):
-    """
-    Generates an acquisition function from a supplied identifier.
+def get_acquisition_function(agent, identifier="qei", return_metadata=True, verbose=False, **acq_func_kwargs):
+    """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
+    their identifiers can be found at `agent.all_acq_funcs`.
     """
 
-    acq_func_name = parse_acq_func(acq_func_identifier)
-    acq_func_config = agent.acq_func_config["upper_confidence_bound"]
+    acq_func_name = parse_acq_func_identifier(identifier)
+    acq_func_config = config["upper_confidence_bound"]
 
-    if agent.acq_func_config[acq_func_name]["multitask_only"] and (agent.num_tasks == 1):
+    if config[acq_func_name]["multitask_only"] and (agent.num_tasks == 1):
         raise ValueError(f'Acquisition function "{acq_func_name}" is only for multi-task optimization problems!')
 
     # there is probably a better way to structure this
@@ -46,8 +46,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = analytic.ConstrainedLogExpectedImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.max_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -55,8 +55,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = monte_carlo.qConstrainedExpectedImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.max_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -64,8 +64,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = analytic.ConstrainedLogProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.max_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -73,8 +73,8 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
         acq_func = monte_carlo.qConstrainedProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.model,
-            best_f=agent.best_scalarized_fitness,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            best_f=agent.max_scalarized_objective,
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -103,7 +103,7 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
@@ -114,16 +114,16 @@ def get_acquisition_function(agent, acq_func_identifier="qei", **acq_func_kwargs
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.task_weights, offset=0),
+            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
     elif acq_func_name == "expected_mean":
-        acq_func = get_acquisition_function(agent, acq_func_identifier="ucb", beta=0, return_metadata=False)
+        acq_func = get_acquisition_function(agent, identifier="ucb", beta=0, return_metadata=False)
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "monte_carlo_expected_mean":
-        acq_func = get_acquisition_function(agent, acq_func_identifier="qucb", beta=0, return_metadata=False)
+        acq_func = get_acquisition_function(agent, identifier="qucb", beta=0, return_metadata=False)
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
-    return acq_func, acq_func_meta
+    return (acq_func, acq_func_meta) if return_metadata else acq_func

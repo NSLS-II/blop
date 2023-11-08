@@ -8,51 +8,110 @@ from botorch.acquisition.multi_objective.monte_carlo import qNoisyExpectedHyperv
 
 
 class qConstrainedUpperConfidenceBound(qUpperConfidenceBound):
-    def __init__(self, constraint, beta=4, *args, **kwargs):
-        super().__init__(beta=beta, *args, **kwargs)
+    """Monte Carlo expected improvement, but scaled by some constraint.
+    NOTE: Because the UCB can be negative, we constrain it by adjusting the Gaussian quantile.
+
+    Parameters
+    ----------
+    model:
+        A BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, constraint, beta=4, **kwargs):
+        super().__init__(beta=beta, **kwargs)
         self.constraint = constraint
         self.beta = torch.tensor(beta)
 
     def forward(self, x):
-        posterior = self.model.posterior(x)
-        mean, sigma = posterior.mean, posterior.variance.sqrt()
+        *input_shape, _, _ = x.shape
 
-        p_eff = 0.5 * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2))) * torch.clamp(self.constraint(x), min=1e-6)
+        transformed_posterior = self.posterior_transform(self.model.posterior(x))
+        mean = transformed_posterior.mean.reshape(input_shape)
+        sigma = transformed_posterior.variance.sqrt().reshape(input_shape)
+
+        p_eff = (
+            0.5
+            * (1 + torch.special.erf(self.beta.sqrt() / math.sqrt(2)))
+            * torch.clamp(self.constraint(x).reshape(input_shape), min=1e-6)
+        )
 
         return mean + sigma * np.sqrt(2) * torch.special.erfinv(2 * p_eff - 1)
 
 
 class qConstrainedExpectedImprovement(qExpectedImprovement):
-    def __init__(self, constraint, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Monte Carlo expected improvement, but scaled by some constraint.
+
+    Parameters
+    ----------
+    model:
+        A BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, model, constraint, **kwargs):
+        super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
 class qConstrainedProbabilityOfImprovement(qProbabilityOfImprovement):
-    def __init__(self, constraint, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Monte Carlo probability of improvement, but scaled by some constraint.
+
+    Parameters
+    ----------
+    model:
+        A BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, model, constraint, **kwargs):
+        super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
 class qConstrainedNoisyExpectedHypervolumeImprovement(qNoisyExpectedHypervolumeImprovement):
-    def __init__(self, constraint, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """Monte Carlo noisy expected hypervolume improvement, but scaled by some constraint.
+    Only works with multi-objective models.
+
+    Parameters
+    ----------
+    model:
+        A multi-objective BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, model, constraint, **kwargs):
+        super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
 class qConstrainedLowerBoundMaxValueEntropy(qLowerBoundMaxValueEntropy):
-    def __init__(self, constraint, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    """GIBBON (General-purpose Information-Based Bayesian OptimisatioN), but scaled by some constraint.
+
+    Parameters
+    ----------
+    model:
+        A multi-objective BoTorch model over which to compute the acquisition function.
+    constraint:
+        A callable which when evaluated on inputs returns the probability of feasibility.
+    """
+
+    def __init__(self, model, constraint, **kwargs):
+        super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
     def forward(self, x):
-        return super().forward(x) * self.constraint(x)
+        return super().forward(x) * self.constraint(x).squeeze(-1)
