@@ -23,11 +23,9 @@ from ophyd import Signal
 from .. import utils
 from . import acquisition, models, plotting
 from .digestion import default_digestion_function
-from .dofs import DOFList
-from .objectives import ObjectiveList
+from .dofs import DOF, DOFList
+from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
-
-os.environ["KMP_DUPLICATE_LIB_OK"] = "True"
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -139,7 +137,9 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        skew_dims = self.latent_dim_tuples
+        # TODO: should be a check per model
+        if len(self.table) > 2:
+            self._update_models(train=train_models, a_priori_hypers=hypers)
 
     def _update_models(self, train=True, skew_dims=None, a_priori_hypers=None):
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
@@ -234,7 +234,7 @@ class Agent:
             print(f'finding points with acquisition function "{acq_func_name}" ...')
 
         if acq_func_type in ["analytic", "monte_carlo"]:
-            if not self.has_models:
+            if not all(hasattr(obj, "model") for obj in self.objectives):
                 raise RuntimeError(
                     f'Can\'t construct non-trivial acquisition function "{acq_func_identifier}"'
                     f" (the agent is not initialized!)"
@@ -350,47 +350,65 @@ class Agent:
 
         return products
 
+    def load_data(self, data_file, append=True, train_models=True):
+        new_table = pd.read_hdf(data_file, key="table")
+        x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
+        y = {key: new_table.pop(key).tolist() for key in self.objectives.keys}
+        metadata = new_table.to_dict(orient="list")
+        self.tell(x=x, y=y, metadata=metadata, append=append, train_models=train_models)
+
     def learn(
         self,
         acq_func=None,
         n=1,
         iterations=1,
         upsample=1,
-        train=True,
-        data_file=None,
+        train_models=True,
         hypers_file=None,
         append=True,
     ):
-        """
-        This iterates the learning algorithm, looping over ask -> acquire -> tell.
-        It should be passed to a Bluesky RunEngine.
+        """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
+
+        For example:
+
+        RE(agent.learn("qr", n=16))
+        RE(agent.learn("qei", n=4, iterations=4))
+
+        Parameters
+        ----------
+        acq_func : str
+            A valid identifier for an implemented acquisition function.
+        n : int
+            How many points to sample on each iteration.
+        iterations: int
+            How many iterations of the learning loop to perform.
+        train: bool
+            Whether to train the models upon telling the agent.
+        append: bool
+            If `True`, add the new data to the old data. If `False`, replace the old data with the new data.
+        data_file: str
+            If supplied, read a saved data file instead of running the acquisition plan.
+        hypers_file: str
+            If supplied, read a saved hyperparameter file instead of fitting models. NOTE: The agent will assume these
+            hyperparameters a priori for the rest of the run, and not try to fit a model.
         """
 
-        if data_file is not None:
-            new_table = pd.read_hdf(data_file, key="table")
-
-        if self.sample_center_on_init and not self.has_models:
-            new_table = yield from self.acquire(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
+        if self.sample_center_on_init and not self.initialized:
+            center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
+            new_table = yield from self.acquire(center_inputs)
             new_table.loc[:, "acq_func"] = "sample_center_on_init"
-            self.tell(new_table=new_table, train=False)
 
-            for i in range(iterations):
-                print(f"running iteration {i + 1} / {iterations}")
-                for single_acq_func in np.atleast_1d(acq_func):
-                    x, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func)
-                    new_table = yield from self.acquire(x)
-                    new_table.loc[:, "acq_func"] = acq_func_meta["name"]
+        for i in range(iterations):
+            print(f"running iteration {i + 1} / {iterations}")
+            for single_acq_func in np.atleast_1d(acq_func):
+                acq_points, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func)
+                new_table = yield from self.acquire(acq_points)
+                new_table.loc[:, "acq_func"] = acq_func_meta["name"]
 
-        else:
-            raise ValueError("You must supply either an acquisition function or a filepath!")
-
-        x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
-        y = {key: new_table.pop(key).tolist() for key in self.objectives.keys}
-        metadata = new_table.to_dict(orient="list")
-
-        self.tell(x=x, y=y, metadata=metadata, append=append, train_models=True)
-
-        self.initialized = True
+                x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
+                y = {key: new_table.pop(key).tolist() for key in self.objectives.keys}
+                metadata = new_table.to_dict(orient="list")
+                self.tell(x=x, y=y, metadata=metadata, append=append, train_models=train_models)
 
     def get_acquisition_function(self, identifier, return_metadata=False):
         """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
