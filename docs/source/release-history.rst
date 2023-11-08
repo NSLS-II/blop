@@ -2,6 +2,13 @@
 Release History
 ===============
 
+v0.5.0 (2023-11-09)
+-------------------
+- Added hypervolume acquisition and constraints.
+- Better specification of latent dimensions.
+- Implemented Monte Carlo acquisition functions.
+- Added classes for DOFs and objectives.
+
 v0.4.0 (2023-08-11)
 -------------------
 
