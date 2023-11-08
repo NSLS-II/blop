@@ -9,7 +9,7 @@ import pandas as pd
 from ophyd import Signal, SignalRO
 
 DEFAULT_BOUNDS = (-5.0, +5.0)
-DOF_FIELDS = ["name", "readback", "lower_limit", "upper_limit", "units", "active", "read_only", "tags"]
+DOF_FIELDS = ["name", "description", "readback", "lower_limit", "upper_limit", "units", "active", "read_only", "tags"]
 
 numeric = Union[float, int]
 
@@ -33,13 +33,14 @@ def _validate_dofs(dofs):
 @dataclass
 class DOF:
     device: Signal = None
-    limits: Tuple[float, float] = (-10.0, 10.0)
+    description: str = None
     name: str = None
+    limits: Tuple[float, float] = (-10.0, 10.0)
     units: str = ""
     read_only: bool = False
     active: bool = True
     tags: list = field(default_factory=list)
-    latent_group = None
+    latent_group: str = None
 
     def __post_init__(self):
         self.uuid = str(uuid.uuid4())
