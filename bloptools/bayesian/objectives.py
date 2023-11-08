@@ -9,7 +9,7 @@ from ophyd import Signal
 numeric = Union[float, int]
 
 DEFAULT_MINIMUM_SNR = 1e1
-OBJ_FIELDS = ["description", "key", "limits", "weight", "minimize", "log"]
+OBJ_FIELDS = ["description", "key", "limits", "weight", "minimize", "log", "n", "snr", "min_snr"]
 
 
 class DuplicateKeyError(ValueError):
@@ -68,6 +68,14 @@ class Objective:
     @property
     def noise(self):
         return self.model.likelihood.noise.item() if hasattr(self, "model") else None
+
+    @property
+    def snr(self):
+        return np.round(1 / self.model.likelihood.noise.sqrt().item(), 1) if hasattr(self, "model") else None
+
+    @property
+    def n(self):
+        return self.model.train_targets.shape[0] if hasattr(self, "model") else 0
 
 
 class ObjectiveList(Sequence):
