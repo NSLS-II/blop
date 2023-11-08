@@ -4,30 +4,29 @@ from typing import Tuple, Union
 
 import numpy as np
 import pandas as pd
-from ophyd import Signal
 
 numeric = Union[float, int]
 
 DEFAULT_MINIMUM_SNR = 1e1
-OBJ_FIELDS = ["description", "key", "limits", "weight", "minimize", "log", "n", "snr", "min_snr"]
+OBJ_FIELDS = ["description", "limits", "weight", "minimize", "log", "n", "snr", "min_snr"]
 
 
-class DuplicateKeyError(ValueError):
+class DuplicateNameError(ValueError):
     ...
 
 
 def _validate_objectives(objectives):
-    keys = [obj.key for obj in objectives]
-    unique_keys, counts = np.unique(keys, return_counts=True)
-    duplicate_keys = unique_keys[counts > 1]
-    if len(duplicate_keys) > 0:
-        raise DuplicateKeyError(f'Duplicate key(s) in supplied objectives: "{duplicate_keys}"')
+    names = [obj.name for obj in objectives]
+    unique_names, counts = np.unique(names, return_counts=True)
+    duplicate_names = unique_names[counts > 1]
+    if len(duplicate_names) > 0:
+        raise DuplicateNameError(f'Duplicate name(s) in supplied objectives: "{duplicate_names}"')
 
 
 @dataclass
 class Objective:
-    key: str
-    name: str = None
+    name: str
+    description: str = None
     target: Union[float, str] = "max"
     log: bool = False
     weight: numeric = 1.0
@@ -36,9 +35,6 @@ class Objective:
     units: str = None
 
     def __post_init__(self):
-        if self.name is None:
-            self.name = self.key
-
         if self.limits is None:
             if self.log:
                 self.limits = (0, np.inf)
@@ -49,11 +45,11 @@ class Objective:
             if self.target not in ["min", "max"]:
                 raise ValueError("'target' must be either 'min', 'max', or a number.")
 
-        self.device = Signal(name=self.name)
+        # self.device = Signal(name=self.name)
 
     @property
     def label(self):
-        return f"{'neg ' if self.target == 'min' else ''}{'log ' if self.log else ''}{self.name}"
+        return f"{'log ' if self.log else ''}{self.description}"
 
     @property
     def summary(self):
@@ -110,11 +106,18 @@ class ObjectiveList(Sequence):
     #     return [obj.description for obj in self.objectives]
 
     @property
-    def keys(self) -> list:
+    def names(self) -> list:
         """
         Returns an array of the objective weights.
         """
-        return [obj.key for obj in self.objectives]
+        return [obj.name for obj in self.objectives]
+
+    @property
+    def targets(self) -> np.array:
+        """
+        Returns an array of the objective weights.
+        """
+        return [obj.target for obj in self.objectives]
 
     @property
     def weights(self) -> np.array:
@@ -122,6 +125,13 @@ class ObjectiveList(Sequence):
         Returns an array of the objective weights.
         """
         return np.array([obj.weight for obj in self.objectives])
+
+    @property
+    def signed_weights(self) -> np.array:
+        """
+        Returns a signed array of the objective weights.
+        """
+        return np.array([(1 if obj.target == "max" else -1) * obj.weight for obj in self.objectives])
 
     def add(self, objective):
         _validate_objectives([*self.objectives, objective])

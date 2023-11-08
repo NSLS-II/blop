@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
+from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
 from databroker import Broker
@@ -26,6 +27,7 @@ from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
+from .transforms import TargetingPosteriorTransform
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -144,20 +146,18 @@ class Agent:
     def _update_models(self, train=True, skew_dims=None, a_priori_hypers=None):
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
 
-        # if self.initialized:
-        #     cached_hypers = self.hypers
-
         inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
 
         for i, obj in enumerate(self.objectives):
-            self.table.loc[:, f"{obj.key}_fitness"] = targets = self._get_objective_targets(i)
-            train_index = ~np.isnan(targets)
+            values = self.get_objective_targets(i)
+
+            train_index = ~np.isnan(values)
 
             if not train_index.sum() >= 2:
                 raise ValueError("There must be at least two valid data points per objective!")
 
             train_inputs = torch.tensor(inputs[train_index], dtype=torch.double)
-            train_targets = torch.tensor(targets[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
+            train_values = torch.tensor(values[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
 
             # for constructing the log normal noise prior
             # target_snr = 2e2
@@ -176,7 +176,7 @@ class Agent:
 
             obj.model = models.LatentGP(
                 train_inputs=train_inputs,
-                train_targets=train_targets,
+                train_targets=train_values,
                 likelihood=likelihood,
                 skew_dims=skew_dims,
                 input_transform=self._subset_input_transform(active=True),
@@ -343,7 +343,7 @@ class Agent:
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).names)
             for obj in self.objectives:
-                products.loc[:, obj.key] = np.nan
+                products.loc[:, obj.name] = np.nan
 
         if not len(acquisition_inputs) == len(products):
             raise ValueError("The table returned by the digestion function must be the same length as the sampled inputs!")
@@ -353,7 +353,7 @@ class Agent:
     def load_data(self, data_file, append=True, train_models=True):
         new_table = pd.read_hdf(data_file, key="table")
         x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
-        y = {key: new_table.pop(key).tolist() for key in self.objectives.keys}
+        y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
         metadata = new_table.to_dict(orient="list")
         self.tell(x=x, y=y, metadata=metadata, append=append, train_models=train_models)
 
@@ -406,7 +406,7 @@ class Agent:
                 new_table.loc[:, "acq_func"] = acq_func_meta["name"]
 
                 x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
-                y = {key: new_table.pop(key).tolist() for key in self.objectives.keys}
+                y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
                 metadata = new_table.to_dict(orient="list")
                 self.tell(x=x, y=y, metadata=metadata, append=append, train_models=train_models)
 
@@ -459,15 +459,20 @@ class Agent:
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
         return ModelListGP(*[obj.model for obj in self.objectives]) if len(self.objectives) > 1 else self.objectives[0].model
 
+    def posterior(self, x):
+        """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
+        return self.model.posterior(x)
+
     @property
     def objective_weights_torch(self):
         return torch.tensor(self.objectives.weights, dtype=torch.double)
 
-    def _get_objective_targets(self, i):
-        """Returns the targets (what we fit to) for an objective, given the objective index."""
+    def get_objective_targets(self, i):
+        """Returns the values associated with each objective."""
+
         obj = self.objectives[i]
 
-        targets = self.table.loc[:, obj.key].values.copy()
+        targets = self.table.loc[:, obj.name].values.copy()
 
         # check that targets values are inside acceptable values
         valid = (targets > obj.limits[0]) & (targets < obj.limits[1])
@@ -475,33 +480,69 @@ class Agent:
 
         # transform if needed
         if obj.log:
-            targets = np.where(valid, np.log(targets), np.nan)
-            if obj.target not in ["min", "max"]:
-                targets = -np.square(np.log(targets) - np.log(obj.target))
-
-        else:
-            if obj.target not in ["min", "max"]:
-                targets = -np.square(targets - obj.target)
-
-        if obj.target == "min":
-            targets *= -1
+            targets = np.where(targets > 0, np.log(targets), np.nan)
 
         return targets
 
+    # def _get_objective_targets(self, i):
+    #     """Returns the targets (what we fit to) for an objective, given the objective index."""
+    #     obj = self.objectives[i]
+
+    #     targets = self.table.loc[:, obj.name].values.copy()
+
+    #     # check that targets values are inside acceptable values
+    #     valid = (targets > obj.limits[0]) & (targets < obj.limits[1])
+    #     targets = np.where(valid, targets, np.nan)
+
+    #     # transform if needed
+    #     if obj.log:
+    #         targets = np.where(valid, np.log(targets), np.nan)
+    #         if obj.target not in ["min", "max"]:
+    #             targets = -np.square(np.log(targets) - np.log(obj.target))
+
+    #     else:
+    #         if obj.target not in ["min", "max"]:
+    #             targets = -np.square(targets - obj.target)
+
+    #     if obj.target == "min":
+    #         targets *= -1
+
+    #     return targets
+
     @property
-    def n_objs(self):
-        """Returns a (num_objectives x n_observations) array of objectives"""
-        return len(self.objectives)
+    def scalarizing_transform(self):
+        return ScalarizedPosteriorTransform(weights=self.objective_weights_torch, offset=0)
+
+    @property
+    def targeting_transform(self):
+        return TargetingPosteriorTransform(weights=self.objective_weights_torch, targets=self.pseudo_targets)
+
+    @property
+    def pseudo_targets(self):
+        """Targets for the posterior transform"""
+        return torch.tensor(
+            [
+                self.objectives_targets[..., i].max()
+                if t == "max"
+                else self.objectives_targets[..., i].min()
+                if t == "min"
+                else t
+                for i, t in enumerate(self.objectives.targets)
+            ]
+        )
 
     @property
     def objectives_targets(self):
         """Returns a (num_objectives x n_obs) array of objectives"""
-        return torch.cat([torch.tensor(self._get_objective_targets(i))[..., None] for i in range(self.n_objs)], dim=1)
+        return torch.cat(
+            [torch.tensor(self.get_objective_targets(i))[..., None] for i in range(len(self.objectives))], dim=1
+        )
 
     @property
     def scalarized_objectives(self):
         """Returns a (n_obs,) array of scalarized objectives"""
-        return (self.objectives_targets * self.objectives.weights).sum(axis=-1)
+        return self.targeting_transform.evaluate(self.objectives_targets).sum(axis=-1)
+        # return (self.objectives_targets * self.objectives.signed_weights).sum(axis=-1)
 
     @property
     def max_scalarized_objective(self):
@@ -615,7 +656,7 @@ class Agent:
 
     def _set_hypers(self, hypers):
         for obj in self.objectives:
-            obj.model.load_state_dict(hypers[obj.key])
+            obj.model.load_state_dict(hypers[obj.name])
         self.classifier.load_state_dict(hypers["classifier"])
 
     @property
@@ -625,9 +666,9 @@ class Agent:
         for key, value in self.classifier.state_dict().items():
             hypers["classifier"][key] = value
         for obj in self.objectives:
-            hypers[obj.key] = {}
+            hypers[obj.name] = {}
             for key, value in obj.model.state_dict().items():
-                hypers[obj.key][key] = value
+                hypers[obj.name][key] = value
 
         return hypers
 
@@ -635,7 +676,7 @@ class Agent:
         """Save the agent's fitted hyperparameters to a given filepath."""
         hypers = self.hypers
         with h5py.File(filepath, "w") as f:
-            for model_key in hypers.keys():
+            for model_key in hypers.names():
                 f.create_group(model_key)
                 for param_key, param_value in hypers[model_key].items():
                     f[model_key].create_dataset(param_key, data=param_value)
@@ -645,7 +686,7 @@ class Agent:
         """Load hyperparameters from a file."""
         hypers = {}
         with h5py.File(filepath, "r") as f:
-            for model_key in f.keys():
+            for model_key in f.names():
                 hypers[model_key] = OrderedDict()
                 for param_key, param_value in f[model_key].items():
                     hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
