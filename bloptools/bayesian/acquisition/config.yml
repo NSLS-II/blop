@@ -64,12 +64,29 @@ monte_carlo_probability_of_improvement:
   pretty_name: Monte Carlo probability of improvement
   type: monte_carlo
 
+random:
+  description: Uniformly-sampled random points.
+  identifiers:
+  - r
+  multitask_only: false
+  pretty_name: Random
+  type: none
+
 quasi-random:
   description: Sobol-sampled quasi-random points.
   identifiers:
   - qr
   multitask_only: false
   pretty_name: Quasi-random
+  type: none
+
+grid:
+  description: A grid scan over the parameters.
+  identifiers:
+  - g
+  - gs
+  multitask_only: false
+  pretty_name: Grid scan
   type: none
 
 upper_confidence_bound:

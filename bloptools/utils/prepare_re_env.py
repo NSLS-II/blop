@@ -75,6 +75,13 @@ if __name__ == "__main__":
         help="Type of RE environment.",
     )
 
+    parser.add_argument(
+        "-f",
+        "--file",
+        dest="file",
+        default="",
+    )
+
     args = parser.parse_args()
     kwargs_re = dict(db_type=args.db_type, root_dir=args.root_dir)
     ret = re_env(**kwargs_re)
