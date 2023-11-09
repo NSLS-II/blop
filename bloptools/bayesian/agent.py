@@ -522,12 +522,13 @@ class Agent:
         """Targets for the posterior transform"""
         return torch.tensor(
             [
-                self.objectives_targets[..., i].max()
-                if t == "max"
-                else self.objectives_targets[..., i].min()
-                if t == "min"
-                else t
-                for i, t in enumerate(self.objectives.targets)
+                1.e32
+                if obj.target == "max"
+                else -1.e32
+                if obj.target == "min"
+                else np.log(obj.target) if obj.log
+                else obj.target 
+                for i, obj in enumerate(self.objectives)
             ]
         )
 

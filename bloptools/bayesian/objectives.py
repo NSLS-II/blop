@@ -8,7 +8,7 @@ import pandas as pd
 numeric = Union[float, int]
 
 DEFAULT_MINIMUM_SNR = 1e1
-OBJ_FIELDS = ["description", "limits", "weight", "minimize", "log", "n", "snr", "min_snr"]
+OBJ_FIELDS = ["description", "target", "limits", "weight", "log", "n", "snr", "min_snr"]
 
 
 class DuplicateNameError(ValueError):
