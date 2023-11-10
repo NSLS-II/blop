@@ -233,13 +233,14 @@ def _plot_acqf_many_dofs(
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
+    *test_dim, input_dim = test_inputs.shape
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for iacq_func, acq_func_identifier in enumerate(acq_funcs):
         acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
 
-        test_acqf = acq_func(test_inputs).detach().squeeze().numpy()
+        test_acqf = acq_func(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
 
         if gridded:
             agent.acq_axes[iacq_func].set_title(acq_func_meta["name"])

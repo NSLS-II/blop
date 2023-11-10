@@ -117,6 +117,8 @@ class Agent:
         self.initialized = False
         self.a_priori_hypers = None
 
+        self.n_last_trained = 0
+
     def tell(self, x: Mapping, y: Mapping, metadata=None, append=True, train_models=True, hypers=None):
         """
         Inform the agent about new inputs and targets for the model.
@@ -147,10 +149,10 @@ class Agent:
 
         # TODO: should be a check per model
         if len(self.table) > 2:
-            # if n_before_tell % self.train_every != n_after_tell % self.train_every:
-            self._update_models(train=train_models, a_priori_hypers=hypers)
+            if int(self.n_last_trained / self.train_every) != int(len(self.table) / self.train_every):
+                self._construct_models(train=train_models, a_priori_hypers=hypers)
 
-    def _update_models(self, train=True, skew_dims=None, a_priori_hypers=None):
+    def _construct_models(self, train=True, skew_dims=None, a_priori_hypers=None):
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
 
         inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
@@ -173,7 +175,7 @@ class Agent:
 
             likelihood = gpytorch.likelihoods.GaussianLikelihood(
                 noise_constraint=gpytorch.constraints.Interval(
-                    torch.tensor(1e-2).square(),
+                    torch.tensor(1e-4).square(),
                     torch.tensor(1 / obj.min_snr).square(),
                 ),
                 # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
@@ -293,14 +295,12 @@ class Agent:
                 raise ValueError()
 
             # define dummy acqf objective
-            acqf_obj = None
+            acqf_obj = 0
 
         acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
 
         if self.verbose:
-            print(
-                f"found points {acq_points} with acqf {acq_func_meta['name']} in {duration:.01f} seconds (obj = {acqf_obj})"
-            )
+            print(f"found points {acq_points} in {1e3*duration:.01f} ms (obj = {acqf_obj})")
 
         if route and n > 1:
             routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, acq_points)
@@ -619,7 +619,7 @@ class Agent:
         Make the agent forget some index of the data table.
         """
         self.table.drop(index=index, inplace=True)
-        self._update_models(train=train)
+        self._construct_models(train=train)
 
     def forget_last_n(self, n, train=True):
         """
@@ -686,6 +686,8 @@ class Agent:
         )
         if self.verbose:
             print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
+
+        self.n_last_trained = len(self.table)
 
     @property
     def all_acq_funcs(self):

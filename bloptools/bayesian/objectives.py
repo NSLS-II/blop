@@ -7,8 +7,8 @@ import pandas as pd
 
 numeric = Union[float, int]
 
-DEFAULT_MINIMUM_SNR = 1e1
-OBJ_FIELDS = ["description", "target", "limits", "weight", "log", "n", "snr", "min_snr"]
+DEFAULT_MINIMUM_SNR = 1e2
+OBJ_FIELDS = ["description", "target", "active", "limits", "weight", "log", "n", "snr", "min_snr"]
 
 
 class DuplicateNameError(ValueError):
@@ -30,6 +30,7 @@ class Objective:
     target: Union[float, str] = "max"
     log: bool = False
     weight: numeric = 1.0
+    active: bool = True
     limits: Tuple[numeric, numeric] = None
     min_snr: numeric = DEFAULT_MINIMUM_SNR
     units: str = None
