@@ -49,6 +49,7 @@ class Agent:
         tolerate_acquisition_errors=False,
         sample_center_on_init=False,
         trigger_delay: float = 0,
+        train_every: int = 1,
     ):
         """
         A Bayesian optimization agent.
@@ -107,6 +108,7 @@ class Agent:
 
         self.tolerate_acquisition_errors = tolerate_acquisition_errors
 
+        self.train_every = train_every
         self.trigger_delay = trigger_delay
         self.sample_center_on_init = sample_center_on_init
 
@@ -135,12 +137,17 @@ class Agent:
             A dict of hyperparameters for the model to assume a priori.
         """
 
+        # n_before_tell = len(self.table)
+
         new_table = pd.DataFrame({**x, **y, **metadata} if metadata is not None else {**x, **y})
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
+        # n_after_tell = len(self.table)
+
         # TODO: should be a check per model
         if len(self.table) > 2:
+            # if n_before_tell % self.train_every != n_after_tell % self.train_every:
             self._update_models(train=train_models, a_priori_hypers=hypers)
 
     def _update_models(self, train=True, skew_dims=None, a_priori_hypers=None):
@@ -257,13 +264,14 @@ class Agent:
                 raw_samples=RAW_SAMPLES,  # used for intialization heuristic
             )
 
-            x = candidates.numpy().astype(float)
+            # this includes both RO and non-RO DOFs
+            candidates = candidates.numpy()
 
             active_dofs_are_read_only = np.array([dof.read_only for dof in self.dofs.subset(active=True)])
 
-            acq_points = x[..., ~active_dofs_are_read_only]
-            read_only_X = x[..., active_dofs_are_read_only]
-            acq_func_meta["read_only_values"] = read_only_X
+            acq_points = candidates[..., ~active_dofs_are_read_only]
+            read_only_values = candidates[..., active_dofs_are_read_only]
+            acq_func_meta["read_only_values"] = read_only_values
 
         else:
             acqf_obj = None
@@ -484,51 +492,25 @@ class Agent:
 
         return targets
 
-    # def _get_objective_targets(self, i):
-    #     """Returns the targets (what we fit to) for an objective, given the objective index."""
-    #     obj = self.objectives[i]
-
-    #     targets = self.table.loc[:, obj.name].values.copy()
-
-    #     # check that targets values are inside acceptable values
-    #     valid = (targets > obj.limits[0]) & (targets < obj.limits[1])
-    #     targets = np.where(valid, targets, np.nan)
-
-    #     # transform if needed
-    #     if obj.log:
-    #         targets = np.where(valid, np.log(targets), np.nan)
-    #         if obj.target not in ["min", "max"]:
-    #             targets = -np.square(np.log(targets) - np.log(obj.target))
-
-    #     else:
-    #         if obj.target not in ["min", "max"]:
-    #             targets = -np.square(targets - obj.target)
-
-    #     if obj.target == "min":
-    #         targets *= -1
-
-    #     return targets
-
     @property
     def scalarizing_transform(self):
         return ScalarizedPosteriorTransform(weights=self.objective_weights_torch, offset=0)
 
     @property
     def targeting_transform(self):
-        return TargetingPosteriorTransform(weights=self.objective_weights_torch, targets=self.pseudo_targets)
+        return TargetingPosteriorTransform(weights=self.objective_weights_torch, targets=self.objectives.targets)
 
     @property
     def pseudo_targets(self):
         """Targets for the posterior transform"""
         return torch.tensor(
             [
-                1.e32
-                if obj.target == "max"
-                else -1.e32
-                if obj.target == "min"
-                else np.log(obj.target) if obj.log
-                else obj.target 
-                for i, obj in enumerate(self.objectives)
+                self.objectives_targets[..., i].max()
+                if t == "max"
+                else self.objectives_targets[..., i].min()
+                if t == "min"
+                else t
+                for i, t in enumerate(self.objectives.targets)
             ]
         )
 
@@ -677,7 +659,7 @@ class Agent:
         """Save the agent's fitted hyperparameters to a given filepath."""
         hypers = self.hypers
         with h5py.File(filepath, "w") as f:
-            for model_key in hypers.names():
+            for model_key in hypers.keys():
                 f.create_group(model_key)
                 for param_key, param_value in hypers[model_key].items():
                     f[model_key].create_dataset(param_key, data=param_value)
@@ -687,7 +669,7 @@ class Agent:
         """Load hyperparameters from a file."""
         hypers = {}
         with h5py.File(filepath, "r") as f:
-            for model_key in f.names():
+            for model_key in f.keys():
                 hypers[model_key] = OrderedDict()
                 for param_key, param_value in f[model_key].items():
                     hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))

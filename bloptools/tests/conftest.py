@@ -54,7 +54,7 @@ def agent(db):
         DOF(name="x2", limits=(-8.0, 8.0)),
     ]
 
-    objectives = [Objective(key="himmelblau", target="min")]
+    objectives = [Objective(name="himmelblau", target="min")]
 
     agent = Agent(
         dofs=dofs,
@@ -78,8 +78,8 @@ def multi_agent(db):
         products = db[uid].table()
 
         for index, entry in products.iterrows():
-            products.loc[index, "ST1"] = functions.styblinski_tang(entry.x1, entry.x2)
-            products.loc[index, "ST2"] = functions.styblinski_tang(entry.x1, -entry.x2)
+            products.loc[index, "obj1"] = functions.himmelblau(entry.x1, entry.x2)
+            products.loc[index, "obj2"] = functions.himmelblau(entry.x2, entry.x1)
 
         return products
 
@@ -88,7 +88,7 @@ def multi_agent(db):
         DOF(name="x2", limits=(-5.0, 5.0)),
     ]
 
-    objectives = [Objective(key="ST1", target="min"), Objective(key="ST2", target="min")]
+    objectives = [Objective(name="obj1", target="min"), Objective(name="obj2", target="min")]
 
     agent = Agent(
         dofs=dofs,
