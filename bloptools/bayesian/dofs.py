@@ -9,7 +9,7 @@ import pandas as pd
 from ophyd import Signal, SignalRO
 
 DEFAULT_BOUNDS = (-5.0, +5.0)
-DOF_FIELDS = ["name", "description", "readback", "lower_limit", "upper_limit", "units", "active", "read_only", "tags"]
+DOF_FIELDS = ["description", "readback", "lower_limit", "upper_limit", "units", "active", "read_only", "tags"]
 
 numeric = Union[float, int]
 
@@ -110,9 +110,9 @@ class DOFList(Sequence):
     @property
     def summary(self) -> pd.DataFrame:
         table = pd.DataFrame(columns=DOF_FIELDS)
-        for i, dof in enumerate(self.dofs):
+        for dof in self.dofs:
             for attr in table.columns:
-                table.loc[i, attr] = getattr(dof, attr)
+                table.loc[dof.name, attr] = getattr(dof, attr)
 
         # convert dtypes
         for attr in ["readback", "lower_limit", "upper_limit"]:
