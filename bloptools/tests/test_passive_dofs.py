@@ -15,7 +15,7 @@ def test_passive_dofs(RE, db):
     ]
 
     objectives = [
-        Objective(key="himmelblau", target="min"),
+        Objective(name="himmelblau", target="min"),
     ]
 
     agent = Agent(

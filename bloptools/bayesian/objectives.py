@@ -88,9 +88,9 @@ class ObjectiveList(Sequence):
     @property
     def summary(self):
         summary = pd.DataFrame(columns=OBJ_FIELDS)
-        for i, obj in enumerate(self.objectives):
+        for obj in self.objectives:
             for col in summary.columns:
-                summary.loc[i, col] = getattr(obj, col)
+                summary.loc[obj.name, col] = getattr(obj, col)
 
         # convert dtypes
         for attr in ["log"]:

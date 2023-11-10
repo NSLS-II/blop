@@ -20,12 +20,29 @@ class TargetingPosteriorTransform(PosteriorTransform):
             offset: An offset to be added to posterior mean.
         """
         super().__init__()
-        self.register_buffer("targets", targets)
+        self.targets = targets
         self.register_buffer("weights", weights)
 
-        self.sampled_transform = lambda y: -(y - self.targets).abs() @ self.weights.unsqueeze(-1)
-        self.mean_transform = lambda mean, var: -(mean - self.targets).abs() @ self.weights.unsqueeze(-1)
-        self.variance_transform = lambda mean, var: -var @ self.weights.unsqueeze(-1)
+    def sampled_transform(self, y):
+        for i, target in enumerate(self.targets):
+            if target == "min":
+                y[..., i] = -y[..., i]
+            elif target != "max":
+                y[..., i] = -(y[..., i] - target).abs()
+
+        return y @ self.weights.unsqueeze(-1)
+
+    def mean_transform(self, mean, var):
+        for i, target in enumerate(self.targets):
+            if target == "min":
+                mean[..., i] = -mean[..., i]
+            elif target != "max":
+                mean[..., i] = -(mean[..., i] - target).abs()
+
+        return mean @ self.weights.unsqueeze(-1)
+
+    def variance_transform(self, mean, var):
+        return var @ self.weights.unsqueeze(-1)
 
     def evaluate(self, Y: Tensor) -> Tensor:
         r"""Evaluate the transform on a set of outcomes.
