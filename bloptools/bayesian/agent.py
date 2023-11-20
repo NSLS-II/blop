@@ -158,7 +158,6 @@ class Agent:
         inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
 
         for i, obj in enumerate(self.objectives):
-
             values = self.get_objective_targets(i)
             values = np.where(self.all_objectives_valid, values, np.nan)
 
@@ -753,7 +752,6 @@ class Agent:
     def go_to_best(self):
         """Go to the position of the best input seen so far."""
         yield from self.go_to(**self.best_inputs)
-        
 
     def plot_objectives(self, axes: Tuple = (0, 1), **kwargs):
         """Plot the sampled objectives
