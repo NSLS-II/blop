@@ -96,7 +96,10 @@ class DOFList(Sequence):
         self.dofs = dofs
 
     def __getitem__(self, i):
-        return self.dofs[i]
+        if type(i) is int:
+            return self.dofs[i]
+        elif type(i) is str:
+            return self.dofs[self.names.index(i)]
 
     def __len__(self):
         return len(self.dofs)

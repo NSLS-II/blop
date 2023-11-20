@@ -158,7 +158,9 @@ class Agent:
         inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
 
         for i, obj in enumerate(self.objectives):
+
             values = self.get_objective_targets(i)
+            values = np.where(self.all_objectives_valid, values, np.nan)
 
             train_index = ~np.isnan(values)
 
@@ -218,7 +220,7 @@ class Agent:
 
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
 
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True):
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1):
         """Ask the agent for the best point to sample, given an acquisition function.
 
         Parameters
@@ -305,6 +307,11 @@ class Agent:
         if route and n > 1:
             routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, acq_points)
             acq_points = acq_points[routing_index]
+
+        if upsample > 1:
+            idx = np.arange(len(acq_points))
+            upsampled_idx = np.linspace(0, len(idx) - 1, upsample * len(idx) - 1)
+            acq_points = sp.interpolate.interp1d(idx, acq_points, axis=0)(upsampled_idx)
 
         return acq_points, acq_func_meta
 
@@ -409,7 +416,7 @@ class Agent:
         for i in range(iterations):
             print(f"running iteration {i + 1} / {iterations}")
             for single_acq_func in np.atleast_1d(acq_func):
-                acq_points, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func)
+                acq_points, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample)
                 new_table = yield from self.acquire(acq_points)
                 new_table.loc[:, "acq_func"] = acq_func_meta["name"]
 
@@ -746,6 +753,7 @@ class Agent:
     def go_to_best(self):
         """Go to the position of the best input seen so far."""
         yield from self.go_to(**self.best_inputs)
+        
 
     def plot_objectives(self, axes: Tuple = (0, 1), **kwargs):
         """Plot the sampled objectives
