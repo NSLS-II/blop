@@ -3,7 +3,7 @@ import time as ttime
 import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Callable, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
@@ -119,7 +119,16 @@ class Agent:
 
         self.n_last_trained = 0
 
-    def tell(self, x: Mapping, y: Mapping, metadata=None, append=True, train_models=True, hypers=None):
+    def tell(
+        self,
+        data: Optional[Mapping] = {},
+        x: Optional[Mapping] = {},
+        y: Optional[Mapping] = {},
+        metadata: Optional[Mapping] = {},
+        append=True,
+        train_models=True,
+        hypers=None,
+    ):
         """
         Inform the agent about new inputs and targets for the model.
 
@@ -139,9 +148,18 @@ class Agent:
             A dict of hyperparameters for the model to assume a priori.
         """
 
-        # n_before_tell = len(self.table)
+        if not data:
+            if not x and y:
+                raise ValueError("Must supply either x and y, or data.")
+            data = {**x, **y, **metadata}
 
-        new_table = pd.DataFrame({**x, **y, **metadata} if metadata is not None else {**x, **y})
+        data = {k: np.atleast_1d(v) for k, v in data.items()}
+        unique_field_lengths = {len(v) for v in data.values()}
+
+        if len(unique_field_lengths) > 1:
+            raise ValueError("All supplies values must be the same length!")
+
+        new_table = pd.DataFrame(data)
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
