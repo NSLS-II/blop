@@ -163,12 +163,14 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        # n_after_tell = len(self.table)
-
         # TODO: should be a check per model
         if len(self.table) > 2:
-            if int(self.n_last_trained / self.train_every) != int(len(self.table) / self.train_every):
+            if any([not hasattr(obj, "model") for obj in self.objectives]):
                 self._construct_models(train=train_models, a_priori_hypers=hypers)
+
+            elif int(self.n_last_trained / self.train_every) != int(len(self.table) / self.train_every):
+                if train_models:
+                    self._train_models(a_priori_hypers=hypers)
 
     def _construct_models(self, train=True, skew_dims=None, a_priori_hypers=None):
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
@@ -451,8 +453,12 @@ class Agent:
     def reset(self):
         """Reset the agent."""
         self.table = pd.DataFrame()
+
         for obj in self.objectives:
-            del obj.model
+            if hasattr(obj, "model"):
+                del obj.model
+
+        self.n_last_trained = 0
 
     def benchmark(
         self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
