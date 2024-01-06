@@ -82,9 +82,9 @@ class Agent:
         #
         # below are the behaviors of DOFs of each kind and mode:
         #
-        # "read": the agent will read the input on every acquisition (all dofs are always read)
-        # "move": the agent will try to set and optimize over these (there must be at least one of these)
-        # "input" means that the agent will use the value to make its posterior
+        # 'read': the agent will read the input on every acquisition (all dofs are always read)
+        # 'move': the agent will try to set and optimize over these (there must be at least one of these)
+        # 'input' means that the agent will use the value to make its posterior
         #
         #
         #               not read-only        read-only
@@ -170,7 +170,7 @@ class Agent:
 
             elif int(self.n_last_trained / self.train_every) != int(len(self.table) / self.train_every):
                 if train_models:
-                    self._train_models(a_priori_hypers=hypers)
+                    self._construct_models(train=train_models, a_priori_hypers=hypers)
 
     def _construct_models(self, train=True, skew_dims=None, a_priori_hypers=None):
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
@@ -235,11 +235,11 @@ class Agent:
             #     if self.initialized:
             #         self._set_hypers(cached_hypers)
             #     else:
-            #         raise RuntimeError("Could not fit model on initialization!")
+            #         raise RuntimeError('Could not fit model on initialization!')
 
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
 
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1):
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1, **acq_func_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
 
         Parameters
@@ -261,19 +261,21 @@ class Agent:
         start_time = ttime.monotonic()
 
         if self.verbose:
-            print(f'finding points with acquisition function "{acq_func_name}" ...')
+            print(f"finding points with acquisition function '{acq_func_name}' ...")
 
         if acq_func_type in ["analytic", "monte_carlo"]:
             if not all(hasattr(obj, "model") for obj in self.objectives):
                 raise RuntimeError(
-                    f'Can\'t construct non-trivial acquisition function "{acq_func_identifier}"'
+                    f"Can't construct non-trivial acquisition function '{acq_func_identifier}'"
                     f" (the agent is not initialized!)"
                 )
 
             if acq_func_type == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            acq_func, acq_func_meta = self.get_acquisition_function(identifier=acq_func_identifier, return_metadata=True)
+            acq_func, acq_func_meta = self.get_acquisition_function(
+                identifier=acq_func_identifier, return_metadata=True, **acq_func_kwargs
+            )
 
             NUM_RESTARTS = 8
             RAW_SAMPLES = 1024
@@ -332,7 +334,17 @@ class Agent:
             upsampled_idx = np.linspace(0, len(idx) - 1, upsample * len(idx) - 1)
             acq_points = sp.interpolate.interp1d(idx, acq_points, axis=0)(upsampled_idx)
 
-        return acq_points, acq_func_meta
+        res = {
+            "points": acq_points,
+            "acq_func": acq_func_meta["name"],
+            "acq_func_kwargs": acq_func_kwargs,
+            "duration": acq_func_meta["duration"],
+            "sequential": sequential,
+            "upsample": upsample,
+            "read_only_values": acq_func_meta.get("read_only_values"),
+        }
+
+        return res
 
     def acquire(self, acquisition_inputs):
         """Acquire and digest according to the self's acquisition and digestion plans.
@@ -366,7 +378,7 @@ class Agent:
             # compute the fitness for each objective
             # for index, entry in products.iterrows():
             #     for obj in self.objectives:
-            #         products.loc[index, objective["key"]] = getattr(entry, objective["key"])
+            #         products.loc[index, objective['key']] = getattr(entry, objective['key'])
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -405,8 +417,8 @@ class Agent:
 
         For example:
 
-        RE(agent.learn("qr", n=16))
-        RE(agent.learn("qei", n=4, iterations=4))
+        RE(agent.learn('qr', n=16))
+        RE(agent.learn('qei', n=4, iterations=4))
 
         Parameters
         ----------
@@ -435,9 +447,9 @@ class Agent:
         for i in range(iterations):
             print(f"running iteration {i + 1} / {iterations}")
             for single_acq_func in np.atleast_1d(acq_func):
-                acq_points, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample)
-                new_table = yield from self.acquire(acq_points)
-                new_table.loc[:, "acq_func"] = acq_func_meta["name"]
+                res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample)
+                new_table = yield from self.acquire(res["points"])
+                new_table.loc[:, "acq_func"] = res["acq_func"]
 
                 x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
                 y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
@@ -725,8 +737,8 @@ class Agent:
         entries = []
         for k, d in acquisition.config.items():
             ret = ""
-            ret += f'{d["pretty_name"].upper()} (identifiers: {d["identifiers"]})\n'
-            ret += f'-> {d["description"]}'
+            ret += f"{d['pretty_name'].upper()} (identifiers: {d['identifiers']})\n"
+            ret += f"-> {d['description']}"
             entries.append(ret)
 
         print("\n\n".join(entries))

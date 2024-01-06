@@ -15,7 +15,7 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
             num_inputs=train_inputs.shape[-1],
             num_outputs=train_targets.shape[-1],
             skew_dims=skew_dims,
-            diag_prior=True,
+            priors=True,
             scale=True,
             **kwargs
         )
@@ -31,7 +31,7 @@ class TargetingGP(botorch.models.gp_regression.SingleTaskGP):
             num_inputs=train_inputs.shape[-1],
             num_outputs=train_targets.shape[-1],
             skew_dims=skew_dims,
-            diag_prior=True,
+            priors=True,
             scale=True,
             **kwargs
         )
