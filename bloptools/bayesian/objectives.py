@@ -20,11 +20,36 @@ def _validate_objectives(objectives):
     unique_names, counts = np.unique(names, return_counts=True)
     duplicate_names = unique_names[counts > 1]
     if len(duplicate_names) > 0:
-        raise DuplicateNameError(f'Duplicate name(s) in supplied objectives: "{duplicate_names}"')
+        raise DuplicateNameError(f"Duplicate name(s) in supplied objectives: {duplicate_names}")
 
 
 @dataclass
 class Objective:
+    """An objective to be used by an agent.
+
+    Parameters
+    ----------
+    name: str
+        The name of the objective. This is used as a key.
+    description: str
+        A longer description for the objective.
+    target: float or str
+        One of 'min' or 'max', or a number. The agent will respectively minimize or maximize the
+        objective, or target the supplied number.
+    log: bool
+        Whether to apply a log to the objective, to make it more Gaussian.
+    weight: float
+        The relative importance of this objective, used when scalarizing in multi-objective optimization.
+    active: bool
+        If True, the agent will care about this objective during optimization.
+    limits: tuple of floats
+        The range of reliable measurements for the obejctive. Outside of this, data points will be rejected.
+    min_snr: float
+        The minimum signal-to-noise ratio of the objective, used when fitting the model.
+    units: str
+        A label representing the units of the objective.
+    """
+
     name: str
     description: str = None
     target: Union[float, str] = "max"
@@ -45,8 +70,6 @@ class Objective:
         if type(self.target) is str:
             if self.target not in ["min", "max"]:
                 raise ValueError("'target' must be either 'min', 'max', or a number.")
-
-        # self.device = Signal(name=self.name)
 
     @property
     def label(self):
@@ -102,21 +125,24 @@ class ObjectiveList(Sequence):
     def __repr__(self):
         return self.summary.__repr__()
 
-    # @property
-    # def descriptions(self) -> list:
-    #     return [obj.description for obj in self.objectives]
+    @property
+    def descriptions(self) -> list:
+        """
+        Returns an array of the objective names.
+        """
+        return [obj.description for obj in self.objectives]
 
     @property
     def names(self) -> list:
         """
-        Returns an array of the objective weights.
+        Returns an array of the objective names.
         """
         return [obj.name for obj in self.objectives]
 
     @property
     def targets(self) -> np.array:
         """
-        Returns an array of the objective weights.
+        Returns an array of the objective targets.
         """
         return [obj.target for obj in self.objectives]
 

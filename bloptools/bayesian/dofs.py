@@ -25,13 +25,42 @@ def _validate_dofs(dofs):
     unique_dof_names, counts = np.unique(dof_names, return_counts=True)
     duplicate_dof_names = unique_dof_names[counts > 1]
     if len(duplicate_dof_names) > 0:
-        raise ValueError(f'Duplicate name(s) in supplied dofs: "{duplicate_dof_names}"')
+        raise ValueError(f"Duplicate name(s) in supplied dofs: {duplicate_dof_names}")
 
     return list(dofs)
 
 
 @dataclass
 class DOF:
+    """A degree of freedom (DOF), to be used by an agent.
+
+    Parameters
+    ----------
+    name: str
+        The name of the DOF. This is used as a key.
+    description: str
+        A longer name for the DOF.
+    device: Signal, optional
+        An ophyd device. If None, a dummy ophyd device is generated.
+    limits: tuple, optional
+        A tuple of the lower and upper limit of the DOF. If the DOF is not read-only, the agent
+        will not explore outside the limits. If the DOF is read-only, the agent will reject all
+        sampled data where the DOF is outside the limits.
+    read_only: bool
+        If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
+        device is read-only.
+    active: bool
+        If True, the agent will try to use the DOF in its optimization. If False, the agent will
+        still read the DOF but not include it any model or acquisition function.
+    units: str
+        The units of the DOF (e.g. mm or deg). This is only for plotting and general housekeeping.
+    tags: list
+        A list of tags. These make it easier to subset large groups of dofs.
+    latent_group: optional
+        An agent will fit latent dimensions to all DOFs with the same latent_group. If None, the
+        DOF will be modeled independently.
+    """
+
     device: Signal = None
     description: str = None
     name: str = None
@@ -40,8 +69,10 @@ class DOF:
     read_only: bool = False
     active: bool = True
     tags: list = field(default_factory=list)
+    log: bool = False
     latent_group: str = None
 
+    # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
         self.uuid = str(uuid.uuid4())
 
@@ -100,6 +131,8 @@ class DOFList(Sequence):
             return self.dofs[i]
         elif type(i) is str:
             return self.dofs[self.names.index(i)]
+        else:
+            raise ValueError(f"Invalid index {i}. A DOFList must be indexed by either an integer or a string.")
 
     def __len__(self):
         return len(self.dofs)
@@ -178,21 +211,6 @@ class DOFList(Sequence):
 
     def subset(self, active=None, read_only=None, tags=[]):
         return DOFList([dof for dof, m in zip(self.dofs, self._dof_mask(active, read_only, tags)) if m])
-
-    # def _subset_devices(self, read_only=None, active=None, tags=[]):
-    #     return [dof["device"] for dof in self._subset_dofs(read_only, active, tags)]
-
-    # def _read_subset_devices(self, read_only=None, active=None, tags=[]):
-    #     return [device.read()[device.name]["value"] for device in self._subset_devices(read_only, active, tags)]
-
-    # def _subset_dof_names(self, read_only=None, active=None, tags=[]):
-    #     return [device.name for device in self._subset_devices(read_only, active, tags)]
-
-    # def _subset_dof_limits(self, read_only=None, active=None, tags=[]):
-    #     dofs_subset = self._subset_dofs(read_only, active, tags)
-    #     if len(dofs_subset) > 0:
-    #         return torch.tensor([dof["limits"] for dof in dofs_subset], dtype=torch.float64).T
-    #     return torch.empty((2, 0))
 
     def activate(self, read_only=None, active=None, tags=[]):
         for dof in self._subset_dofs(read_only, active, tags):
