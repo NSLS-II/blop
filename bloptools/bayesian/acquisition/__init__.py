@@ -1,7 +1,6 @@
 import os
 
 import yaml
-from botorch.acquisition.objective import ScalarizedPosteriorTransform
 
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
@@ -38,7 +37,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
     acq_func_name = parse_acq_func_identifier(identifier)
     acq_func_config = config["upper_confidence_bound"]
 
-    if config[acq_func_name]["multitask_only"] and (agent.num_tasks == 1):
+    if config[acq_func_name]["multitask_only"] and (len(agent.objectives) == 1):
         raise ValueError(f'Acquisition function "{acq_func_name}" is only for multi-task optimization problems!')
 
     # there is probably a better way to structure this
@@ -47,7 +46,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
+            posterior_transform=agent.targeting_transform,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -56,7 +55,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
+            posterior_transform=agent.targeting_transform,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -65,7 +64,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
+            posterior_transform=agent.targeting_transform,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -74,7 +73,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
+            posterior_transform=agent.targeting_transform,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -103,7 +102,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
+            posterior_transform=agent.targeting_transform,
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
@@ -114,7 +113,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.model,
             beta=beta,
-            posterior_transform=ScalarizedPosteriorTransform(weights=agent.objective_weights_torch, offset=0),
+            posterior_transform=agent.targeting_transform,
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 

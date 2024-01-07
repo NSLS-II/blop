@@ -3,7 +3,7 @@ import time as ttime
 import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Callable, Sequence, Tuple
+from typing import Callable, Optional, Sequence, Tuple
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
+from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
 from databroker import Broker
@@ -22,10 +23,11 @@ from ophyd import Signal
 
 from .. import utils
 from . import acquisition, models, plotting
-from .acquisition import default_acquisition_plan
-from .devices import DOF, DOFList
 from .digestion import default_digestion_function
-from .objective import Objective, ObjectiveList
+from .dofs import DOF, DOFList
+from .objectives import Objective, ObjectiveList
+from .plans import default_acquisition_plan
+from .transforms import TargetingPosteriorTransform
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -47,6 +49,7 @@ class Agent:
         tolerate_acquisition_errors=False,
         sample_center_on_init=False,
         trigger_delay: float = 0,
+        train_every: int = 1,
     ):
         """
         A Bayesian optimization agent.
@@ -79,9 +82,9 @@ class Agent:
         #
         # below are the behaviors of DOFs of each kind and mode:
         #
-        # "read": the agent will read the input on every acquisition (all dofs are always read)
-        # "move": the agent will try to set and optimize over these (there must be at least one of these)
-        # "input" means that the agent will use the value to make its posterior
+        # 'read': the agent will read the input on every acquisition (all dofs are always read)
+        # 'move': the agent will try to set and optimize over these (there must be at least one of these)
+        # 'input' means that the agent will use the value to make its posterior
         #
         #
         #               not read-only        read-only
@@ -105,6 +108,7 @@ class Agent:
 
         self.tolerate_acquisition_errors = tolerate_acquisition_errors
 
+        self.train_every = train_every
         self.trigger_delay = trigger_delay
         self.sample_center_on_init = sample_center_on_init
 
@@ -113,7 +117,18 @@ class Agent:
         self.initialized = False
         self.a_priori_hypers = None
 
-    def tell(self, x: Mapping, y: Mapping, metadata=None, append=True, train_models=True, hypers=None):
+        self.n_last_trained = 0
+
+    def tell(
+        self,
+        data: Optional[Mapping] = {},
+        x: Optional[Mapping] = {},
+        y: Optional[Mapping] = {},
+        metadata: Optional[Mapping] = {},
+        append=True,
+        train=True,
+        hypers=None,
+    ):
         """
         Inform the agent about new inputs and targets for the model.
 
@@ -130,84 +145,172 @@ class Agent:
         train_models: bool
             Whether to train the models on construction.
         hypers:
-            A dict of hyperparameters for the model to assume a priori.
+            A dict of hyperparameters for the model to assume a priori, instead of training.
         """
 
-        new_table = pd.DataFrame({**x, **y, **metadata} if metadata is not None else {**x, **y})
+        if not data:
+            if not x and y:
+                raise ValueError("Must supply either x and y, or data.")
+            data = {**x, **y, **metadata}
+
+        data = {k: np.atleast_1d(v) for k, v in data.items()}
+        unique_field_lengths = {len(v) for v in data.values()}
+
+        if len(unique_field_lengths) > 1:
+            raise ValueError("All supplies values must be the same length!")
+
+        new_table = pd.DataFrame(data)
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        self._update_models(train=train_models, a_priori_hypers=hypers)
+        for obj in self.objectives:
+            t0 = ttime.monotonic()
 
-    def _update_models(self, train=True, skew_dims=None, a_priori_hypers=None):
+            cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
+
+            obj.model = self.construct_model(obj)
+
+            if len(obj.model.train_targets) >= 2:
+                t0 = ttime.monotonic()
+                self.train_model(obj.model, hypers=(None if train else cached_hypers))
+                if self.verbose:
+                    print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
+
+        # TODO: should this be per objective?
+        self.construct_classifier()
+
+    def train_model(self, model, hypers=None, **kwargs):
+        """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
+        if hypers is not None:
+            model.load_state_dict(hypers)
+        else:
+            botorch.fit.fit_gpytorch_mll(gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model), **kwargs)
+        model.trained = True
+
+    def construct_model(self, obj, skew_dims=None):
+        """
+        Construct an untrained model for an objective.
+        """
+
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
 
-        # if self.initialized:
-        #     cached_hypers = self.hypers
+        likelihood = gpytorch.likelihoods.GaussianLikelihood(
+            noise_constraint=gpytorch.constraints.Interval(
+                torch.tensor(1e-4).square(),
+                torch.tensor(1 / obj.min_snr).square(),
+            ),
+            # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
+        )
 
-        inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
+        outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
 
-        for i, obj in enumerate(self.objectives):
-            self.table.loc[:, f"{obj.key}_fitness"] = targets = self._get_objective_targets(i)
-            train_index = ~np.isnan(targets)
+        train_inputs = self.train_inputs(active=True)
+        train_targets = self.train_targets(obj.name)
 
-            if not train_index.sum() >= 2:
-                raise ValueError("There must be at least two valid data points per objective!")
+        safe = ~(torch.isnan(train_inputs).any(axis=1) | torch.isnan(train_targets).any(axis=1))
 
-            train_inputs = torch.tensor(inputs[train_index], dtype=torch.double)
-            train_targets = torch.tensor(targets[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
+        model = models.LatentGP(
+            train_inputs=train_inputs[safe],
+            train_targets=train_targets[safe],
+            likelihood=likelihood,
+            skew_dims=skew_dims,
+            input_transform=self.input_transform,
+            outcome_transform=outcome_transform,
+        )
 
-            # for constructing the log normal noise prior
-            # target_snr = 2e2
-            # scale = 2e0
-            # loc = np.log(1 / target_snr**2) + scale**2
+        model.trained = False
 
-            likelihood = gpytorch.likelihoods.GaussianLikelihood(
-                noise_constraint=gpytorch.constraints.Interval(
-                    torch.tensor(1e-2).square(),
-                    torch.tensor(1 / obj.min_snr).square(),
-                ),
-                # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
-            )
+        return model
 
-            outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
-
-            obj.model = models.LatentGP(
-                train_inputs=train_inputs,
-                train_targets=train_targets,
-                likelihood=likelihood,
-                skew_dims=skew_dims,
-                input_transform=self._subset_input_transform(active=True),
-                outcome_transform=outcome_transform,
-            )
+    def construct_classifier(self, skew_dims=None):
+        skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
             self.all_objectives_valid.long(), learn_additional_noise=True
         )
 
         self.classifier = models.LatentDirichletClassifier(
-            train_inputs=torch.tensor(inputs).double(),
+            train_inputs=self.train_inputs(active=True),
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
-            input_transform=self._subset_input_transform(active=True),
+            input_transform=self.input_transform,
         )
 
-        if a_priori_hypers is not None:
-            self._set_hypers(a_priori_hypers)
-        else:
-            self._train_models()
-            # try:
-
-            # except botorch.exceptions.errors.ModelFittingError:
-            #     if self.initialized:
-            #         self._set_hypers(cached_hypers)
-            #     else:
-            #         raise RuntimeError("Could not fit model on initialization!")
-
+        self.train_model(self.classifier)
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
 
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True):
+    # def construct_model(self, obj, skew_dims=None, a_priori_hypers=None):
+    #     '''
+    #     Construct an untrained model for an objective.
+    #     '''
+    #     skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
+
+    #     inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
+
+    #     for i, obj in enumerate(self.objectives):
+    #         values = self.train_targets(i)
+    #         values = np.where(self.all_objectives_valid, values, np.nan)
+
+    #         train_index = ~np.isnan(values)
+
+    #         if not train_index.sum() >= 2:
+    #             raise ValueError("There must be at least two valid data points per objective!")
+
+    #         train_inputs = torch.tensor(inputs[train_index], dtype=torch.double)
+    #         train_values = torch.tensor(values[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
+
+    #         # for constructing the log normal noise prior
+    #         # target_snr = 2e2
+    #         # scale = 2e0
+    #         # loc = np.log(1 / target_snr**2) + scale**2
+
+    #         likelihood = gpytorch.likelihoods.GaussianLikelihood(
+    #             noise_constraint=gpytorch.constraints.Interval(
+    #                 torch.tensor(1e-4).square(),
+    #                 torch.tensor(1 / obj.min_snr).square(),
+    #             ),
+    #             # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
+    #         )
+
+    #         outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
+
+    #         obj.model = models.LatentGP(
+    #             train_inputs=train_inputs,
+    #             train_targets=self.t,
+    #             likelihood=likelihood,
+    #             skew_dims=skew_dims,
+    #             input_transform=self.input_transform,
+    #             outcome_transform=outcome_transform,
+    #         )
+
+    #     dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
+    #         self.all_objectives_valid.long(), learn_additional_noise=True
+    #     )
+
+    #     self.classifier = models.LatentDirichletClassifier(
+    #         train_inputs=torch.tensor(inputs).double(),
+    #         train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
+    #         skew_dims=skew_dims,
+    #         likelihood=dirichlet_likelihood,
+    #         input_transform=self._subset_input_transform(active=True),
+    #     )
+
+    #     if a_priori_hypers is not None:
+    #         self._set_hypers(a_priori_hypers)
+    #     else:
+    #         self._train_models()
+    #         # try:
+
+    #         # except botorch.exceptions.errors.ModelFittingError:
+    #         #     if self.initialized:
+    #         #         self._set_hypers(cached_hypers)
+    #         #     else:
+    #         #         raise RuntimeError('Could not fit model on initialization!')
+
+    #     self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
+
+    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1, **acq_func_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
 
         Parameters
@@ -229,19 +332,21 @@ class Agent:
         start_time = ttime.monotonic()
 
         if self.verbose:
-            print(f'finding points with acquisition function "{acq_func_name}" ...')
+            print(f"finding points with acquisition function '{acq_func_name}' ...")
 
         if acq_func_type in ["analytic", "monte_carlo"]:
-            if not self.initialized:
+            if not all(hasattr(obj, "model") for obj in self.objectives):
                 raise RuntimeError(
-                    f'Can\'t construct non-trivial acquisition function "{acq_func_identifier}"'
+                    f"Can't construct non-trivial acquisition function '{acq_func_identifier}'"
                     f" (the agent is not initialized!)"
                 )
 
             if acq_func_type == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            acq_func, acq_func_meta = self.get_acquisition_function(identifier=acq_func_identifier, return_metadata=True)
+            acq_func, acq_func_meta = self.get_acquisition_function(
+                identifier=acq_func_identifier, return_metadata=True, **acq_func_kwargs
+            )
 
             NUM_RESTARTS = 8
             RAW_SAMPLES = 1024
@@ -255,13 +360,14 @@ class Agent:
                 raw_samples=RAW_SAMPLES,  # used for intialization heuristic
             )
 
-            x = candidates.numpy().astype(float)
+            # this includes both RO and non-RO DOFs
+            candidates = candidates.numpy()
 
             active_dofs_are_read_only = np.array([dof.read_only for dof in self.dofs.subset(active=True)])
 
-            acq_points = x[..., ~active_dofs_are_read_only]
-            read_only_X = x[..., active_dofs_are_read_only]
-            acq_func_meta["read_only_values"] = read_only_X
+            acq_points = candidates[..., ~active_dofs_are_read_only]
+            read_only_values = candidates[..., active_dofs_are_read_only]
+            acq_func_meta["read_only_values"] = read_only_values
 
         else:
             acqf_obj = None
@@ -283,20 +389,33 @@ class Agent:
                 raise ValueError()
 
             # define dummy acqf objective
-            acqf_obj = None
+            acqf_obj = 0
 
         acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
 
         if self.verbose:
-            print(
-                f"found points {acq_points} with acqf {acq_func_meta['name']} in {duration:.01f} seconds (obj = {acqf_obj})"
-            )
+            print(f"found points {acq_points} in {1e3*duration:.01f} ms (obj = {acqf_obj})")
 
         if route and n > 1:
             routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, acq_points)
             acq_points = acq_points[routing_index]
 
-        return acq_points, acq_func_meta
+        if upsample > 1:
+            idx = np.arange(len(acq_points))
+            upsampled_idx = np.linspace(0, len(idx) - 1, upsample * len(idx) - 1)
+            acq_points = sp.interpolate.interp1d(idx, acq_points, axis=0)(upsampled_idx)
+
+        res = {
+            "points": acq_points,
+            "acq_func": acq_func_meta["name"],
+            "acq_func_kwargs": acq_func_kwargs,
+            "duration": acq_func_meta["duration"],
+            "sequential": sequential,
+            "upsample": upsample,
+            "read_only_values": acq_func_meta.get("read_only_values"),
+        }
+
+        return res
 
     def acquire(self, acquisition_inputs):
         """Acquire and digest according to the self's acquisition and digestion plans.
@@ -330,7 +449,7 @@ class Agent:
             # compute the fitness for each objective
             # for index, entry in products.iterrows():
             #     for obj in self.objectives:
-            #         products.loc[index, objective["key"]] = getattr(entry, objective["key"])
+            #         products.loc[index, objective['key']] = getattr(entry, objective['key'])
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -341,30 +460,36 @@ class Agent:
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).names)
             for obj in self.objectives:
-                products.loc[:, obj.key] = np.nan
+                products.loc[:, obj.name] = np.nan
 
         if not len(acquisition_inputs) == len(products):
             raise ValueError("The table returned by the digestion function must be the same length as the sampled inputs!")
 
         return products
 
+    def load_data(self, data_file, append=True, train=True):
+        new_table = pd.read_hdf(data_file, key="table")
+        x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
+        y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
+        metadata = new_table.to_dict(orient="list")
+        self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
+
     def learn(
         self,
-        acq_func=None,
-        n=1,
-        iterations=1,
-        upsample=1,
-        train=True,
-        data_file=None,
+        acq_func: str = "qei",
+        n: int = 1,
+        iterations: int = 1,
+        upsample: int = 1,
+        train: bool = True,
+        append: bool = True,
         hypers_file=None,
-        append=True,
     ):
         """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
 
         For example:
 
-        RE(agent.learn("qr", n=16))
-        RE(agent.learn("qei", n=4, iterations=4))
+        RE(agent.learn('qr', n=16))
+        RE(agent.learn('qei', n=4, iterations=4))
 
         Parameters
         ----------
@@ -385,32 +510,22 @@ class Agent:
             hyperparameters a priori for the rest of the run, and not try to fit a model.
         """
 
-        if data_file is not None:
-            new_table = pd.read_hdf(data_file, key="table")
+        if self.sample_center_on_init and not self.initialized:
+            center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
+            new_table = yield from self.acquire(center_inputs)
+            new_table.loc[:, "acq_func"] = "sample_center_on_init"
 
-        elif acq_func is not None:
-            if self.sample_center_on_init and not self.initialized:
-                center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
-                new_table = yield from self.acquire(center_inputs)
-                new_table.loc[:, "acq_func"] = "sample_center_on_init"
+        for i in range(iterations):
+            print(f"running iteration {i + 1} / {iterations}")
+            for single_acq_func in np.atleast_1d(acq_func):
+                res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample)
+                new_table = yield from self.acquire(res["points"])
+                new_table.loc[:, "acq_func"] = res["acq_func"]
 
-            for i in range(iterations):
-                print(f"running iteration {i + 1} / {iterations}")
-                for single_acq_func in np.atleast_1d(acq_func):
-                    x, acq_func_meta = self.ask(n=n, acq_func_identifier=single_acq_func)
-                    new_table = yield from self.acquire(x)
-                    new_table.loc[:, "acq_func"] = acq_func_meta["name"]
-
-        else:
-            raise ValueError("You must supply either an acquisition function or a filepath!")
-
-        x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
-        y = {key: new_table.pop(key).tolist() for key in self.objectives.keys}
-        metadata = new_table.to_dict(orient="list")
-
-        self.tell(x=x, y=y, metadata=metadata, append=append, train_models=True)
-
-        self.initialized = True
+                x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
+                y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
+                metadata = new_table.to_dict(orient="list")
+                self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
 
     def get_acquisition_function(self, identifier, return_metadata=False):
         """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
@@ -421,7 +536,12 @@ class Agent:
     def reset(self):
         """Reset the agent."""
         self.table = pd.DataFrame()
-        self.initialized = False
+
+        for obj in self.objectives:
+            if hasattr(obj, "model"):
+                del obj.model
+
+        self.n_last_trained = 0
 
     def benchmark(
         self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
@@ -431,24 +551,15 @@ class Agent:
         Parameters
         ----------
         output_dir :
-            Where to save the optimized agents
+            Where to save the agent output.
         runs : int
             How many benchmarks to run
-        n_init : int
-            How many points to sample on reseting the agent.
         learning_kwargs_list:
-            A list of kwargs which the agent will run sequentially for each run.
+            A list of kwargs to pass to the learn method which the agent will run sequentially for each run.
         """
-        # cache_limits = {dof.name: dof.limits for dof in self.dofs}
 
         for run in range(runs):
-            # for dof in self.dofs:
-            #     offset = 0.25 * np.ptp(dof.limits) * np.random.uniform(low=-1, high=1)
-            #     dof.limits = (cache_limits[dof.name][0] + offset, cache_limits[dof.name][1] + offset)
-
             self.reset()
-
-            yield from self.learn("qr", n=n_init)
 
             for kwargs in learning_kwargs_list:
                 yield from self.learn(**kwargs)
@@ -460,43 +571,40 @@ class Agent:
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
         return ModelListGP(*[obj.model for obj in self.objectives]) if len(self.objectives) > 1 else self.objectives[0].model
 
+    def posterior(self, x):
+        """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
+        return self.model.posterior(x)
+
     @property
     def objective_weights_torch(self):
         return torch.tensor(self.objectives.weights, dtype=torch.double)
 
-    def _get_objective_targets(self, i):
-        """Returns the targets (what we fit to) for an objective, given the objective index."""
-        obj = self.objectives[i]
-
-        targets = self.table.loc[:, obj.key].values.copy()
-
-        # check that targets values are inside acceptable values
-        valid = (targets > obj.limits[0]) & (targets < obj.limits[1])
-        targets = np.where(valid, targets, np.nan)
-
-        # transform if needed
-        if obj.log:
-            targets = np.where(valid, np.log(targets), np.nan)
-
-        if obj.minimize:
-            targets *= -1
-
-        return targets
+    @property
+    def scalarizing_transform(self):
+        return ScalarizedPosteriorTransform(weights=self.objective_weights_torch, offset=0)
 
     @property
-    def n_objs(self):
-        """Returns a (num_objectives x n_observations) array of objectives"""
-        return len(self.objectives)
+    def targeting_transform(self):
+        return TargetingPosteriorTransform(weights=self.objective_weights_torch, targets=self.objectives.targets)
 
     @property
-    def objectives_targets(self):
-        """Returns a (num_objectives x n_obs) array of objectives"""
-        return torch.cat([torch.tensor(self._get_objective_targets(i))[..., None] for i in range(self.n_objs)], dim=1)
+    def pseudo_targets(self):
+        """Targets for the posterior transform"""
+        return torch.tensor(
+            [
+                self.train_targets(active=True)[..., i].max()
+                if t == "max"
+                else self.train_targets(active=True)[..., i].min()
+                if t == "min"
+                else t
+                for i, t in enumerate(self.objectives.targets)
+            ]
+        )
 
     @property
     def scalarized_objectives(self):
         """Returns a (n_obs,) array of scalarized objectives"""
-        return (self.objectives_targets * self.objectives.weights).sum(axis=-1)
+        return self.targeting_transform.evaluate(self.train_targets(active=True)).sum(axis=-1)
 
     @property
     def max_scalarized_objective(self):
@@ -561,6 +669,13 @@ class Agent:
 
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
 
+    @property
+    def input_transform(self):
+        """
+        A bounding transform for all the active DOFs. This is used for model fitting.
+        """
+        return self._subset_input_transform(active=True)
+
     def _subset_input_transform(self, active=None, read_only=None, tags=[]):
         # torch likes limits to be (2, n_dof) and not (n_dof, 2)
         torch_limits = torch.tensor(self.dofs.subset(active, read_only, tags).limits.T, dtype=torch.double)
@@ -590,7 +705,7 @@ class Agent:
         Make the agent forget some index of the data table.
         """
         self.table.drop(index=index, inplace=True)
-        self._update_models(train=train)
+        self._construct_models(train=train)
 
     def forget_last_n(self, n, train=True):
         """
@@ -610,7 +725,7 @@ class Agent:
 
     def _set_hypers(self, hypers):
         for obj in self.objectives:
-            obj.model.load_state_dict(hypers[obj.key])
+            obj.model.load_state_dict(hypers[obj.name])
         self.classifier.load_state_dict(hypers["classifier"])
 
     @property
@@ -620,9 +735,9 @@ class Agent:
         for key, value in self.classifier.state_dict().items():
             hypers["classifier"][key] = value
         for obj in self.objectives:
-            hypers[obj.key] = {}
+            hypers[obj.name] = {}
             for key, value in obj.model.state_dict().items():
-                hypers[obj.key][key] = value
+                hypers[obj.name][key] = value
 
         return hypers
 
@@ -658,22 +773,62 @@ class Agent:
         if self.verbose:
             print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
+        self.n_last_trained = len(self.table)
+
     @property
     def all_acq_funcs(self):
         """Description and identifiers for all supported acquisition functions."""
         entries = []
         for k, d in acquisition.config.items():
             ret = ""
-            ret += f'{d["pretty_name"].upper()} (identifiers: {d["identifiers"]})\n'
-            ret += f'-> {d["description"]}'
+            ret += f"{d['pretty_name'].upper()} (identifiers: {d['identifiers']})\n"
+            ret += f"-> {d['description']}"
             entries.append(ret)
 
         print("\n\n".join(entries))
 
     @property
     def inputs(self):
-        """A two-dimensional array of all DOF values."""
+        """A DataFrame of all DOF values."""
         return self.table.loc[:, self.dofs.names].astype(float)
+
+    def train_inputs(self, dof_name=None, **subset_kwargs):
+        """A two-dimensional tensor of all DOF values."""
+
+        if dof_name is None:
+            return torch.cat([self.train_inputs(dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
+
+        dof = self.dofs[dof_name]
+        inputs = self.table.loc[:, dof.name].values.copy()
+
+        # check that inputs values are inside acceptable values
+        valid = (inputs >= dof.limits[0]) & (inputs <= dof.limits[1])
+        inputs = np.where(valid, inputs, np.nan)
+
+        # transform if needed
+        if dof.log:
+            inputs = np.where(inputs > 0, np.log(inputs), np.nan)
+
+        return torch.tensor(inputs, dtype=torch.double).unsqueeze(-1)
+
+    def train_targets(self, obj_name=None, **subset_kwargs):
+        """Returns the values associated with an objective name."""
+
+        if obj_name is None:
+            return torch.cat([self.train_targets(obj.name) for obj in self.objectives], dim=-1)
+
+        obj = self.objectives[obj_name]
+        targets = self.table.loc[:, obj.name].values.copy()
+
+        # check that targets values are inside acceptable values
+        valid = (targets >= obj.limits[0]) & (targets <= obj.limits[1])
+        targets = np.where(valid, targets, np.nan)
+
+        # transform if needed
+        if obj.log:
+            targets = np.where(targets > 0, np.log(targets), np.nan)
+
+        return torch.tensor(targets, dtype=torch.double).unsqueeze(-1)
 
     @property
     def active_inputs(self):

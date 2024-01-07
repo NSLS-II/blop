@@ -9,6 +9,7 @@ from databroker import Broker
 from ophyd.utils import make_dir_tree
 
 from bloptools.bayesian import DOF, Agent, Objective
+from bloptools.bayesian.dofs import BrownianMotion
 from bloptools.utils import functions
 
 
@@ -54,7 +55,7 @@ def agent(db):
         DOF(name="x2", limits=(-8.0, 8.0)),
     ]
 
-    objectives = [Objective(key="himmelblau", minimize=True)]
+    objectives = [Objective(name="himmelblau", target="min")]
 
     agent = Agent(
         dofs=dofs,
@@ -71,15 +72,15 @@ def agent(db):
 @pytest.fixture(scope="function")
 def multi_agent(db):
     """
-    A simple agent minimizing two Styblinski-Tang functions
+    A simple agent minimizing two Himmelblau's functions
     """
 
     def digestion(db, uid):
         products = db[uid].table()
 
         for index, entry in products.iterrows():
-            products.loc[index, "ST1"] = functions.styblinski_tang(entry.x1, entry.x2)
-            products.loc[index, "ST2"] = functions.styblinski_tang(entry.x1, -entry.x2)
+            products.loc[index, "obj1"] = functions.himmelblau(entry.x1, entry.x2)
+            products.loc[index, "obj2"] = functions.himmelblau(entry.x2, entry.x1)
 
         return products
 
@@ -88,12 +89,42 @@ def multi_agent(db):
         DOF(name="x2", limits=(-5.0, 5.0)),
     ]
 
-    objectives = [Objective(key="ST1", minimize=True), Objective(key="ST2", minimize=True)]
+    objectives = [Objective(name="obj1", target="min"), Objective(name="obj2", target="min")]
 
     agent = Agent(
         dofs=dofs,
         objectives=objectives,
         digestion=digestion,
+        db=db,
+        verbose=True,
+        tolerate_acquisition_errors=False,
+    )
+
+    return agent
+
+
+@pytest.fixture(scope="function")
+def agent_with_passive_dofs(db):
+    """
+    A simple agent minimizing two Himmelblau's functions
+    """
+
+    dofs = [
+        DOF(name="x1", limits=(-5.0, 5.0)),
+        DOF(name="x2", limits=(-5.0, 5.0)),
+        DOF(name="x3", limits=(-5.0, 5.0), active=False),
+        DOF(BrownianMotion(name="brownian1"), read_only=True),
+        DOF(BrownianMotion(name="brownian2"), read_only=True, active=False),
+    ]
+
+    objectives = [
+        Objective(name="himmelblau", target="min"),
+    ]
+
+    agent = Agent(
+        dofs=dofs,
+        objectives=objectives,
+        digestion=functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,

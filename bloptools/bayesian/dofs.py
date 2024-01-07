@@ -1,6 +1,7 @@
 import time as ttime
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Tuple, Union
 
 import numpy as np
@@ -18,17 +19,18 @@ class ReadOnlyError(Exception):
 
 
 def _validate_dofs(dofs):
-    """Check that a list of DOFs can be combined into a DOFList."""
+    dof_names = [dof.name for dof in dofs]
 
     # check that dof names are unique
-    unique_dof_names, counts = np.unique([dof.name for dof in dofs], return_counts=True)
+    unique_dof_names, counts = np.unique(dof_names, return_counts=True)
     duplicate_dof_names = unique_dof_names[counts > 1]
     if len(duplicate_dof_names) > 0:
-        raise ValueError(f'Duplicate name(s) in supplied dofs: "{duplicate_dof_names}"')
+        raise ValueError(f"Duplicate name(s) in supplied dofs: {duplicate_dof_names}")
 
     return list(dofs)
 
 
+@dataclass
 class DOF:
     """A degree of freedom (DOF), to be used by an agent.
 
@@ -59,41 +61,44 @@ class DOF:
         DOF will be modeled independently.
     """
 
-    def __init__(
-        self,
-        device: Signal = None,
-        name: str = None,
-        description: str = "",
-        limits: Tuple[float, float] = (-10.0, 10.0),
-        units: str = None,
-        read_only: bool = False,
-        active: bool = True,
-        tags: list = [],
-        latent_group=None,
-    ):
+    device: Signal = None
+    description: str = None
+    name: str = None
+    limits: Tuple[float, float] = (-10.0, 10.0)
+    units: str = ""
+    read_only: bool = False
+    active: bool = True
+    tags: list = field(default_factory=list)
+    log: bool = False
+    latent_group: str = None
+
+    # Some post-processing. This is specific to dataclasses
+    def __post_init__(self):
         self.uuid = str(uuid.uuid4())
-        self.description = description
 
-        self.name = name if name is not None else device.name if hasattr(device, "name") else self.uuid
+        if self.name is None:
+            self.name = self.device.name if hasattr(self.device, "name") else self.uuid
 
-        self.device = device if device is not None else Signal(name=self.name)
-        self.limits = limits
-        self.read_only = read_only if read_only is not None else True if isinstance(device, SignalRO) else False
-        self.units = units
-        self.tags = tags
-        self.active = active
-        self.latent_group = latent_group if latent_group is not None else str(uuid.uuid4())
+        if self.device is None:
+            self.device = Signal(name=self.name)
 
+        if not self.read_only:
+            # check that the device has a put method
+            if isinstance(self.device, SignalRO):
+                raise ValueError("Must specify read_only=True for a read-only device!")
+
+        if self.latent_group is None:
+            self.latent_group = str(uuid.uuid4())
+
+        # all dof degrees of freedom are hinted
         self.device.kind = "hinted"
 
     @property
     def lower_limit(self):
-        """The lower limit of the DOF."""
         return float(self.limits[0])
 
     @property
     def upper_limit(self):
-        """The upper limit of the DOF."""
         return float(self.limits[1])
 
     @property
@@ -102,7 +107,6 @@ class DOF:
 
     @property
     def summary(self) -> pd.Series:
-        """A pandas Series representing the current state of the DOF."""
         series = pd.Series(index=DOF_FIELDS)
         for attr in series.index:
             series[attr] = getattr(self, attr)
@@ -110,31 +114,34 @@ class DOF:
 
     @property
     def label(self) -> str:
-        """A formal label for plotting."""
-        return f"{self.name}{f' [{self.units}]' if self.units is not None else ''}"
+        return f"{self.name}{f' [{self.units}]' if len(self.units) > 0 else ''}"
+
+    @property
+    def has_model(self):
+        return hasattr(self, "model")
 
 
 class DOFList(Sequence):
-    """A class for handling a list of DOFs."""
-
     def __init__(self, dofs: list = []):
         _validate_dofs(dofs)
         self.dofs = dofs
 
-    def __getitem__(self, index):
-        """Get a DOF either by name or its position in the list."""
-        if type(index) is str:
-            return self.dofs[self.names.index(index)]
-        if type(index) is int:
-            return self.dofs[index]
+    def __getitem__(self, i):
+        if type(i) is int:
+            return self.dofs[i]
+        elif type(i) is str:
+            return self.dofs[self.names.index(i)]
+        else:
+            raise ValueError(f"Invalid index {i}. A DOFList must be indexed by either an integer or a string.")
 
     def __len__(self):
-        """Number of DOFs in the list."""
         return len(self.dofs)
 
     def __repr__(self):
-        """A table showing the state of each DOF."""
         return self.summary.__repr__()
+
+    # def _repr_html_(self):
+    #     return self.summary._repr_html_()
 
     @property
     def summary(self) -> pd.DataFrame:
@@ -159,6 +166,10 @@ class DOFList(Sequence):
     @property
     def devices(self) -> list:
         return [dof.device for dof in self.dofs]
+
+    @property
+    def device_names(self) -> list:
+        return [dof.device.name for dof in self.dofs]
 
     @property
     def lower_limits(self) -> np.array:
@@ -202,26 +213,17 @@ class DOFList(Sequence):
         return DOFList([dof for dof, m in zip(self.dofs, self._dof_mask(active, read_only, tags)) if m])
 
     def activate(self, read_only=None, active=None, tags=[]):
-        """Activate all degrees of freedom with a given tag, active status or read-only status.
-
-        For example, `dofs.activate(tag='kb')` will turn off all dofs which contain the tag 'kb'.
-        """
         for dof in self._subset_dofs(read_only, active, tags):
             dof.active = True
 
     def deactivate(self, read_only=None, active=None, tags=[]):
-        """The same as .activate(), only in reverse."""
         for dof in self._subset_dofs(read_only, active, tags):
             dof.active = False
 
 
 class BrownianMotion(SignalRO):
-    """Read-only degree of freedom simulating Brownian motion.
-
-    Parameters
-    ----------
-    theta : float
-        Determines the autocorrelation of the process; smaller values correspond to faster variation.
+    """
+    Read-only degree of freedom simulating brownian motion
     """
 
     def __init__(self, name=None, theta=0.95, *args, **kwargs):
