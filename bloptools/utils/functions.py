@@ -114,6 +114,25 @@ def gaussian_beam_waist(x1, x2):
     return np.sqrt(1 + 0.25 * (x1 - x2) ** 2 + 16 * (x1 + x2 - 2) ** 2)
 
 
+def hartmann4(*x):
+    X = np.c_[x]
+
+    alpha = np.array([1.0, 1.2, 3.0, 3.2])
+
+    A = np.array([[10, 3, 17, 3.5], [0.05, 10, 17, 0.1], [3, 3.5, 1.7, 10], [17, 8, 0.05, 10]])
+
+    P = 1e-4 * np.array(
+        [
+            [1312, 1696, 5569, 124],
+            [2329, 4135, 8307, 3736],
+            [2348, 1451, 3522, 2883],
+            [4047, 8828, 8732, 5743],
+        ]
+    )
+
+    return -(alpha * np.exp(-(A * np.square(X - P)).sum(axis=1))).sum()
+
+
 def hartmann6(*x):
     X = np.c_[x]
 

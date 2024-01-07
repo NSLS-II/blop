@@ -9,6 +9,7 @@ from databroker import Broker
 from ophyd.utils import make_dir_tree
 
 from bloptools.bayesian import DOF, Agent, Objective
+from bloptools.bayesian.dofs import BrownianMotion
 from bloptools.utils import functions
 
 
@@ -94,6 +95,36 @@ def multi_agent(db):
         dofs=dofs,
         objectives=objectives,
         digestion=digestion,
+        db=db,
+        verbose=True,
+        tolerate_acquisition_errors=False,
+    )
+
+    return agent
+
+
+@pytest.fixture(scope="function")
+def agent_with_passive_dofs(db):
+    """
+    A simple agent minimizing two Himmelblau's functions
+    """
+
+    dofs = [
+        DOF(name="x1", limits=(-5.0, 5.0)),
+        DOF(name="x2", limits=(-5.0, 5.0)),
+        DOF(name="x3", limits=(-5.0, 5.0), active=False),
+        DOF(BrownianMotion(name="brownian1"), read_only=True),
+        DOF(BrownianMotion(name="brownian2"), read_only=True, active=False),
+    ]
+
+    objectives = [
+        Objective(name="himmelblau", target="min"),
+    ]
+
+    agent = Agent(
+        dofs=dofs,
+        objectives=objectives,
+        digestion=functions.constrained_himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,

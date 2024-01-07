@@ -126,7 +126,7 @@ class Agent:
         y: Optional[Mapping] = {},
         metadata: Optional[Mapping] = {},
         append=True,
-        train_models=True,
+        train=True,
         hypers=None,
     ):
         """
@@ -145,7 +145,7 @@ class Agent:
         train_models: bool
             Whether to train the models on construction.
         hypers:
-            A dict of hyperparameters for the model to assume a priori.
+            A dict of hyperparameters for the model to assume a priori, instead of training.
         """
 
         if not data:
@@ -163,81 +163,152 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        # TODO: should be a check per model
-        if len(self.table) > 2:
-            if any([not hasattr(obj, "model") for obj in self.objectives]):
-                self._construct_models(train=train_models, a_priori_hypers=hypers)
+        for obj in self.objectives:
+            t0 = ttime.monotonic()
 
-            elif int(self.n_last_trained / self.train_every) != int(len(self.table) / self.train_every):
-                if train_models:
-                    self._construct_models(train=train_models, a_priori_hypers=hypers)
+            cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
 
-    def _construct_models(self, train=True, skew_dims=None, a_priori_hypers=None):
+            obj.model = self.construct_model(obj)
+
+            if len(obj.model.train_targets) >= 2:
+                t0 = ttime.monotonic()
+                self.train_model(obj.model, hypers=(None if train else cached_hypers))
+                if self.verbose:
+                    print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
+
+        # TODO: should this be per objective?
+        self.construct_classifier()
+
+    def train_model(self, model, hypers=None, **kwargs):
+        """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
+        if hypers is not None:
+            model.load_state_dict(hypers)
+        else:
+            botorch.fit.fit_gpytorch_mll(gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model), **kwargs)
+        model.trained = True
+
+    def construct_model(self, obj, skew_dims=None):
+        """
+        Construct an untrained model for an objective.
+        """
+
         skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
 
-        inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
+        likelihood = gpytorch.likelihoods.GaussianLikelihood(
+            noise_constraint=gpytorch.constraints.Interval(
+                torch.tensor(1e-4).square(),
+                torch.tensor(1 / obj.min_snr).square(),
+            ),
+            # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
+        )
 
-        for i, obj in enumerate(self.objectives):
-            values = self.get_objective_targets(i)
-            values = np.where(self.all_objectives_valid, values, np.nan)
+        outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
 
-            train_index = ~np.isnan(values)
+        train_inputs = self.train_inputs(active=True)
+        train_targets = self.train_targets(obj.name)
 
-            if not train_index.sum() >= 2:
-                raise ValueError("There must be at least two valid data points per objective!")
+        safe = ~(torch.isnan(train_inputs).any(axis=1) | torch.isnan(train_targets).any(axis=1))
 
-            train_inputs = torch.tensor(inputs[train_index], dtype=torch.double)
-            train_values = torch.tensor(values[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
+        model = models.LatentGP(
+            train_inputs=train_inputs[safe],
+            train_targets=train_targets[safe],
+            likelihood=likelihood,
+            skew_dims=skew_dims,
+            input_transform=self.input_transform,
+            outcome_transform=outcome_transform,
+        )
 
-            # for constructing the log normal noise prior
-            # target_snr = 2e2
-            # scale = 2e0
-            # loc = np.log(1 / target_snr**2) + scale**2
+        model.trained = False
 
-            likelihood = gpytorch.likelihoods.GaussianLikelihood(
-                noise_constraint=gpytorch.constraints.Interval(
-                    torch.tensor(1e-4).square(),
-                    torch.tensor(1 / obj.min_snr).square(),
-                ),
-                # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
-            )
+        return model
 
-            outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
-
-            obj.model = models.LatentGP(
-                train_inputs=train_inputs,
-                train_targets=train_values,
-                likelihood=likelihood,
-                skew_dims=skew_dims,
-                input_transform=self._subset_input_transform(active=True),
-                outcome_transform=outcome_transform,
-            )
+    def construct_classifier(self, skew_dims=None):
+        skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
             self.all_objectives_valid.long(), learn_additional_noise=True
         )
 
         self.classifier = models.LatentDirichletClassifier(
-            train_inputs=torch.tensor(inputs).double(),
+            train_inputs=self.train_inputs(active=True),
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
-            input_transform=self._subset_input_transform(active=True),
+            input_transform=self.input_transform,
         )
 
-        if a_priori_hypers is not None:
-            self._set_hypers(a_priori_hypers)
-        else:
-            self._train_models()
-            # try:
-
-            # except botorch.exceptions.errors.ModelFittingError:
-            #     if self.initialized:
-            #         self._set_hypers(cached_hypers)
-            #     else:
-            #         raise RuntimeError('Could not fit model on initialization!')
-
+        self.train_model(self.classifier)
         self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
+
+    # def construct_model(self, obj, skew_dims=None, a_priori_hypers=None):
+    #     '''
+    #     Construct an untrained model for an objective.
+    #     '''
+    #     skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
+
+    #     inputs = self.table.loc[:, self.dofs.subset(active=True).names].values.astype(float)
+
+    #     for i, obj in enumerate(self.objectives):
+    #         values = self.train_targets(i)
+    #         values = np.where(self.all_objectives_valid, values, np.nan)
+
+    #         train_index = ~np.isnan(values)
+
+    #         if not train_index.sum() >= 2:
+    #             raise ValueError("There must be at least two valid data points per objective!")
+
+    #         train_inputs = torch.tensor(inputs[train_index], dtype=torch.double)
+    #         train_values = torch.tensor(values[train_index], dtype=torch.double).unsqueeze(-1)  # .unsqueeze(0)
+
+    #         # for constructing the log normal noise prior
+    #         # target_snr = 2e2
+    #         # scale = 2e0
+    #         # loc = np.log(1 / target_snr**2) + scale**2
+
+    #         likelihood = gpytorch.likelihoods.GaussianLikelihood(
+    #             noise_constraint=gpytorch.constraints.Interval(
+    #                 torch.tensor(1e-4).square(),
+    #                 torch.tensor(1 / obj.min_snr).square(),
+    #             ),
+    #             # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
+    #         )
+
+    #         outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
+
+    #         obj.model = models.LatentGP(
+    #             train_inputs=train_inputs,
+    #             train_targets=self.t,
+    #             likelihood=likelihood,
+    #             skew_dims=skew_dims,
+    #             input_transform=self.input_transform,
+    #             outcome_transform=outcome_transform,
+    #         )
+
+    #     dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
+    #         self.all_objectives_valid.long(), learn_additional_noise=True
+    #     )
+
+    #     self.classifier = models.LatentDirichletClassifier(
+    #         train_inputs=torch.tensor(inputs).double(),
+    #         train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
+    #         skew_dims=skew_dims,
+    #         likelihood=dirichlet_likelihood,
+    #         input_transform=self._subset_input_transform(active=True),
+    #     )
+
+    #     if a_priori_hypers is not None:
+    #         self._set_hypers(a_priori_hypers)
+    #     else:
+    #         self._train_models()
+    #         # try:
+
+    #         # except botorch.exceptions.errors.ModelFittingError:
+    #         #     if self.initialized:
+    #         #         self._set_hypers(cached_hypers)
+    #         #     else:
+    #         #         raise RuntimeError('Could not fit model on initialization!')
+
+    #     self.constraint = GenericDeterministicModel(f=lambda x: self.classifier.probabilities(x)[..., -1])
 
     def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1, **acq_func_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -396,22 +467,22 @@ class Agent:
 
         return products
 
-    def load_data(self, data_file, append=True, train_models=True):
+    def load_data(self, data_file, append=True, train=True):
         new_table = pd.read_hdf(data_file, key="table")
         x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
         y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
         metadata = new_table.to_dict(orient="list")
-        self.tell(x=x, y=y, metadata=metadata, append=append, train_models=train_models)
+        self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
 
     def learn(
         self,
-        acq_func=None,
-        n=1,
-        iterations=1,
-        upsample=1,
-        train_models=True,
+        acq_func: str = "qei",
+        n: int = 1,
+        iterations: int = 1,
+        upsample: int = 1,
+        train: bool = True,
+        append: bool = True,
         hypers_file=None,
-        append=True,
     ):
         """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
 
@@ -454,7 +525,7 @@ class Agent:
                 x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
                 y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
                 metadata = new_table.to_dict(orient="list")
-                self.tell(x=x, y=y, metadata=metadata, append=append, train_models=train_models)
+                self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
 
     def get_acquisition_function(self, identifier, return_metadata=False):
         """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
@@ -480,24 +551,15 @@ class Agent:
         Parameters
         ----------
         output_dir :
-            Where to save the optimized agents
+            Where to save the agent output.
         runs : int
             How many benchmarks to run
-        n_init : int
-            How many points to sample on reseting the agent.
         learning_kwargs_list:
-            A list of kwargs which the agent will run sequentially for each run.
+            A list of kwargs to pass to the learn method which the agent will run sequentially for each run.
         """
-        # cache_limits = {dof.name: dof.limits for dof in self.dofs}
 
         for run in range(runs):
-            # for dof in self.dofs:
-            #     offset = 0.25 * np.ptp(dof.limits) * np.random.uniform(low=-1, high=1)
-            #     dof.limits = (cache_limits[dof.name][0] + offset, cache_limits[dof.name][1] + offset)
-
             self.reset()
-
-            yield from self.learn("qr", n=n_init)
 
             for kwargs in learning_kwargs_list:
                 yield from self.learn(**kwargs)
@@ -517,23 +579,6 @@ class Agent:
     def objective_weights_torch(self):
         return torch.tensor(self.objectives.weights, dtype=torch.double)
 
-    def get_objective_targets(self, i):
-        """Returns the values associated with each objective."""
-
-        obj = self.objectives[i]
-
-        targets = self.table.loc[:, obj.name].values.copy()
-
-        # check that targets values are inside acceptable values
-        valid = (targets > obj.limits[0]) & (targets < obj.limits[1])
-        targets = np.where(valid, targets, np.nan)
-
-        # transform if needed
-        if obj.log:
-            targets = np.where(targets > 0, np.log(targets), np.nan)
-
-        return targets
-
     @property
     def scalarizing_transform(self):
         return ScalarizedPosteriorTransform(weights=self.objective_weights_torch, offset=0)
@@ -547,9 +592,9 @@ class Agent:
         """Targets for the posterior transform"""
         return torch.tensor(
             [
-                self.objectives_targets[..., i].max()
+                self.train_targets(active=True)[..., i].max()
                 if t == "max"
-                else self.objectives_targets[..., i].min()
+                else self.train_targets(active=True)[..., i].min()
                 if t == "min"
                 else t
                 for i, t in enumerate(self.objectives.targets)
@@ -557,17 +602,9 @@ class Agent:
         )
 
     @property
-    def objectives_targets(self):
-        """Returns a (num_objectives x n_obs) array of objectives"""
-        return torch.cat(
-            [torch.tensor(self.get_objective_targets(i))[..., None] for i in range(len(self.objectives))], dim=1
-        )
-
-    @property
     def scalarized_objectives(self):
         """Returns a (n_obs,) array of scalarized objectives"""
-        return self.targeting_transform.evaluate(self.objectives_targets).sum(axis=-1)
-        # return (self.objectives_targets * self.objectives.signed_weights).sum(axis=-1)
+        return self.targeting_transform.evaluate(self.train_targets(active=True)).sum(axis=-1)
 
     @property
     def max_scalarized_objective(self):
@@ -631,6 +668,13 @@ class Agent:
         u, uinv = np.unique(latent_dim_labels, return_inverse=True)
 
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
+
+    @property
+    def input_transform(self):
+        """
+        A bounding transform for all the active DOFs. This is used for model fitting.
+        """
+        return self._subset_input_transform(active=True)
 
     def _subset_input_transform(self, active=None, read_only=None, tags=[]):
         # torch likes limits to be (2, n_dof) and not (n_dof, 2)
@@ -745,8 +789,46 @@ class Agent:
 
     @property
     def inputs(self):
-        """A two-dimensional array of all DOF values."""
+        """A DataFrame of all DOF values."""
         return self.table.loc[:, self.dofs.names].astype(float)
+
+    def train_inputs(self, dof_name=None, **subset_kwargs):
+        """A two-dimensional tensor of all DOF values."""
+
+        if dof_name is None:
+            return torch.cat([self.train_inputs(dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
+
+        dof = self.dofs[dof_name]
+        inputs = self.table.loc[:, dof.name].values.copy()
+
+        # check that inputs values are inside acceptable values
+        valid = (inputs >= dof.limits[0]) & (inputs <= dof.limits[1])
+        inputs = np.where(valid, inputs, np.nan)
+
+        # transform if needed
+        if dof.log:
+            inputs = np.where(inputs > 0, np.log(inputs), np.nan)
+
+        return torch.tensor(inputs, dtype=torch.double).unsqueeze(-1)
+
+    def train_targets(self, obj_name=None, **subset_kwargs):
+        """Returns the values associated with an objective name."""
+
+        if obj_name is None:
+            return torch.cat([self.train_targets(obj.name) for obj in self.objectives], dim=-1)
+
+        obj = self.objectives[obj_name]
+        targets = self.table.loc[:, obj.name].values.copy()
+
+        # check that targets values are inside acceptable values
+        valid = (targets >= obj.limits[0]) & (targets <= obj.limits[1])
+        targets = np.where(valid, targets, np.nan)
+
+        # transform if needed
+        if obj.log:
+            targets = np.where(targets > 0, np.log(targets), np.nan)
+
+        return torch.tensor(targets, dtype=torch.double).unsqueeze(-1)
 
     @property
     def active_inputs(self):
