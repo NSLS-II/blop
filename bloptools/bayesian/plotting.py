@@ -14,9 +14,9 @@ MAX_TEST_INPUTS = 2**11
 
 def _plot_objs_one_dof(agent, size=16, lw=1e0):
     agent.obj_fig, agent.obj_axes = plt.subplots(
-        agent.n_objs,
+        len(agent.objectives),
         1,
-        figsize=(6, 4 * agent.n_objs),
+        figsize=(6, 4 * len(agent.objectives)),
         sharex=True,
         constrained_layout=True,
     )
@@ -27,7 +27,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     for obj_index, obj in enumerate(agent.objectives):
-        obj_fitness = agent._get_objective_targets(obj_index)
+        obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
@@ -38,7 +38,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
         test_mean = test_posterior.mean[..., 0].detach().numpy()
         test_sigma = test_posterior.variance.sqrt()[..., 0].detach().numpy()
 
-        agent.obj_axes[obj_index].scatter(x_values, obj_fitness, s=size, color=color)
+        agent.obj_axes[obj_index].scatter(x_values, obj_values, s=size, color=color)
 
         for z in [0, 1, 2]:
             agent.obj_axes[obj_index].fill_between(
@@ -87,12 +87,12 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for obj_index, obj in enumerate(agent.objectives):
-        obj_values = agent._get_objective_targets(obj_index)
+        targets = agent.train_targets(obj.name).squeeze(-1).numpy()
 
-        obj_vmin, obj_vmax = np.nanpercentile(obj_values, q=[1, 99])
+        obj_vmin, obj_vmax = np.nanpercentile(targets, q=[1, 99])
         obj_norm = mpl.colors.Normalize(obj_vmin, obj_vmax)
 
-        data_ax = agent.obj_axes[obj_index, 0].scatter(x_values, y_values, c=obj_values, s=size, norm=obj_norm, cmap=cmap)
+        data_ax = agent.obj_axes[obj_index, 0].scatter(x_values, y_values, c=targets, s=size, norm=obj_norm, cmap=cmap)
 
         # mean and sigma will have shape (*input_shape,)
         test_posterior = obj.model.posterior(test_inputs)
@@ -161,7 +161,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
             va="baseline",
         )
 
-    if agent.n_objs > 1:
+    if len(agent.objectives) > 1:
         for row_index, ax in enumerate(agent.obj_axes[:, 0]):
             ax.annotate(
                 agent.objectives[row_index].name,
@@ -233,13 +233,14 @@ def _plot_acqf_many_dofs(
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
+    *test_dim, input_dim = test_inputs.shape
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for iacq_func, acq_func_identifier in enumerate(acq_funcs):
         acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
 
-        test_acqf = acq_func(test_inputs).detach().squeeze().numpy()
+        test_acqf = acq_func(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
 
         if gridded:
             agent.acq_axes[iacq_func].set_title(acq_func_meta["name"])
@@ -271,7 +272,7 @@ def _plot_acqf_many_dofs(
 
 
 def _plot_valid_one_dof(agent, size=16, lw=1e0):
-    agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * agent.n_objs), constrained_layout=True)
+    agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * len(agent.objectives)), constrained_layout=True)
 
     x_dof = agent.dofs.subset(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
@@ -285,7 +286,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
 
 
 def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
-    agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4 * agent.n_objs), constrained_layout=True)
+    agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4 * len(agent.objectives)), constrained_layout=True)
 
     plottable_dofs = agent.dofs.subset(active=True, read_only=False)
 
@@ -335,9 +336,9 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
 
     num_obj_plots = 1
     if show_all_objs:
-        num_obj_plots = agent.n_objs + 1
+        num_obj_plots = len(agent.objectives) + 1
 
-    agent.n_objs + 1 if agent.n_objs > 1 else 1
+    len(agent.objectives) + 1 if len(agent.objectives) > 1 else 1
 
     hist_fig, hist_axes = plt.subplots(
         num_obj_plots, 1, figsize=(6, 4 * num_obj_plots), sharex=True, constrained_layout=True, dpi=200

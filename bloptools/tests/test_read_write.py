@@ -9,7 +9,7 @@ def test_agent_save_load_data(agent, RE):
     RE(agent.learn("qr", n=16))
     agent.save_data("/tmp/test_save_data.h5")
     agent.reset()
-    agent.learn(data_file="/tmp/test_save_data.h5")
+    agent.load_data(data_file="/tmp/test_save_data.h5")
     RE(agent.learn("qr", n=16))
 
 
