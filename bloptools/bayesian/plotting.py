@@ -27,7 +27,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     for obj_index, obj in enumerate(agent.objectives):
-        obj_fitness = agent.get_objective_targets(obj_index)
+        obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
@@ -38,7 +38,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
         test_mean = test_posterior.mean[..., 0].detach().numpy()
         test_sigma = test_posterior.variance.sqrt()[..., 0].detach().numpy()
 
-        agent.obj_axes[obj_index].scatter(x_values, obj_fitness, s=size, color=color)
+        agent.obj_axes[obj_index].scatter(x_values, obj_values, s=size, color=color)
 
         for z in [0, 1, 2]:
             agent.obj_axes[obj_index].fill_between(
@@ -87,7 +87,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for obj_index, obj in enumerate(agent.objectives):
-        targets = agent.get_objective_targets(obj_index)
+        targets = agent.train_targets(obj.name).squeeze(-1).numpy()
 
         obj_vmin, obj_vmax = np.nanpercentile(targets, q=[1, 99])
         obj_norm = mpl.colors.Normalize(obj_vmin, obj_vmax)

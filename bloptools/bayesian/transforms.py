@@ -3,7 +3,7 @@ from typing import Union
 import botorch
 from botorch.acquisition.objective import PosteriorTransform
 from botorch.posteriors.gpytorch import GPyTorchPosterior
-from botorch.posteriors.posterior_list import PosteriorList  # pragma: no cover
+from botorch.posteriors.posterior_list import PosteriorList
 from torch import Tensor
 
 

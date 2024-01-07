@@ -104,7 +104,12 @@ class ObjectiveList(Sequence):
         self.objectives = objectives
 
     def __getitem__(self, i):
-        return self.objectives[i]
+        if type(i) is int:
+            return self.objectives[i]
+        elif type(i) is str:
+            return self.objectives[self.names.index(i)]
+        else:
+            raise ValueError(f"Invalid index {i}. An ObjectiveList must be indexed by either an integer or a string.")
 
     def __len__(self):
         return len(self.objectives)
