@@ -89,9 +89,9 @@ Combining these with a databroker instance will construct an agent.
 
 .. code-block:: python
 
-    import bloptools
+    import blop
 
-    my_agent = bloptools.bayesian.Agent(
+    my_agent = blop.bayesian.Agent(
         dofs=my_dofs,
         dets=my_dets,
         tasks=my_tasks,

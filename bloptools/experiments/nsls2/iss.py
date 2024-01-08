@@ -2,7 +2,7 @@ import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 import numpy as np
 
-from bloptools.tasks import Task
+from blop.tasks import Task
 
 
 def initialize():

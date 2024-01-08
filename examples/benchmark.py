@@ -9,7 +9,7 @@ import time as ttime
 
 import numpy as np
 
-from bloptools import gp
+from blop import gp
 
 bo = gp.BayesianOptimizer(
     init_scheme="quasi-random",
