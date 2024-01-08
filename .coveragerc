@@ -1,6 +1,6 @@
 [run]
 source =
-    bloptools
+    blop
 [report]
 omit =
     */python?.?/*
