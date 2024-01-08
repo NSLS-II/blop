@@ -2,12 +2,12 @@
 exclude =
     .git,
     __pycache__,
-    bloptools/_version.py,
+    blop/_version.py,
     build,
     dist,
     docs/source/conf.py
     examples/*.py,
-    bloptools/tests/test_bayesian_shadow.py,
+    blop/tests/test_bayesian_shadow.py,
     versioneer.py,
 max-line-length = 125
 # Ignore some style 'errors' produced while formatting by 'black'

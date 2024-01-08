@@ -22,9 +22,9 @@ def get_keywords():
     # setup.py/versioneer.py will grep for the variable names, so they must
     # each be defined on a line of their own. _version.py will just call
     # get_keywords().
-    git_refnames = "$Format:%d$"
-    git_full = "$Format:%H$"
-    git_date = "$Format:%ci$"
+    git_refnames = " (HEAD -> main)"
+    git_full = "a09f82569e91255c8591efce18ff684aae682970"
+    git_date = "2024-01-06 19:41:45 -0500"
     keywords = {"refnames": git_refnames, "full": git_full, "date": git_date}
     return keywords
 
@@ -42,7 +42,7 @@ def get_config():
     cfg.style = "pep440-post"
     cfg.tag_prefix = "v"
     cfg.parentdir_prefix = "None"
-    cfg.versionfile_source = "bloptools/_version.py"
+    cfg.versionfile_source = "blop/_version.py"
     cfg.verbose = False
     return cfg
 

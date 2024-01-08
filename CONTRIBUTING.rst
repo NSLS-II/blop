@@ -13,7 +13,7 @@ Types of Contributions
 Report Bugs
 ~~~~~~~~~~~
 
-Report bugs at https://github.com/NSLS-II/bloptools/issues.
+Report bugs at https://github.com/NSLS-II/blop/issues.
 
 If you are reporting a bug, please include:
 
@@ -35,14 +35,14 @@ is open to whoever wants to implement it.
 Write Documentation
 ~~~~~~~~~~~~~~~~~~~
 
-bloptools could always use more documentation, whether
-as part of the official bloptools docs, in docstrings,
+blop could always use more documentation, whether
+as part of the official blop docs, in docstrings,
 or even on the web in blog posts, articles, and such.
 
 Submit Feedback
 ~~~~~~~~~~~~~~~
 
-The best way to send feedback is to file an issue at https://github.com/NSLS-II/bloptools/issues.
+The best way to send feedback is to file an issue at https://github.com/NSLS-II/blop/issues.
 
 If you are proposing a feature:
 
@@ -54,17 +54,17 @@ If you are proposing a feature:
 Get Started!
 ------------
 
-Ready to contribute? Here's how to set up `bloptools` for local development.
+Ready to contribute? Here's how to set up `blop` for local development.
 
-1. Fork the `bloptools` repo on GitHub.
+1. Fork the `blop` repo on GitHub.
 2. Clone your fork locally::
 
-    $ git clone git@github.com:your_name_here/bloptools.git
+    $ git clone git@github.com:your_name_here/blop.git
 
 3. Install your local copy into a virtualenv. Assuming you have virtualenvwrapper installed, this is how you set up your fork for local development::
 
-    $ mkvirtualenv bloptools
-    $ cd bloptools/
+    $ mkvirtualenv blop
+    $ cd blop/
     $ python setup.py develop
 
 4. Create a branch for local development::
@@ -75,7 +75,7 @@ Ready to contribute? Here's how to set up `bloptools` for local development.
 
 5. When you're done making changes, check that your changes pass flake8 and the tests, including testing other Python versions with tox::
 
-    $ flake8 bloptools tests
+    $ flake8 blop tests
     $ python setup.py test
     $ tox
 
@@ -99,5 +99,5 @@ Before you submit a pull request, check that it meets these guidelines:
    your new functionality into a function with a docstring, and add the
    feature to the list in README.rst.
 3. The pull request should work for Python 2.7, 3.3, 3.4, 3.5 and for PyPy. Check
-   https://travis-ci.org/NSLS-II/bloptools/pull_requests
+   https://travis-ci.org/NSLS-II/blop/pull_requests
    and make sure that the tests pass for all supported Python versions.
