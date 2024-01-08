@@ -64,26 +64,23 @@ class LatentKernel(gpytorch.kernels.Kernel):
         self.n_skew_entries = len(self.skew_matrix_indices[0])
 
         lengthscale_constraint = gpytorch.constraints.Positive()
-        raw_lengthscale_entries_initial = (
-            lengthscale_constraint.inverse_transform(torch.tensor(1e-1))
-            * torch.ones(self.num_outputs, self.num_inputs).double()
+        raw_lengthscales_initial = lengthscale_constraint.inverse_transform(torch.tensor(1e-1)) * torch.ones(
+            self.num_outputs, self.num_inputs, dtype=torch.double
         )
 
-        self.register_parameter(
-            name="raw_lengthscale_entries", parameter=torch.nn.Parameter(raw_lengthscale_entries_initial)
-        )
-        self.register_constraint(param_name="raw_lengthscale_entries", constraint=lengthscale_constraint)
+        self.register_parameter(name="raw_lengthscales", parameter=torch.nn.Parameter(raw_lengthscales_initial))
+        self.register_constraint(param_name="raw_lengthscales", constraint=lengthscale_constraint)
 
         if priors:
             self.register_prior(
-                name="lengthscale_entries_prior",
+                name="lengthscales_prior",
                 prior=gpytorch.priors.GammaPrior(concentration=2, rate=1),
-                param_or_closure=lambda m: m.lengthscale_entries,
-                setting_closure=lambda m, v: m._set_lengthscale_entries(v),
+                param_or_closure=lambda m: m.lengthscales,
+                setting_closure=lambda m, v: m._set_lengthscales(v),
             )
 
         if self.n_skew_entries > 0:
-            skew_entries_constraint = gpytorch.constraints.Interval(-1e0, 1e0)
+            skew_entries_constraint = gpytorch.constraints.Interval(-np.pi, np.pi)
             skew_entries_initial = torch.zeros((self.num_outputs, self.n_skew_entries), dtype=torch.float64)
             self.register_parameter(name="raw_skew_entries", parameter=torch.nn.Parameter(skew_entries_initial))
             self.register_constraint(param_name="raw_skew_entries", constraint=skew_entries_constraint)
@@ -94,7 +91,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
 
             self.register_parameter(
                 name="raw_outputscale",
-                parameter=torch.nn.Parameter(torch.ones(1)),
+                parameter=torch.nn.Parameter(torch.ones(1, dtype=torch.double)),
             )
 
             self.register_constraint("raw_outputscale", constraint=outputscale_constraint)
@@ -107,8 +104,8 @@ class LatentKernel(gpytorch.kernels.Kernel):
             )
 
     @property
-    def lengthscale_entries(self):
-        return self.raw_lengthscale_entries_constraint.transform(self.raw_lengthscale_entries)
+    def lengthscales(self):
+        return self.raw_lengthscales_constraint.transform(self.raw_lengthscales)
 
     @property
     def skew_entries(self):
@@ -118,9 +115,9 @@ class LatentKernel(gpytorch.kernels.Kernel):
     def outputscale(self):
         return self.raw_outputscale_constraint.transform(self.raw_outputscale)
 
-    @lengthscale_entries.setter
-    def lengthscale_entries(self, value):
-        self._set_lengthscale_entries(value)
+    @lengthscales.setter
+    def lengthscales(self, value):
+        self._set_lengthscales(value)
 
     @skew_entries.setter
     def skew_entries(self, value):
@@ -130,10 +127,10 @@ class LatentKernel(gpytorch.kernels.Kernel):
     def outputscale(self, value):
         self._set_outputscale(value)
 
-    def _set_lengthscale_entries(self, value):
+    def _set_lengthscales(self, value):
         if not torch.is_tensor(value):
-            value = torch.as_tensor(value).to(self.raw_lengthscale_entries)
-        self.initialize(raw_lengthscale_entries=self.raw_lengthscale_entries_constraint.inverse_transform(value))
+            value = torch.as_tensor(value).to(self.raw_lengthscales)
+        self.initialize(raw_lengthscales=self.raw_lengthscales_constraint.inverse_transform(value))
 
     def _set_skew_entries(self, value):
         if not torch.is_tensor(value):
@@ -157,7 +154,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
     @property
     def diag_matrix(self):
         D = torch.zeros((self.num_outputs, self.num_inputs, self.num_inputs), dtype=torch.float64)
-        D[self.diag_matrix_indices] = self.lengthscale_entries.ravel() ** -1
+        D[self.diag_matrix_indices] = self.lengthscales.ravel() ** -1
         return D
 
     @property
