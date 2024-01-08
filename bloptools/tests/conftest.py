@@ -8,9 +8,9 @@ from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
 
-from bloptools.bayesian import DOF, Agent, Objective
-from bloptools.bayesian.dofs import BrownianMotion
-from bloptools.utils import functions
+from blop.bayesian import DOF, Agent, Objective
+from blop.bayesian.dofs import BrownianMotion
+from blop.utils import functions
 
 
 @pytest.fixture(scope="function")
