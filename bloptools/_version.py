@@ -42,7 +42,7 @@ def get_config():
     cfg.style = "pep440-post"
     cfg.tag_prefix = "v"
     cfg.parentdir_prefix = "None"
-    cfg.versionfile_source = "bloptools/_version.py"
+    cfg.versionfile_source = "blop/_version.py"
     cfg.verbose = False
     return cfg
 

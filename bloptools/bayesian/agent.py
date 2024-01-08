@@ -182,7 +182,7 @@ class Agent:
             A dict keyed by the name of each objective, with a list of values for each objective.
         append: bool
             If `True`, will append new data to old data. If `False`, will replace old data with new data.
-        _train_models: bool
+        train: bool
             Whether to train the models on construction.
         hypers:
             A dict of hyperparameters for the model to assume a priori, instead of training.
@@ -674,20 +674,31 @@ class Agent:
 
         self.table.to_hdf(filepath, key="table")
 
-    def forget(self, index, train=True):
+    def forget(self, last=None, index=None, train=True):
         """
-        Make the agent forget some index of the data table.
-        """
-        self.table.drop(index=index, inplace=True)
-        self.__construct_models(train=train)
+        Make the agent forget some data.
 
-    def forget_last_n(self, n, train=True):
+        Parameters
+        ----------
+        index :
+            An index of samples to forget about.
+        last : int
+            Forget the last n=last points.
         """
-        Make the agent forget the last `n` data points taken.
-        """
-        if n > len(self.table):
-            raise ValueError(f"Cannot forget {n} data points (only {len(self.table)} have been taken).")
-        self.forget(self.table.index.iloc[-n:], train=train)
+
+        if last is not None:
+            if last > len(self.table):
+                raise ValueError(f"Cannot forget last {last} data points (only {len(self.table)} samples have been taken).")
+            self.forget(index=self.table.index.values[-last:], train=train)
+
+        elif index is not None:
+            self.table.drop(index=index, inplace=True)
+            self._construct_all_models()
+            if train:
+                self._train_all_models()
+
+        else:
+            raise ValueError("Must supply either 'last' or 'index'.")
 
     def sampler(self, n, d):
         """
@@ -735,7 +746,12 @@ class Agent:
                     hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
         return hypers
 
-    def __train_models(self, **kwargs):
+    def _construct_all_models(self):
+        """Construct a model for each objective."""
+        for obj in self.objectives:
+            obj.model = self._construct_model(obj)
+
+    def _train_all_models(self, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
         t0 = ttime.monotonic()
         for obj in self.objectives:
