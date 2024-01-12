@@ -7,6 +7,16 @@ from botorch.posteriors.posterior_list import PosteriorList
 from torch import Tensor
 
 
+def targeting_transform(y, target):
+    if target == "min":
+        y = -y
+    elif not isinstance(target, tuple):
+        y = -(y - target).abs()
+    else:
+        y = -((y - 0.5 * (target[1] + target[0])).abs() - 0.5 * (target[1] - target[0])).clamp(min=0)
+    return y
+
+
 class TargetingPosteriorTransform(PosteriorTransform):
     r"""An affine posterior transform for scalarizing multi-output posteriors."""
 
@@ -25,20 +35,12 @@ class TargetingPosteriorTransform(PosteriorTransform):
 
     def sampled_transform(self, y):
         for i, target in enumerate(self.targets):
-            if target == "min":
-                y[..., i] = -y[..., i]
-            elif target != "max":
-                y[..., i] = -(y[..., i] - target).abs()
-
+            y[..., i] = targeting_transform(y[..., i], target)
         return y @ self.weights.unsqueeze(-1)
 
     def mean_transform(self, mean, var):
         for i, target in enumerate(self.targets):
-            if target == "min":
-                mean[..., i] = -mean[..., i]
-            elif target != "max":
-                mean[..., i] = -(mean[..., i] - target).abs()
-
+            mean[..., i] = targeting_transform(mean[..., i], target)
         return mean @ self.weights.unsqueeze(-1)
 
     def variance_transform(self, mean, var):

@@ -2,16 +2,23 @@ import time as ttime
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Tuple, Union
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
 from ophyd import Signal, SignalRO
 
-DEFAULT_BOUNDS = (-5.0, +5.0)
-DOF_FIELDS = ["description", "readback", "lower_limit", "upper_limit", "units", "active", "read_only", "tags"]
-
-numeric = Union[float, int]
+DOF_FIELD_TYPES = {
+    "description": "object",
+    "readback": "float",
+    "search_bounds": "object",
+    "trust_bounds": "object",
+    "units": "object",
+    "active": "bool",
+    "read_only": "bool",
+    "log": "bool",
+    "tags": "object",
+}
 
 
 class ReadOnlyError(Exception):
@@ -42,16 +49,16 @@ class DOF:
         A longer name for the DOF.
     device: Signal, optional
         An ophyd device. If None, a dummy ophyd device is generated.
-    limits: tuple, optional
-        A tuple of the lower and upper limit of the DOF. If the DOF is not read-only, the agent
-        will not explore outside the limits. If the DOF is read-only, the agent will reject all
-        sampled data where the DOF is outside the limits.
-    read_only: bool
-        If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
-        device is read-only.
     active: bool
         If True, the agent will try to use the DOF in its optimization. If False, the agent will
         still read the DOF but not include it any model or acquisition function.
+    search_bounds: tuple, optional
+        A tuple of the lower and upper limit of the DOF. If the DOF is not read-only, the agent
+        will not explore outside the search_bounds. If the DOF is read-only, the agent will reject all
+        sampled data where the DOF is outside the search_bounds.
+    read_only: bool
+        If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
+        device is read-only.
     units: str
         The units of the DOF (e.g. mm or deg). This is only for plotting and general housekeeping.
     tags: list
@@ -64,7 +71,8 @@ class DOF:
     device: Signal = None
     description: str = None
     name: str = None
-    limits: Tuple[float, float] = (-10.0, 10.0)
+    search_bounds: Tuple[float, float] = (-10.0, 10.0)
+    trust_bounds: Tuple[float, float] = (-np.inf, np.inf)
     units: str = ""
     read_only: bool = False
     active: bool = True
@@ -94,12 +102,12 @@ class DOF:
         self.device.kind = "hinted"
 
     @property
-    def lower_limit(self):
-        return float(self.limits[0])
+    def search_lower_bound(self):
+        return float(self.search_bounds[0])
 
     @property
-    def upper_limit(self):
-        return float(self.limits[1])
+    def search_upper_bound(self):
+        return float(self.search_bounds[1])
 
     @property
     def readback(self):
@@ -107,14 +115,14 @@ class DOF:
 
     @property
     def summary(self) -> pd.Series:
-        series = pd.Series(index=DOF_FIELDS)
+        series = pd.Series(index=list(DOF_FIELD_TYPES.keys()))
         for attr in series.index:
             series[attr] = getattr(self, attr)
         return series
 
     @property
     def label(self) -> str:
-        return f"{self.name}{f' [{self.units}]' if len(self.units) > 0 else ''}"
+        return f"{self.description}{f' [{self.units}]' if len(self.units) > 0 else ''}"
 
     @property
     def has_model(self):
@@ -140,22 +148,17 @@ class DOFList(Sequence):
     def __repr__(self):
         return self.summary.__repr__()
 
-    # def _repr_html_(self):
-    #     return self.summary._repr_html_()
+    def __repr_html__(self):
+        return self.summary.__repr_html__()
 
     @property
     def summary(self) -> pd.DataFrame:
-        table = pd.DataFrame(columns=DOF_FIELDS)
-        for dof in self.dofs:
-            for attr in table.columns:
-                table.loc[dof.name, attr] = getattr(dof, attr)
+        table = pd.DataFrame(columns=list(DOF_FIELD_TYPES.keys()), index=self.names)
 
-        # convert dtypes
-        for attr in ["readback", "lower_limit", "upper_limit"]:
-            table[attr] = table[attr].astype(float)
-
-        for attr in ["read_only", "active"]:
-            table[attr] = table[attr].astype(bool)
+        for attr, dtype in DOF_FIELD_TYPES.items():
+            for dof in self.dofs:
+                table.at[dof.name, attr] = getattr(dof, attr)
+            table[attr] = table[attr].astype(dtype)
 
         return table
 
@@ -172,33 +175,56 @@ class DOFList(Sequence):
         return [dof.device.name for dof in self.dofs]
 
     @property
-    def lower_limits(self) -> np.array:
-        return np.array([dof.lower_limit for dof in self.dofs])
+    def search_lower_bounds(self) -> np.array:
+        return np.array([dof.search_lower_bound for dof in self.dofs])
 
     @property
-    def upper_limits(self) -> np.array:
-        return np.array([dof.upper_limit for dof in self.dofs])
+    def search_upper_bounds(self) -> np.array:
+        return np.array([dof.search_upper_bound for dof in self.dofs])
 
     @property
-    def limits(self) -> np.array:
+    def search_bounds(self) -> np.array:
         """
         Returns a (n_dof, 2) array of bounds.
         """
-        return np.c_[self.lower_limits, self.upper_limits]
+        return np.c_[self.search_lower_bounds, self.search_upper_bounds]
+
+    @property
+    def trust_lower_bounds(self) -> np.array:
+        return np.array([dof.trust_lower_bound for dof in self.dofs])
+
+    @property
+    def trust_upper_bounds(self) -> np.array:
+        return np.array([dof.trust_upper_bound for dof in self.dofs])
+
+    @property
+    def trust_bounds(self) -> np.array:
+        """
+        Returns a (n_dof, 2) array of bounds.
+        """
+        return np.c_[self.trust_lower_bounds, self.trust_upper_bounds]
 
     @property
     def readback(self) -> np.array:
         return np.array([dof.readback for dof in self.dofs])
 
+    @property
+    def active(self):
+        return np.array([dof.active for dof in self.dofs])
+
+    @property
+    def read_only(self):
+        return np.array([dof.read_only for dof in self.dofs])
+
     def add(self, dof):
         _validate_dofs([*self.dofs, dof])
         self.dofs.append(dof)
 
-    def _dof_read_only_mask(self, read_only=None):
-        return [dof.read_only == read_only if read_only is not None else True for dof in self.dofs]
-
     def _dof_active_mask(self, active=None):
-        return [dof.active == active if active is not None else True for dof in self.dofs]
+        return [_active == active if active is not None else True for _active in self.active]
+
+    def _dof_read_only_mask(self, read_only=None):
+        return [_read_only == read_only if read_only is not None else True for _read_only in self.read_only]
 
     def _dof_tags_mask(self, tags=[]):
         return [np.isin(dof["tags"], tags).any() if tags else True for dof in self.dofs]

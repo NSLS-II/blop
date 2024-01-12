@@ -23,10 +23,10 @@ from databroker import Broker
 from ophyd import Signal
 
 from .. import utils
+from ..dofs import DOF, DOFList
+from ..objectives import Objective, ObjectiveList
 from . import acquisition, models, plotting
 from .digestion import default_digestion_function
-from .dofs import DOF, DOFList
-from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 from .transforms import TargetingPosteriorTransform
 
@@ -420,7 +420,7 @@ class Agent:
         """
 
         if self.sample_center_on_init and not self.initialized:
-            center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).limits.mean(axis=1))
+            center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).search_bounds.mean(axis=1))
             new_table = yield from self.acquire(center_inputs)
             new_table.loc[:, "acq_func"] = "sample_center_on_init"
 
@@ -453,8 +453,8 @@ class Agent:
 
         likelihood = gpytorch.likelihoods.GaussianLikelihood(
             noise_constraint=gpytorch.constraints.Interval(
-                torch.tensor(1e-4).square(),
-                torch.tensor(1 / obj.min_snr).square(),
+                torch.tensor(obj.min_noise),
+                torch.tensor(obj.max_noise),
             ),
             # noise_prior=gpytorch.priors.torch_priors.LogNormalPrior(loc=loc, scale=scale),
         )
@@ -558,20 +558,6 @@ class Agent:
         return TargetingPosteriorTransform(weights=self.objective_weights_torch, targets=self.objectives.targets)
 
     @property
-    def pseudo_targets(self):
-        """Targets for the posterior transform"""
-        return torch.tensor(
-            [
-                self.train_targets(active=True)[..., i].max()
-                if t == "max"
-                else self.train_targets(active=True)[..., i].min()
-                if t == "min"
-                else t
-                for i, t in enumerate(self.objectives.targets)
-            ]
-        )
-
-    @property
     def scalarized_objectives(self):
         """Returns a (n_obs,) array of scalarized objectives"""
         return self.targeting_transform.evaluate(self.train_targets(active=True)).sum(axis=-1)
@@ -607,7 +593,9 @@ class Agent:
                     for tensor in torch.meshgrid(
                         *[
                             torch.linspace(lower_limit, upper_limit, n_side)
-                            for (lower_limit, upper_limit), n_side in zip(self.dofs.subset(active=True).limits, n_sides)
+                            for (lower_limit, upper_limit), n_side in zip(
+                                self.dofs.subset(active=True).search_bounds, n_sides
+                            )
                         ],
                         indexing="ij",
                     )
@@ -625,10 +613,9 @@ class Agent:
     @property
     def acquisition_function_bounds(self):
         """Returns a (2, n_active_dof) array of bounds for the acquisition function"""
-        active_dofs = self.dofs.subset(active=True)
 
-        acq_func_lower_bounds = [dof.lower_limit if not dof.read_only else dof.readback for dof in active_dofs]
-        acq_func_upper_bounds = [dof.upper_limit if not dof.read_only else dof.readback for dof in active_dofs]
+        acq_func_lower_bounds = np.where(self.dofs.read_only, self.dofs.readback, self.dofs.search_lower_bounds)
+        acq_func_upper_bounds = np.where(self.dofs.read_only, self.dofs.readback, self.dofs.search_upper_bounds)
 
         return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
 
@@ -652,7 +639,7 @@ class Agent:
 
     def _subset_input_transform(self, active=None, read_only=None, tags=[]):
         # torch likes limits to be (2, n_dof) and not (n_dof, 2)
-        torch_limits = torch.tensor(self.dofs.subset(active, read_only, tags).limits.T, dtype=torch.double)
+        torch_limits = torch.tensor(self.dofs.subset(active, read_only, tags).search_bounds.T, dtype=torch.double)
         offset = torch_limits.min(dim=0).values
         coefficient = torch_limits.max(dim=0).values - offset
         return botorch.models.transforms.input.AffineInputTransform(
@@ -792,7 +779,7 @@ class Agent:
         inputs = self.table.loc[:, dof.name].values.copy()
 
         # check that inputs values are inside acceptable values
-        valid = (inputs >= dof.limits[0]) & (inputs <= dof.limits[1])
+        valid = (inputs >= dof.trust_bounds[0]) & (inputs <= dof.trust_bounds[1])
         inputs = np.where(valid, inputs, np.nan)
 
         # transform if needed
@@ -811,7 +798,7 @@ class Agent:
         targets = self.table.loc[:, obj.name].values.copy()
 
         # check that targets values are inside acceptable values
-        valid = (targets >= obj.limits[0]) & (targets <= obj.limits[1])
+        valid = (targets >= obj.trust_bounds[0]) & (targets <= obj.trust_bounds[1])
         targets = np.where(valid, targets, np.nan)
 
         # transform if needed

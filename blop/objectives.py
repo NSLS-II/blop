@@ -7,8 +7,25 @@ import pandas as pd
 
 numeric = Union[float, int]
 
-DEFAULT_MINIMUM_SNR = 1e2
-OBJ_FIELDS = ["description", "target", "active", "limits", "weight", "log", "n", "snr", "min_snr"]
+DEFAULT_MIN_NOISE_LEVEL = 1e-6
+DEFAULT_MAX_NOISE_LEVEL = 1e0
+
+OBJ_FIELD_TYPES = {
+    "description": "object",
+    "target": "object",
+    "active": "bool",
+    "trust_bounds": "object",
+    "active": "bool",
+    "weight": "bool",
+    "units": "object",
+    "log": "bool",
+    "min_noise": "float",
+    "max_noise": "float",
+    "noise": "float",
+    "n": "int",
+}
+
+OBJ_SUMMARY_STYLE = {"min_noise": "{:.2E}", "max_noise": "{:.2E}"}
 
 
 class DuplicateNameError(ValueError):
@@ -34,7 +51,7 @@ class Objective:
     description: str
         A longer description for the objective.
     target: float or str
-        One of 'min' or 'max', or a number. The agent will respectively minimize or maximize the
+        One of "min" or "max", or a number. The agent will respectively minimize or maximize the
         objective, or target the supplied number.
     log: bool
         Whether to apply a log to the objective, to make it more Gaussian.
@@ -52,20 +69,21 @@ class Objective:
 
     name: str
     description: str = None
-    target: Union[float, str] = "max"
+    target: Union[Tuple[numeric, numeric], float, str] = "max"
     log: bool = False
     weight: numeric = 1.0
     active: bool = True
-    limits: Tuple[numeric, numeric] = None
-    min_snr: numeric = DEFAULT_MINIMUM_SNR
+    trust_bounds: Tuple[numeric, numeric] = None
+    min_noise: numeric = DEFAULT_MIN_NOISE_LEVEL
+    max_noise: numeric = DEFAULT_MAX_NOISE_LEVEL
     units: str = None
 
     def __post_init__(self):
-        if self.limits is None:
+        if self.trust_bounds is None:
             if self.log:
-                self.limits = (0, np.inf)
+                self.trust_bounds = (0, np.inf)
             else:
-                self.limits = (-np.inf, np.inf)
+                self.trust_bounds = (-np.inf, np.inf)
 
         if type(self.target) is str:
             if self.target not in ["min", "max"]:
@@ -78,12 +96,17 @@ class Objective:
     @property
     def summary(self):
         series = pd.Series()
-        for col in OBJ_FIELDS:
-            series[col] = getattr(self, col)
+        for attr, dtype in OBJ_FIELD_TYPES.items():
+            series[attr] = getattr(self, attr)
+            series[attr] = series[attr].astype(dtype)
+
         return series
 
     def __repr__(self):
         return self.summary.__repr__()
+
+    def __repr_html__(self):
+        return self.summary.__repr_html__()
 
     @property
     def noise(self):
@@ -115,20 +138,22 @@ class ObjectiveList(Sequence):
         return len(self.objectives)
 
     @property
-    def summary(self):
-        summary = pd.DataFrame(columns=OBJ_FIELDS)
-        for obj in self.objectives:
-            for col in summary.columns:
-                summary.loc[obj.name, col] = getattr(obj, col)
+    def summary(self) -> pd.DataFrame:
+        table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=self.names)
 
-        # convert dtypes
-        for attr in ["log"]:
-            summary[attr] = summary[attr].astype(bool)
+        for attr, dtype in OBJ_FIELD_TYPES.items():
+            for obj in self.objectives:
+                table.at[obj.name, attr] = getattr(obj, attr)
 
-        return summary
+            table[attr] = table[attr].astype(dtype)
+
+        return table
 
     def __repr__(self):
         return self.summary.__repr__()
+
+    def __repr_html__(self):
+        return self.summary.__repr_html__()
 
     @property
     def descriptions(self) -> list:
