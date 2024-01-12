@@ -183,6 +183,18 @@ def constrained_himmelblau_digestion(db, uid):
     return products
 
 
+def himmelblau_digestion(db, uid):
+    """
+    Digests Himmelblau's function into the feedback.
+    """
+    products = db[uid].table()
+
+    for index, entry in products.iterrows():
+        products.loc[index, "himmelblau"] = himmelblau(entry.x1, entry.x2)
+
+    return products
+
+
 def mock_kbs_digestion(db, uid):
     """
     Digests a beam waist and height into the feedback.
