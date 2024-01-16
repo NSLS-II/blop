@@ -22,19 +22,35 @@ from botorch.models.model_list_gp_regression import ModelListGP
 from databroker import Broker
 from ophyd import Signal
 
-from .. import utils
-from ..dofs import DOF, DOFList
-from ..objectives import Objective, ObjectiveList
-from . import acquisition, models, plotting
+from . import utils
+from .dofs import DOF, DOFList
+from .objectives import Objective, ObjectiveList
+from .bayesian import acquisition, models, plotting
 from .digestion import default_digestion_function
 from .plans import default_acquisition_plan
-from .transforms import TargetingPosteriorTransform
+from .bayesian.transforms import TargetingPosteriorTransform
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
 mpl.rc("image", cmap="coolwarm")
 
 MAX_TEST_INPUTS = 2**11
+
+
+
+def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
+
+    if len(dofs) == 0:
+        raise ValueError(f"You must supply at least one DOF.")
+
+    if len(objs) == 0:
+        raise ValueError(f"You must supply at least one objective.")
+
+    for obj in objs:
+        for latent_group in obj.latent_groups:
+            for dof_name in latent_group:
+                if not dof_name in dofs.names:
+                    raise ValueError(f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist.")
 
 
 class Agent:
@@ -99,6 +115,9 @@ class Agent:
 
         self.dofs = DOFList(list(np.atleast_1d(dofs)))
         self.objectives = ObjectiveList(list(np.atleast_1d(objectives)))
+
+        _validate_dofs_and_objs(self.dofs, self.objectives)
+
         self.db = db
 
         self.dets = dets
@@ -119,6 +138,19 @@ class Agent:
         self.a_priori_hypers = None
 
         self.n_last_trained = 0
+
+    def __iter__(self):
+        for index in range(len(self)):
+            yield self.dofs[index]
+
+    def __getattr__(self, attr):
+
+        acq_func_name = acquisition.parse_acq_func_identifier(attr)
+        if acq_func_name is not None:
+            return self.get_acquisition_function(identifier=acq_func_name)
+        
+        raise AttributeError(f"DOFList object has no attribute named '{attr}'.")
+
 
     def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = MAX_TEST_INPUTS):
         """
@@ -391,7 +423,8 @@ class Agent:
         upsample: int = 1,
         train: bool = True,
         append: bool = True,
-        hypers_file=None,
+        hypers: str = None,
+        route: bool = True,
     ):
         """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
 
@@ -427,7 +460,7 @@ class Agent:
         for i in range(iterations):
             print(f"running iteration {i + 1} / {iterations}")
             for single_acq_func in np.atleast_1d(acq_func):
-                res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample)
+                res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample, route=route)
                 new_table = yield from self.acquire(res["points"])
                 new_table.loc[:, "acq_func"] = res["acq_func"]
 
@@ -449,7 +482,7 @@ class Agent:
         Construct an untrained model for an objective.
         """
 
-        skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
+        skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples(obj.name)
 
         likelihood = gpytorch.likelihoods.GaussianLikelihood(
             noise_constraint=gpytorch.constraints.Interval(
@@ -464,11 +497,11 @@ class Agent:
         train_inputs = self.train_inputs(active=True)
         train_targets = self.train_targets(obj.name)
 
-        safe = ~(torch.isnan(train_inputs).any(axis=1) | torch.isnan(train_targets).any(axis=1))
+        trusted = ~(torch.isnan(train_inputs).any(axis=1) | torch.isnan(train_targets).any(axis=1))
 
         model = models.LatentGP(
-            train_inputs=train_inputs[safe],
-            train_targets=train_targets[safe],
+            train_inputs=train_inputs[trusted],
+            train_targets=train_targets[trusted],
             likelihood=likelihood,
             skew_dims=skew_dims,
             input_transform=self.input_transform,
@@ -480,14 +513,17 @@ class Agent:
         return model
 
     def _construct_classifier(self, skew_dims=None):
-        skew_dims = skew_dims if skew_dims is not None else self.latent_dim_tuples
+        skew_dims = [tuple([i]) for i in range(len(self.dofs))]
+
+        train_inputs = self.train_inputs(active=True)
+        trusted = ~torch.isnan(train_inputs).any(axis=1)
 
         dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-            self.all_objectives_valid.long(), learn_additional_noise=True
+            self.all_objectives_valid.long()[trusted], learn_additional_noise=True
         )
 
         self.classifier = models.LatentDirichletClassifier(
-            train_inputs=self.train_inputs(active=True),
+            train_inputs=train_inputs[trusted],
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
@@ -618,16 +654,27 @@ class Agent:
         acq_func_upper_bounds = np.where(self.dofs.read_only, self.dofs.readback, self.dofs.search_upper_bounds)
 
         return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
+    
 
-    @property
-    def latent_dim_tuples(self):
+    def latent_dim_tuples(self, obj_index=None):
         """
-        Returns a list of tuples, where each tuple represent a group of dimension to find a latent representation of.
+        For the objective indexed by 'obj_index', return a list of tuples, where each tuple represents
+        a group of DOFs to fit a latent representation to.
         """
 
-        latent_dim_labels = [dof.latent_group for dof in self.dofs.subset(active=True)]
-        u, uinv = np.unique(latent_dim_labels, return_inverse=True)
+        if obj_index is None:
+            return {obj.name:self.latent_dim_tuples(obj_index=obj.name) for obj in self.objectives}
+        
+        obj = self.objectives[obj_index]
 
+        latent_group_index = {}
+        for dof in self.dofs.subset(active=True):
+            latent_group_index[dof.name] = dof.name
+            for group_index, latent_group in enumerate(obj.latent_groups):
+                if dof.name in latent_group:
+                    latent_group_index[dof.name] = group_index
+                    
+        u, uinv = np.unique(list(latent_group_index.values()), return_inverse=True)
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
 
     @property
@@ -769,13 +816,13 @@ class Agent:
         """A DataFrame of all DOF values."""
         return self.table.loc[:, self.dofs.names].astype(float)
 
-    def train_inputs(self, dof_name=None, **subset_kwargs):
+    def train_inputs(self, index=None, **subset_kwargs):
         """A two-dimensional tensor of all DOF values."""
 
-        if dof_name is None:
+        if index is None:
             return torch.cat([self.train_inputs(dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
 
-        dof = self.dofs[dof_name]
+        dof = self.dofs[index]
         inputs = self.table.loc[:, dof.name].values.copy()
 
         # check that inputs values are inside acceptable values
@@ -788,13 +835,13 @@ class Agent:
 
         return torch.tensor(inputs, dtype=torch.double).unsqueeze(-1)
 
-    def train_targets(self, obj_name=None, **subset_kwargs):
+    def train_targets(self, index=None, **subset_kwargs):
         """Returns the values associated with an objective name."""
 
-        if obj_name is None:
+        if index is None:
             return torch.cat([self.train_targets(obj.name) for obj in self.objectives], dim=-1)
 
-        obj = self.objectives[obj_name]
+        obj = self.objectives[index]
         targets = self.table.loc[:, obj.name].values.copy()
 
         # check that targets values are inside acceptable values

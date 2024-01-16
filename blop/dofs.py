@@ -63,9 +63,6 @@ class DOF:
         The units of the DOF (e.g. mm or deg). This is only for plotting and general housekeeping.
     tags: list
         A list of tags. These make it easier to subset large groups of dofs.
-    latent_group: optional
-        An agent will fit latent dimensions to all DOFs with the same latent_group. If None, the
-        DOF will be modeled independently.
     """
 
     device: Signal = None
@@ -78,7 +75,6 @@ class DOF:
     active: bool = True
     tags: list = field(default_factory=list)
     log: bool = False
-    latent_group: str = None
 
     # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
@@ -95,9 +91,6 @@ class DOF:
             if isinstance(self.device, SignalRO):
                 raise ValueError("Must specify read_only=True for a read-only device!")
 
-        if self.latent_group is None:
-            self.latent_group = str(uuid.uuid4())
-
         # all dof degrees of freedom are hinted
         self.device.kind = "hinted"
 
@@ -108,6 +101,14 @@ class DOF:
     @property
     def search_upper_bound(self):
         return float(self.search_bounds[1])
+    
+    @property
+    def trust_lower_bound(self):
+        return float(self.trust_bounds[0])
+
+    @property
+    def trust_upper_bound(self):
+        return float(self.trust_bounds[1])
 
     @property
     def readback(self):
@@ -134,13 +135,21 @@ class DOFList(Sequence):
         _validate_dofs(dofs)
         self.dofs = dofs
 
-    def __getitem__(self, i):
-        if type(i) is int:
-            return self.dofs[i]
-        elif type(i) is str:
-            return self.dofs[self.names.index(i)]
+    def __getattr__(self, attr):
+        if attr in self.names:
+            return self.__getitem__(attr)
+
+        raise AttributeError(f"DOFList object has no attribute named '{attr}'.")
+
+    def __getitem__(self, index):
+        if type(index) is int:
+            return self.dofs[index]
+        elif type(index) is str:
+            if index not in self.names:
+                raise ValueError(f"DOFList has no DOF named {index}.")
+            return self.dofs[self.names.index(index)]
         else:
-            raise ValueError(f"Invalid index {i}. A DOFList must be indexed by either an integer or a string.")
+            raise ValueError(f"Invalid index {index}. A DOFList must be indexed by either an integer or a string.")
 
     def __len__(self):
         return len(self.dofs)
