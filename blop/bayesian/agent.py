@@ -153,7 +153,7 @@ class Agent:
                 raise ValueError("Must supply either x and y, or data.")
             data = {**x, **y, **metadata}
 
-        data = {k: np.atleast_1d(v) for k, v in data.items()}
+        data = {k: list(np.atleast_1d(v)) for k, v in data.items()}
         unique_field_lengths = {len(v) for v in data.values()}
 
         if len(unique_field_lengths) > 1:
