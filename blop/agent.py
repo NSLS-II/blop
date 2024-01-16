@@ -23,12 +23,12 @@ from databroker import Broker
 from ophyd import Signal
 
 from . import utils
+from .bayesian import acquisition, models, plotting
+from .bayesian.transforms import TargetingPosteriorTransform
+from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
-from .bayesian import acquisition, models, plotting
-from .digestion import default_digestion_function
 from .plans import default_acquisition_plan
-from .bayesian.transforms import TargetingPosteriorTransform
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -37,19 +37,17 @@ mpl.rc("image", cmap="coolwarm")
 MAX_TEST_INPUTS = 2**11
 
 
-
 def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
-
     if len(dofs) == 0:
-        raise ValueError(f"You must supply at least one DOF.")
+        raise ValueError("You must supply at least one DOF.")
 
     if len(objs) == 0:
-        raise ValueError(f"You must supply at least one objective.")
+        raise ValueError("You must supply at least one objective.")
 
     for obj in objs:
         for latent_group in obj.latent_groups:
             for dof_name in latent_group:
-                if not dof_name in dofs.names:
+                if dof_name not in dofs.names:
                     raise ValueError(f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist.")
 
 
@@ -144,13 +142,11 @@ class Agent:
             yield self.dofs[index]
 
     def __getattr__(self, attr):
-
         acq_func_name = acquisition.parse_acq_func_identifier(attr)
         if acq_func_name is not None:
             return self.get_acquisition_function(identifier=acq_func_name)
-        
-        raise AttributeError(f"DOFList object has no attribute named '{attr}'.")
 
+        raise AttributeError(f"DOFList object has no attribute named '{attr}'.")
 
     def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = MAX_TEST_INPUTS):
         """
@@ -513,7 +509,7 @@ class Agent:
         return model
 
     def _construct_classifier(self, skew_dims=None):
-        skew_dims = [tuple([i]) for i in range(len(self.dofs))]
+        skew_dims = [tuple([i]) for i in range(len(self.dofs.subset(active=True)))]
 
         train_inputs = self.train_inputs(active=True)
         trusted = ~torch.isnan(train_inputs).any(axis=1)
@@ -654,7 +650,6 @@ class Agent:
         acq_func_upper_bounds = np.where(self.dofs.read_only, self.dofs.readback, self.dofs.search_upper_bounds)
 
         return torch.tensor(np.vstack([acq_func_lower_bounds, acq_func_upper_bounds]), dtype=torch.double)
-    
 
     def latent_dim_tuples(self, obj_index=None):
         """
@@ -663,8 +658,8 @@ class Agent:
         """
 
         if obj_index is None:
-            return {obj.name:self.latent_dim_tuples(obj_index=obj.name) for obj in self.objectives}
-        
+            return {obj.name: self.latent_dim_tuples(obj_index=obj.name) for obj in self.objectives}
+
         obj = self.objectives[obj_index]
 
         latent_group_index = {}
@@ -673,7 +668,7 @@ class Agent:
             for group_index, latent_group in enumerate(obj.latent_groups):
                 if dof.name in latent_group:
                     latent_group_index[dof.name] = group_index
-                    
+
         u, uinv = np.unique(list(latent_group_index.values()), return_inverse=True)
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
 
