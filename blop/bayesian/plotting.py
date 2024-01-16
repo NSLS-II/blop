@@ -87,7 +87,6 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for obj_index, obj in enumerate(agent.objectives):
-
         targets = agent.train_targets(obj.name).squeeze(-1).numpy()
 
         obj_vmin, obj_vmax = np.nanpercentile(targets, q=[1, 99])

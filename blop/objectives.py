@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Tuple, List, Union
+from typing import List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -134,7 +134,7 @@ class ObjectiveList(Sequence):
         if attr in self.names:
             return self.__getitem__(attr)
         else:
-            raise AttributeError(f'No attribute named {attr}')
+            raise AttributeError(f"No attribute named {attr}")
 
     def __getitem__(self, i):
         if type(i) is int:

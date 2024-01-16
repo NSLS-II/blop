@@ -101,7 +101,7 @@ class DOF:
     @property
     def search_upper_bound(self):
         return float(self.search_bounds[1])
-    
+
     @property
     def trust_lower_bound(self):
         return float(self.trust_bounds[0])

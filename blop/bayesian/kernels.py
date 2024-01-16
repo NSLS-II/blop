@@ -80,7 +80,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
             )
 
         if self.n_skew_entries > 0:
-            skew_entries_constraint = gpytorch.constraints.Interval(-2*np.pi, 2*np.pi)
+            skew_entries_constraint = gpytorch.constraints.Interval(-2 * np.pi, 2 * np.pi)
             skew_entries_initial = torch.zeros((self.num_outputs, self.n_skew_entries), dtype=torch.float64)
             self.register_parameter(name="raw_skew_entries", parameter=torch.nn.Parameter(skew_entries_initial))
             self.register_constraint(param_name="raw_skew_entries", constraint=skew_entries_constraint)
