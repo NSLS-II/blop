@@ -74,13 +74,13 @@ class LatentKernel(gpytorch.kernels.Kernel):
         if priors:
             self.register_prior(
                 name="lengthscales_prior",
-                prior=gpytorch.priors.GammaPrior(concentration=2, rate=1),
+                prior=gpytorch.priors.GammaPrior(concentration=3, rate=6),
                 param_or_closure=lambda m: m.lengthscales,
                 setting_closure=lambda m, v: m._set_lengthscales(v),
             )
 
         if self.n_skew_entries > 0:
-            skew_entries_constraint = gpytorch.constraints.Interval(-np.pi, np.pi)
+            skew_entries_constraint = gpytorch.constraints.Interval(-2*np.pi, 2*np.pi)
             skew_entries_initial = torch.zeros((self.num_outputs, self.n_skew_entries), dtype=torch.float64)
             self.register_parameter(name="raw_skew_entries", parameter=torch.nn.Parameter(skew_entries_initial))
             self.register_constraint(param_name="raw_skew_entries", constraint=skew_entries_constraint)

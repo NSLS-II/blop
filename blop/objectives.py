@@ -1,11 +1,9 @@
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Tuple, Union
+from dataclasses import dataclass, field
+from typing import Tuple, List, Union
 
 import numpy as np
 import pandas as pd
-
-numeric = Union[float, int]
 
 DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
@@ -23,6 +21,7 @@ OBJ_FIELD_TYPES = {
     "max_noise": "float",
     "noise": "float",
     "n": "int",
+    "latent_groups": "object",
 }
 
 OBJ_SUMMARY_STYLE = {"min_noise": "{:.2E}", "max_noise": "{:.2E}"}
@@ -61,22 +60,28 @@ class Objective:
         If True, the agent will care about this objective during optimization.
     limits: tuple of floats
         The range of reliable measurements for the obejctive. Outside of this, data points will be rejected.
-    min_snr: float
-        The minimum signal-to-noise ratio of the objective, used when fitting the model.
+    min_noise: float
+        The minimum noise level of the fitted model.
+    max_noise: float
+        The minimum noise level of the fitted model.
     units: str
         A label representing the units of the objective.
+    latent_group: optional
+        An agent will fit latent dimensions to all DOFs with the same latent_group. If None, the
+        DOF will be modeled independently.
     """
 
     name: str
     description: str = None
-    target: Union[Tuple[numeric, numeric], float, str] = "max"
+    target: Union[Tuple[float, float], float, str] = "max"
     log: bool = False
-    weight: numeric = 1.0
+    weight: float = 1.0
     active: bool = True
-    trust_bounds: Tuple[numeric, numeric] = None
-    min_noise: numeric = DEFAULT_MIN_NOISE_LEVEL
-    max_noise: numeric = DEFAULT_MAX_NOISE_LEVEL
+    trust_bounds: Tuple[float, float] = None
+    min_noise: float = DEFAULT_MIN_NOISE_LEVEL
+    max_noise: float = DEFAULT_MAX_NOISE_LEVEL
     units: str = None
+    latent_groups: List[Tuple[str, ...]] = field(default_factory=list)
 
     def __post_init__(self):
         if self.trust_bounds is None:
@@ -98,7 +103,6 @@ class Objective:
         series = pd.Series()
         for attr, dtype in OBJ_FIELD_TYPES.items():
             series[attr] = getattr(self, attr)
-            series[attr] = series[attr].astype(dtype)
 
         return series
 
@@ -125,6 +129,12 @@ class ObjectiveList(Sequence):
     def __init__(self, objectives: list = []):
         _validate_objectives(objectives)
         self.objectives = objectives
+
+    def __getattr__(self, attr):
+        if attr in self.names:
+            return self.__getitem__(attr)
+        else:
+            raise AttributeError(f'No attribute named {attr}')
 
     def __getitem__(self, i):
         if type(i) is int:

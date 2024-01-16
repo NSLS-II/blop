@@ -1,5 +1,6 @@
 from . import utils  # noqa F401
 from ._version import get_versions
+from .agent import Agent # noqa F401
 from .dofs import DOF  # noqa F401
 from .objectives import Objective  # noqa F401
 

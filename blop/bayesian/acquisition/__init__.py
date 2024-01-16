@@ -18,16 +18,10 @@ for acq_func_name in config.keys():
 
 
 def parse_acq_func_identifier(identifier):
-    acq_func_name = None
-    for _acq_func_name in config.keys():
-        if identifier.lower() in config[_acq_func_name]["identifiers"]:
-            acq_func_name = _acq_func_name
-
-    if acq_func_name is None:
-        raise ValueError(f'Unrecognized acquisition function identifier "{identifier}".')
-
-    return acq_func_name
-
+    for acq_func_name in config.keys():
+        if identifier.lower() in config[acq_func_name]["identifiers"]:
+            return acq_func_name
+    return None
 
 def get_acquisition_function(agent, identifier="qei", return_metadata=True, verbose=False, **acq_func_kwargs):
     """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
@@ -35,6 +29,9 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
     """
 
     acq_func_name = parse_acq_func_identifier(identifier)
+    if acq_func_name is None:
+        raise ValueError(f'Unrecognized acquisition function identifier "{identifier}".')
+    
     acq_func_config = config["upper_confidence_bound"]
 
     if config[acq_func_name]["multitask_only"] and (len(agent.objectives) == 1):

@@ -8,13 +8,14 @@ from torch import Tensor
 
 
 def targeting_transform(y, target):
+    if target == "max":
+        return y
     if target == "min":
-        y = -y
+        return -y
     elif not isinstance(target, tuple):
-        y = -(y - target).abs()
+        return -(y - target).abs()
     else:
-        y = -((y - 0.5 * (target[1] + target[0])).abs() - 0.5 * (target[1] - target[0])).clamp(min=0)
-    return y
+        return -((y - 0.5 * (target[1] + target[0])).abs() - 0.5 * (target[1] - target[0])).clamp(min=0)
 
 
 class TargetingPosteriorTransform(PosteriorTransform):
