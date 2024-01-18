@@ -99,11 +99,14 @@ class Objective:
         return f"{'log ' if self.log else ''}{self.description}"
 
     @property
-    def summary(self):
-        series = pd.Series()
-        for attr, dtype in OBJ_FIELD_TYPES.items():
-            series[attr] = getattr(self, attr)
-
+    def summary(self) -> pd.Series:
+        series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype="object")
+        for attr in series.index:
+            value = getattr(self, attr)
+            if attr == "trust_bounds":
+                if value is None:
+                    value = (0, np.inf) if self.log else (-np.inf, np.inf)
+            series[attr] = value
         return series
 
     def __repr__(self):
@@ -113,12 +116,20 @@ class Objective:
         return self.summary.__repr_html__()
 
     @property
+    def trust_lower_bound(self):
+        return float(self.summary.trust_bounds[0])
+
+    @property
+    def trust_upper_bound(self):
+        return float(self.summary.trust_bounds[1])
+
+    @property
     def noise(self):
         return self.model.likelihood.noise.item() if hasattr(self, "model") else None
 
     @property
     def snr(self):
-        return np.round(1 / self.model.likelihood.noise.sqrt().item(), 1) if hasattr(self, "model") else None
+        return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if hasattr(self, "model") else None
 
     @property
     def n(self):
@@ -151,10 +162,11 @@ class ObjectiveList(Sequence):
     def summary(self) -> pd.DataFrame:
         table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=self.names)
 
-        for attr, dtype in OBJ_FIELD_TYPES.items():
-            for obj in self.objectives:
-                table.at[obj.name, attr] = getattr(obj, attr)
+        for obj in self.objectives:
+            for attr, value in obj.summary.items():
+                table.at[obj.name, attr] = value
 
+        for attr, dtype in OBJ_FIELD_TYPES.items():
             table[attr] = table[attr].astype(dtype)
 
         return table
@@ -180,7 +192,7 @@ class ObjectiveList(Sequence):
         return [obj.name for obj in self.objectives]
 
     @property
-    def targets(self) -> np.array:
+    def targets(self) -> list:
         """
         Returns an array of the objective targets.
         """

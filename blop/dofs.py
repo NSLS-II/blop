@@ -18,7 +18,6 @@ DOF_FIELD_TYPES = {
     "read_only": "bool",
     "log": "bool",
     "tags": "object",
-    "device": "object",
 }
 
 
@@ -68,11 +67,11 @@ class DOF:
         An ophyd device. If not supplied, a dummy ophyd device will be generated.
     """
 
-    name: str
+    name: str = None
     description: str = ""
-    units: str = ""
-    search_bounds: Tuple[float, float]
+    search_bounds: Tuple[float, float] = None
     trust_bounds: Tuple[float, float] = None
+    units: str = ""
     read_only: bool = False
     active: bool = True
     log: bool = False
@@ -81,14 +80,13 @@ class DOF:
 
     # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
-        if self.trust_bounds is None:
-            if self.log:
-                self.trust_bounds = (0, np.inf)
-            else:
-                self.trust_bounds = (-np.inf, np.inf)
-
-        self.search_bounds = tuple(self.search_bounds)
-        self.trust_bounds = tuple(self.trust_bounds)
+        if self.trust_bounds is not None:
+            self.trust_bounds = tuple(self.trust_bounds)
+        if self.search_bounds is None:
+            if not self.read_only:
+                raise ValueError("You must specify search_bounds if the device is not read-only.")
+        else:
+            self.search_bounds = tuple(self.search_bounds)
 
         self.uuid = str(uuid.uuid4())
 
@@ -101,26 +99,34 @@ class DOF:
         if not self.read_only:
             # check that the device has a put method
             if isinstance(self.device, SignalRO):
-                raise ValueError("Must specify read_only=True for a read-only device!")
+                raise ValueError("You must specify read_only=True for a read-only device.")
+
+        if self.log:
+            if not self.search_lower_bound > 0:
+                raise ValueError("Search bounds must be positive if log=True.")
 
         # all dof degrees of freedom are hinted
         self.device.kind = "hinted"
 
     @property
     def search_lower_bound(self):
-        return float(self.search_bounds[0])
+        if self.read_only:
+            raise ValueError("Read-only DOFs do not have search bounds.")
+        return float(self.summary.search_bounds[0])
 
     @property
     def search_upper_bound(self):
-        return float(self.search_bounds[1])
+        if self.read_only:
+            raise ValueError("Read-only DOFs do not have search bounds.")
+        return float(self.summary.search_bounds[1])
 
     @property
     def trust_lower_bound(self):
-        return float(self.trust_bounds[0])
+        return float(self.summary.trust_bounds[0])
 
     @property
     def trust_upper_bound(self):
-        return float(self.trust_bounds[1])
+        return float(self.summary.trust_bounds[1])
 
     @property
     def readback(self):
@@ -128,7 +134,7 @@ class DOF:
 
     @property
     def summary(self) -> pd.Series:
-        series = pd.Series(index=list(DOF_FIELD_TYPES.keys()))
+        series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
             if attr == "trust_bounds":
@@ -203,11 +209,11 @@ class DOFList(Sequence):
 
     @property
     def search_lower_bounds(self) -> np.array:
-        return np.array([dof.search_lower_bound for dof in self.dofs])
+        return np.array([dof.search_lower_bound if not dof.read_only else dof.readback for dof in self.dofs])
 
     @property
     def search_upper_bounds(self) -> np.array:
-        return np.array([dof.search_upper_bound for dof in self.dofs])
+        return np.array([dof.search_upper_bound if not dof.read_only else dof.readback for dof in self.dofs])
 
     @property
     def search_bounds(self) -> np.array:

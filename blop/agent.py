@@ -148,7 +148,7 @@ class Agent:
 
         raise AttributeError(f"DOFList object has no attribute named '{attr}'.")
 
-    def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = MAX_TEST_INPUTS):
+    def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = 2**16):
         """
         Use napari to see a high-dimensional array.
 
@@ -821,7 +821,7 @@ class Agent:
         inputs = self.table.loc[:, dof.name].values.copy()
 
         # check that inputs values are inside acceptable values
-        valid = (inputs >= dof.trust_bounds[0]) & (inputs <= dof.trust_bounds[1])
+        valid = (inputs >= dof.trust_lower_bound) & (inputs <= dof.trust_upper_bound)
         inputs = np.where(valid, inputs, np.nan)
 
         # transform if needed
@@ -840,7 +840,7 @@ class Agent:
         targets = self.table.loc[:, obj.name].values.copy()
 
         # check that targets values are inside acceptable values
-        valid = (targets >= obj.trust_bounds[0]) & (targets <= obj.trust_bounds[1])
+        valid = (targets >= obj.trust_lower_bound) & (targets <= obj.trust_upper_bound)
         targets = np.where(valid, targets, np.nan)
 
         # transform if needed
