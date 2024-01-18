@@ -18,6 +18,7 @@ DOF_FIELD_TYPES = {
     "read_only": "bool",
     "log": "bool",
     "tags": "object",
+    "device": "object",
 }
 
 
@@ -44,40 +45,51 @@ class DOF:
     Parameters
     ----------
     name: str
-        The name of the DOF. This is used as a key.
-    description: str
+        The name of the DOF. This is used as a key to index observed data.
+    description: str, optional
         A longer name for the DOF.
-    device: Signal, optional
-        An ophyd device. If None, a dummy ophyd device is generated.
-    active: bool
-        If True, the agent will try to use the DOF in its optimization. If False, the agent will
-        still read the DOF but not include it any model or acquisition function.
-    search_bounds: tuple, optional
-        A tuple of the lower and upper limit of the DOF. If the DOF is not read-only, the agent
-        will not explore outside the search_bounds. If the DOF is read-only, the agent will reject all
-        sampled data where the DOF is outside the search_bounds.
+    units: str
+        The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
+    search_bounds: tuple
+        A tuple of the lower and upper limit of the DOF for the agent to search.
+    trust_bounds: tuple, optional
+        The agent will reject all data where the DOF value is outside the trust bounds.
     read_only: bool
         If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
         device is read-only.
-    units: str
-        The units of the DOF (e.g. mm or deg). This is only for plotting and general housekeeping.
+    active: bool
+        If True, the agent will try to use the DOF in its optimization. If False, the agent will
+        still read the DOF but not include it any model or acquisition function.
+    log: bool
+        Whether to apply a log to the objective, i.e. to make the process outputs more Gaussian.
     tags: list
         A list of tags. These make it easier to subset large groups of dofs.
+    device: Signal, optional
+        An ophyd device. If not supplied, a dummy ophyd device will be generated.
     """
 
-    device: Signal = None
-    description: str = None
-    name: str = None
-    search_bounds: Tuple[float, float] = (-10.0, 10.0)
-    trust_bounds: Tuple[float, float] = (-np.inf, np.inf)
+    name: str
+    description: str = ""
     units: str = ""
+    search_bounds: Tuple[float, float]
+    trust_bounds: Tuple[float, float] = None
     read_only: bool = False
     active: bool = True
-    tags: list = field(default_factory=list)
     log: bool = False
+    tags: list = field(default_factory=list)
+    device: Signal = None
 
     # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
+        if self.trust_bounds is None:
+            if self.log:
+                self.trust_bounds = (0, np.inf)
+            else:
+                self.trust_bounds = (-np.inf, np.inf)
+
+        self.search_bounds = tuple(self.search_bounds)
+        self.trust_bounds = tuple(self.trust_bounds)
+
         self.uuid = str(uuid.uuid4())
 
         if self.name is None:
@@ -118,7 +130,11 @@ class DOF:
     def summary(self) -> pd.Series:
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()))
         for attr in series.index:
-            series[attr] = getattr(self, attr)
+            value = getattr(self, attr)
+            if attr == "trust_bounds":
+                if value is None:
+                    value = (0, np.inf) if self.log else (-np.inf, np.inf)
+            series[attr] = value
         return series
 
     @property
@@ -164,9 +180,11 @@ class DOFList(Sequence):
     def summary(self) -> pd.DataFrame:
         table = pd.DataFrame(columns=list(DOF_FIELD_TYPES.keys()), index=self.names)
 
+        for dof in self.dofs:
+            for attr, value in dof.summary.items():
+                table.at[dof.name, attr] = value
+
         for attr, dtype in DOF_FIELD_TYPES.items():
-            for dof in self.dofs:
-                table.at[dof.name, attr] = getattr(dof, attr)
             table[attr] = table[attr].astype(dtype)
 
         return table

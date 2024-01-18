@@ -46,33 +46,33 @@ class Objective:
     Parameters
     ----------
     name: str
-        The name of the objective. This is used as a key.
+        The name of the objective. This is used as a key to index observed data.
     description: str
         A longer description for the objective.
-    target: float or str
-        One of "min" or "max", or a number. The agent will respectively minimize or maximize the
-        objective, or target the supplied number.
+    target: str or float or tuple
+        One of "min", "max" , a float, or a tuple of floats. The agent will respectively minimize or maximize the
+        objective, target the supplied number, or target the interval of the tuple of numbers.
     log: bool
-        Whether to apply a log to the objective, to make it more Gaussian.
+        Whether to apply a log to the objective, i.e. to make the process more stationary.
     weight: float
-        The relative importance of this objective, used when scalarizing in multi-objective optimization.
+        The relative importance of this objective, to be used when scalarizing in multi-objective optimization.
     active: bool
         If True, the agent will care about this objective during optimization.
     limits: tuple of floats
-        The range of reliable measurements for the obejctive. Outside of this, data points will be rejected.
+        The range of reliable measurements for the objective. Outside of this, data points will be ignored.
     min_noise: float
         The minimum noise level of the fitted model.
     max_noise: float
-        The minimum noise level of the fitted model.
+        The maximum noise level of the fitted model.
     units: str
         A label representing the units of the objective.
-    latent_group: optional
-        An agent will fit latent dimensions to all DOFs with the same latent_group. If None, the
-        DOF will be modeled independently.
+    latent_groups: list of tuples of strs, optional
+        An agent will fit latent dimensions to all DOFs with the same latent_group. All other
+        DOFs will be modeled independently.
     """
 
     name: str
-    description: str = None
+    description: str = ""
     target: Union[Tuple[float, float], float, str] = "max"
     log: bool = False
     weight: float = 1.0
