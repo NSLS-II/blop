@@ -70,7 +70,7 @@ def agent(db):
 
 
 @pytest.fixture(scope="function")
-def multi_agent(db):
+def agent_with_multiple_objs(db):
     """
     A simple agent minimizing two Himmelblau's functions
     """

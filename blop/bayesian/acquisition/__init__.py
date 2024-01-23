@@ -41,7 +41,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
     # there is probably a better way to structure this
     if acq_func_name == "expected_improvement":
         acq_func = analytic.ConstrainedLogExpectedImprovement(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
             posterior_transform=agent.targeting_transform,
@@ -50,7 +50,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
 
     elif acq_func_name == "monte_carlo_expected_improvement":
         acq_func = monte_carlo.qConstrainedExpectedImprovement(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
             posterior_transform=agent.targeting_transform,
@@ -59,7 +59,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
 
     elif acq_func_name == "probability_of_improvement":
         acq_func = analytic.ConstrainedLogProbabilityOfImprovement(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
             posterior_transform=agent.targeting_transform,
@@ -68,7 +68,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
 
     elif acq_func_name == "monte_carlo_probability_of_improvement":
         acq_func = monte_carlo.qConstrainedProbabilityOfImprovement(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             best_f=agent.max_scalarized_objective,
             posterior_transform=agent.targeting_transform,
@@ -77,7 +77,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
 
     elif acq_func_name == "lower_bound_max_value_entropy":
         acq_func = monte_carlo.qConstrainedLowerBoundMaxValueEntropy(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             candidate_set=agent.test_inputs(n=1024).squeeze(1),
         )
@@ -85,7 +85,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
 
     elif acq_func_name == "noisy_expected_hypervolume_improvement":
         acq_func = monte_carlo.qConstrainedNoisyExpectedHypervolumeImprovement(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             ref_point=agent.train_targets.min(dim=0).values,
             X_baseline=agent.train_inputs,
@@ -97,7 +97,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
         beta = acq_func_kwargs.get("beta", acq_func_config["default_args"]["beta"])
 
         acq_func = analytic.ConstrainedUpperConfidenceBound(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             beta=beta,
             posterior_transform=agent.targeting_transform,
@@ -108,7 +108,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
         beta = acq_func_kwargs.get("beta", acq_func_config["default_args"]["beta"])
 
         acq_func = monte_carlo.qConstrainedUpperConfidenceBound(
-            constraint=agent.constraint,
+            constraint=agent.classifier,
             model=agent.model,
             beta=beta,
             posterior_transform=agent.targeting_transform,

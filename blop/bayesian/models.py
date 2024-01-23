@@ -20,26 +20,14 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
             **kwargs
         )
 
-
-class TargetingGP(botorch.models.gp_regression.SingleTaskGP):
-    def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
-        super().__init__(train_inputs, train_targets, *args, **kwargs)
-
-        self.mean_module = gpytorch.means.ConstantMean(constant_prior=gpytorch.priors.NormalPrior(loc=0, scale=1))
-
-        self.covar_module = kernels.LatentKernel(
-            num_inputs=train_inputs.shape[-1],
-            num_outputs=train_targets.shape[-1],
-            skew_dims=skew_dims,
-            priors=True,
-            scale=True,
-            **kwargs
-        )
+        self.trained = False
 
 
 class LatentDirichletClassifier(LatentGP):
     def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
         super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
+
+        self.trained = False
 
     def probabilities(self, x, n_samples=1024):
         """

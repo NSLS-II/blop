@@ -113,28 +113,33 @@ class DOF:
         self.device.kind = "hinted"
 
     @property
-    def search_lower_bound(self):
+    def _search_bounds(self):
         if self.read_only:
-            raise ValueError("Read-only DOFs do not have search bounds.")
-        return float(self.search_bounds[0])
+            _readback = self.readback
+            return (_readback, _readback)
+        return self.search_bounds
+
+    @property
+    def _trust_bounds(self):
+        if self.trust_bounds is None:
+            return (0, np.inf) if self.log else (-np.inf, np.inf)
+        return self.trust_bounds
+
+    @property
+    def search_lower_bound(self):
+        return float(self._search_bounds[0])
 
     @property
     def search_upper_bound(self):
-        if self.read_only:
-            raise ValueError("Read-only DOFs do not have search bounds.")
-        return float(self.search_bounds[1])
+        return float(self._search_bounds[1])
 
     @property
     def trust_lower_bound(self):
-        if self.trust_bounds is None:
-            return 0 if self.log else -np.inf
-        return float(self.trust_bounds[0])
+        return float(self._trust_bounds[0])
 
     @property
     def trust_upper_bound(self):
-        if self.trust_bounds is None:
-            return np.inf
-        return float(self.trust_bounds[1])
+        return float(self._trust_bounds[1])
 
     @property
     def readback(self):
@@ -144,11 +149,7 @@ class DOF:
     def summary(self) -> pd.Series:
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
-            value = getattr(self, attr)
-            # if attr == "trust_bounds":
-            #     if value is None:
-            #         value = (0, np.inf) if self.log else (-np.inf, np.inf)
-            series[attr] = value
+            series[attr] = getattr(self, attr)
         return series
 
     @property
@@ -228,7 +229,7 @@ class DOFList(Sequence):
         """
         Returns a (n_dof, 2) array of bounds.
         """
-        return np.c_[self.search_lower_bounds, self.search_upper_bounds]
+        return np.array([dof._search_bounds for dof in self.dofs])
 
     @property
     def trust_lower_bounds(self) -> np.array:
@@ -243,7 +244,7 @@ class DOFList(Sequence):
         """
         Returns a (n_dof, 2) array of bounds.
         """
-        return np.c_[self.trust_lower_bounds, self.trust_upper_bounds]
+        return np.array([dof._trust_bounds for dof in self.dofs])
 
     @property
     def readback(self) -> np.array:
