@@ -52,7 +52,7 @@ class DOF:
     search_bounds: tuple
         A tuple of the lower and upper limit of the DOF for the agent to search.
     trust_bounds: tuple, optional
-        The agent will reject all data where the DOF value is outside the trust bounds.
+        The agent will reject all data where the DOF value is outside the trust bounds. Much be larger than search bounds.
     read_only: bool
         If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
         device is read-only.
@@ -80,13 +80,17 @@ class DOF:
 
     # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
-        if self.trust_bounds is not None:
-            self.trust_bounds = tuple(self.trust_bounds)
         if self.search_bounds is None:
             if not self.read_only:
                 raise ValueError("You must specify search_bounds if the device is not read-only.")
         else:
             self.search_bounds = tuple(self.search_bounds)
+
+        if self.trust_bounds is not None:
+            self.trust_bounds = tuple(self.trust_bounds)
+            if not self.read_only:
+                if (self.search_bounds[0] < self.trust_bounds[0]) or (self.search_bounds[1] > self.trust_bounds[1]):
+                    raise ValueError("Trust bounds must be larger than search bounds.")
 
         self.uuid = str(uuid.uuid4())
 
@@ -112,21 +116,25 @@ class DOF:
     def search_lower_bound(self):
         if self.read_only:
             raise ValueError("Read-only DOFs do not have search bounds.")
-        return float(self.summary.search_bounds[0])
+        return float(self.search_bounds[0])
 
     @property
     def search_upper_bound(self):
         if self.read_only:
             raise ValueError("Read-only DOFs do not have search bounds.")
-        return float(self.summary.search_bounds[1])
+        return float(self.search_bounds[1])
 
     @property
     def trust_lower_bound(self):
-        return float(self.summary.trust_bounds[0])
+        if self.trust_bounds is None:
+            return 0 if self.log else -np.inf
+        return float(self.trust_bounds[0])
 
     @property
     def trust_upper_bound(self):
-        return float(self.summary.trust_bounds[1])
+        if self.trust_bounds is None:
+            return np.inf
+        return float(self.trust_bounds[1])
 
     @property
     def readback(self):
@@ -137,9 +145,9 @@ class DOF:
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
-            if attr == "trust_bounds":
-                if value is None:
-                    value = (0, np.inf) if self.log else (-np.inf, np.inf)
+            # if attr == "trust_bounds":
+            #     if value is None:
+            #         value = (0, np.inf) if self.log else (-np.inf, np.inf)
             series[attr] = value
         return series
 
@@ -248,6 +256,10 @@ class DOFList(Sequence):
     @property
     def read_only(self):
         return np.array([dof.read_only for dof in self.dofs])
+
+    @property
+    def log(self):
+        return np.array([dof.log for dof in self.dofs])
 
     def add(self, dof):
         _validate_dofs([*self.dofs, dof])

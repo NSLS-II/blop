@@ -117,11 +117,15 @@ class Objective:
 
     @property
     def trust_lower_bound(self):
-        return float(self.summary.trust_bounds[0])
+        if self.trust_bounds is None:
+            return 0 if self.log else -np.inf
+        return float(self.trust_bounds[0])
 
     @property
     def trust_upper_bound(self):
-        return float(self.summary.trust_bounds[1])
+        if self.trust_bounds is None:
+            return np.inf
+        return float(self.trust_bounds[1])
 
     @property
     def noise(self):
