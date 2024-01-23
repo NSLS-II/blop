@@ -19,6 +19,7 @@ import torch
 from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
+from botorch.models.transforms.input import AffineInputTransform, ChainedInputTransform, Log10, Normalize
 from databroker import Broker
 from ophyd import Signal
 
@@ -48,7 +49,10 @@ def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
         for latent_group in obj.latent_groups:
             for dof_name in latent_group:
                 if dof_name not in dofs.names:
-                    raise ValueError(f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist.")
+                    warnings.warn(
+                        f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist."
+                        "it will be ignored."
+                    )
 
 
 class Agent:
@@ -300,33 +304,33 @@ class Agent:
             # this includes both RO and non-RO DOFs
             candidates = candidates.numpy()
 
-            active_dofs_are_read_only = np.array([dof.read_only for dof in self.dofs.subset(active=True)])
-
-            acq_points = candidates[..., ~active_dofs_are_read_only]
-            read_only_values = candidates[..., active_dofs_are_read_only]
-            acq_func_meta["read_only_values"] = read_only_values
-
         else:
             acqf_obj = None
 
-            if acq_func_name == "random":
-                acq_points = torch.rand()
-                acq_func_meta = {"name": "random", "args": {}}
+            # if acq_func_name == "random":
+            #     candidates = self.sample(n=n, active=True, read_only=False).squeeze(1).numpy()
+            #     acq_func_meta = {"name": "random", "args": {}}
 
             if acq_func_name == "quasi-random":
-                acq_points = self._subset_inputs_sampler(n=n, active=True, read_only=False).squeeze(1).numpy()
+                candidates = self.sample(n=n).squeeze(1).numpy()
                 acq_func_meta = {"name": "quasi-random", "args": {}}
 
-            elif acq_func_name == "grid":
-                n_active_dims = len(self.dofs.subset(active=True, read_only=False))
-                acq_points = self.test_inputs_grid(max_inputs=n).reshape(-1, n_active_dims).numpy()
-                acq_func_meta = {"name": "grid", "args": {}}
+            # elif acq_func_name == "grid":
+            #     n_active_dims = len(self.dofs.subset(active=True, read_only=False))
+            #     candidates = self.test_inputs_grid(max_inputs=n).reshape(-1, n_active_dims).numpy()
+            #     acq_func_meta = {"name": "grid", "args": {}}
 
             else:
                 raise ValueError()
 
             # define dummy acqf objective
             acqf_obj = 0
+
+        active_dofs_are_read_only = self.dofs.subset(active=True).read_only
+
+        acq_points = candidates[..., ~active_dofs_are_read_only]
+        read_only_values = candidates[..., active_dofs_are_read_only]
+        acq_func_meta["read_only_values"] = read_only_values
 
         acq_func_meta["duration"] = duration = ttime.monotonic() - start_time
 
@@ -346,6 +350,7 @@ class Agent:
             "points": acq_points,
             "acq_func": acq_func_meta["name"],
             "acq_func_kwargs": acq_func_kwargs,
+            "acq_func_obj": acqf_obj,
             "duration": acq_func_meta["duration"],
             "sequential": sequential,
             "upsample": upsample,
@@ -500,7 +505,7 @@ class Agent:
             train_targets=train_targets[trusted],
             likelihood=likelihood,
             skew_dims=skew_dims,
-            input_transform=self.input_transform,
+            input_transform=self.model_input_transform,
             outcome_transform=outcome_transform,
         )
 
@@ -523,7 +528,7 @@ class Agent:
             train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
             skew_dims=skew_dims,
             likelihood=dirichlet_likelihood,
-            input_transform=self.input_transform,
+            input_transform=self.model_input_transform,
         )
 
         self._train_model(self.classifier)
@@ -673,27 +678,70 @@ class Agent:
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
 
     @property
-    def input_transform(self):
-        """
-        A bounding transform for all the active DOFs. This is used for model fitting.
-        """
-        return self._subset_input_transform(active=True)
+    def sample_bounds(self):
+        return torch.tensor(self.dofs.subset(active=True).search_bounds, dtype=torch.double).T
 
-    def _subset_input_transform(self, active=None, read_only=None, tags=[]):
-        # torch likes limits to be (2, n_dof) and not (n_dof, 2)
-        torch_limits = torch.tensor(self.dofs.subset(active, read_only, tags).search_bounds.T, dtype=torch.double)
-        offset = torch_limits.min(dim=0).values
-        coefficient = torch_limits.max(dim=0).values - offset
-        return botorch.models.transforms.input.AffineInputTransform(
-            d=torch_limits.shape[-1], coefficient=coefficient, offset=offset
-        )
+    @property
+    def sample_input_transform(self):
+        tf1 = Log10(indices=list(np.where(self.dofs.subset(active=True).log)[0]))
 
-    def _subset_inputs_sampler(self, active=None, read_only=None, tags=[], n=MAX_TEST_INPUTS):
+        transformed_sample_bounds = tf1.transform(self.sample_bounds)
+
+        offset = transformed_sample_bounds.min(dim=0).values
+        coefficient = (transformed_sample_bounds.max(dim=0).values - offset).clamp(min=1e-16)
+
+        tf2 = AffineInputTransform(d=len(offset), coefficient=coefficient, offset=offset)
+
+        return ChainedInputTransform(tf1=tf1, tf2=tf2)
+
+    @property
+    def model_input_transform(self):
         """
-        Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
+        Suitably transforms model inputs to the unit hypercube.
+
+        For modeling:
+
+        Always normalize between min and max values. This is always inside the trust bounds, sometimes smaller.
+
+        For sampling:
+
+        Settable: normalize between search bounds
+        Read-only: constrain to the readback value
         """
-        transform = self._subset_input_transform(active, read_only, tags)
-        return transform.untransform(utils.normalized_sobol_sampler(n, d=len(self.dofs.subset(active, read_only, tags))))
+
+        active_dofs = self.dofs.subset(active=True)
+
+        tf1 = Log10(indices=list(np.where(active_dofs.log)[0]))
+        tf2 = Normalize(d=len(active_dofs))
+
+        return ChainedInputTransform(tf1=tf1, tf2=tf2)
+
+    def sample(self, n, method="quasi-random"):
+        active_dofs = self.dofs.subset(active=True)
+
+        if method == "quasi-random":
+            X = utils.normalized_sobol_sampler(n, d=len(active_dofs))
+
+        if method == "random":
+            X = torch.rand(size=(n, 1, len(active_dofs)))
+
+        return self.sample_input_transform.untransform(X)
+
+    # def _subset_input_transform(self, active=None, read_only=None, tags=[]):
+    #     # torch likes limits to be (2, n_dof) and not (n_dof, 2)
+    #     torch_limits = torch.tensor(self.dofs.subset(active, read_only, tags).search_bounds.T, dtype=torch.double)
+    #     offset = torch_limits.min(dim=0).values
+    #     coefficient = torch_limits.max(dim=0).values - offset
+    #     return botorch.models.transforms.input.AffineInputTransform(
+    #         d=torch_limits.shape[-1], coefficient=coefficient, offset=offset
+    #     )
+
+    # def _subset_inputs_sampler(self, active=None, read_only=None, tags=[], n=MAX_TEST_INPUTS):
+    #     """
+    #     Returns $n$ quasi-randomly sampled inputs in the bounded parameter space
+    #     """
+    #     transform = self._subset_input_transform(active, read_only, tags)
+    #     return transform.untransform(utils.normalized_sobol_sampler(n, d=len(self.dofs.subset(active, read_only, tags))))
 
     def save_data(self, filepath="./self_data.h5"):
         """
@@ -823,10 +871,6 @@ class Agent:
         # check that inputs values are inside acceptable values
         valid = (inputs >= dof.trust_lower_bound) & (inputs <= dof.trust_upper_bound)
         inputs = np.where(valid, inputs, np.nan)
-
-        # transform if needed
-        if dof.log:
-            inputs = np.where(inputs > 0, np.log(inputs), np.nan)
 
         return torch.tensor(inputs, dtype=torch.double).unsqueeze(-1)
 
