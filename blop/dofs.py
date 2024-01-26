@@ -1,6 +1,6 @@
 import time as ttime
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Tuple
 
@@ -9,11 +9,11 @@ import pandas as pd
 from ophyd import Signal, SignalRO
 
 DOF_FIELD_TYPES = {
-    "description": "object",
+    "description": "str",
     "readback": "float",
     "search_bounds": "object",
     "trust_bounds": "object",
-    "units": "object",
+    "units": "str",
     "active": "bool",
     "read_only": "bool",
     "log": "bool",
@@ -92,13 +92,16 @@ class DOF:
                 if (self.search_bounds[0] < self.trust_bounds[0]) or (self.search_bounds[1] > self.trust_bounds[1]):
                     raise ValueError("Trust bounds must be larger than search bounds.")
 
-        self.uuid = str(uuid.uuid4())
+        if (self.name is None) ^ (self.device is None):
+            if self.name is None:
+                self.name = self.device.name
+            if self.device is None:
+                self.device = Signal(name=self.name)
+        else:
+            raise ValueError("DOF() accepts exactly one of either a name or an ophyd device.")
 
-        if self.name is None:
-            self.name = self.device.name if hasattr(self.device, "name") else self.uuid
-
-        if self.device is None:
-            self.device = Signal(name=self.name)
+        if self.description is None:
+            self.description = self.name
 
         if not self.read_only:
             # check that the device has a put method
@@ -126,22 +129,6 @@ class DOF:
         return self.trust_bounds
 
     @property
-    def search_lower_bound(self):
-        return float(self._search_bounds[0])
-
-    @property
-    def search_upper_bound(self):
-        return float(self._search_bounds[1])
-
-    @property
-    def trust_lower_bound(self):
-        return float(self._trust_bounds[0])
-
-    @property
-    def trust_upper_bound(self):
-        return float(self._trust_bounds[1])
-
-    @property
     def readback(self):
         return self.device.read()[self.device.name]["value"]
 
@@ -167,20 +154,27 @@ class DOFList(Sequence):
         self.dofs = dofs
 
     def __getattr__(self, attr):
+        # This is called if we can't find the attribute in the normal way.
+        if attr in DOF_FIELD_TYPES.keys():
+            return np.array([getattr(dof, attr) for dof in self.dofs])
         if attr in self.names:
             return self.__getitem__(attr)
 
         raise AttributeError(f"DOFList object has no attribute named '{attr}'.")
 
-    def __getitem__(self, index):
-        if type(index) is int:
-            return self.dofs[index]
-        elif type(index) is str:
-            if index not in self.names:
-                raise ValueError(f"DOFList has no DOF named {index}.")
-            return self.dofs[self.names.index(index)]
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            if key not in self.names:
+                raise ValueError(f"DOFList has no DOF named {key}.")
+            return self.dofs[self.names.index(key)]
+        elif isinstance(key, Iterable):
+            return [self.dofs[_key] for _key in key]
+        elif isinstance(key, slice):
+            return [self.dofs[i] for i in range(*key.indices(len(self)))]
+        elif isinstance(key, int):
+            return self.dofs[key]
         else:
-            raise ValueError(f"Invalid index {index}. A DOFList must be indexed by either an integer or a string.")
+            raise ValueError(f"Invalid index {key}.")
 
     def __len__(self):
         return len(self.dofs)
@@ -213,31 +207,11 @@ class DOFList(Sequence):
         return [dof.device for dof in self.dofs]
 
     @property
-    def device_names(self) -> list:
-        return [dof.device.name for dof in self.dofs]
-
-    @property
-    def search_lower_bounds(self) -> np.array:
-        return np.array([dof.search_lower_bound if not dof.read_only else dof.readback for dof in self.dofs])
-
-    @property
-    def search_upper_bounds(self) -> np.array:
-        return np.array([dof.search_upper_bound if not dof.read_only else dof.readback for dof in self.dofs])
-
-    @property
     def search_bounds(self) -> np.array:
         """
         Returns a (n_dof, 2) array of bounds.
         """
         return np.array([dof._search_bounds for dof in self.dofs])
-
-    @property
-    def trust_lower_bounds(self) -> np.array:
-        return np.array([dof.trust_lower_bound for dof in self.dofs])
-
-    @property
-    def trust_upper_bounds(self) -> np.array:
-        return np.array([dof.trust_upper_bound for dof in self.dofs])
 
     @property
     def trust_bounds(self) -> np.array:
@@ -246,51 +220,35 @@ class DOFList(Sequence):
         """
         return np.array([dof._trust_bounds for dof in self.dofs])
 
-    @property
-    def readback(self) -> np.array:
-        return np.array([dof.readback for dof in self.dofs])
-
-    @property
-    def active(self):
-        return np.array([dof.active for dof in self.dofs])
-
-    @property
-    def read_only(self):
-        return np.array([dof.read_only for dof in self.dofs])
-
-    @property
-    def log(self):
-        return np.array([dof.log for dof in self.dofs])
-
     def add(self, dof):
         _validate_dofs([*self.dofs, dof])
         self.dofs.append(dof)
 
-    def _dof_active_mask(self, active=None):
-        return [_active == active if active is not None else True for _active in self.active]
+    @staticmethod
+    def _test_dof(dof, active=None, read_only=None, tag=None):
+        if active is not None:
+            if dof.active != active:
+                return False
+        if read_only is not None:
+            if dof.read_only != read_only:
+                return False
+        if tag is not None:
+            if not np.isin(np.atleast_1d(tag), dof.tags).any():
+                return False
+        return True
 
-    def _dof_read_only_mask(self, read_only=None):
-        return [_read_only == read_only if read_only is not None else True for _read_only in self.read_only]
+    def subset(self, active=None, read_only=None, tag=None):
+        return DOFList([dof for dof in self.dofs if self._test_dof(dof, active=active, read_only=read_only, tag=tag)])
 
-    def _dof_tags_mask(self, tags=[]):
-        return [np.isin(dof["tags"], tags).any() if tags else True for dof in self.dofs]
+    def activate(self, active=None, read_only=None, tag=None):
+        for dof in self.dofs:
+            if self._test_dof(dof, active=active, read_only=read_only, tag=tag):
+                dof.active = True
 
-    def _dof_mask(self, active=None, read_only=None, tags=[]):
-        return [
-            (k and m and t)
-            for k, m, t in zip(self._dof_read_only_mask(read_only), self._dof_active_mask(active), self._dof_tags_mask(tags))
-        ]
-
-    def subset(self, active=None, read_only=None, tags=[]):
-        return DOFList([dof for dof, m in zip(self.dofs, self._dof_mask(active, read_only, tags)) if m])
-
-    def activate(self, read_only=None, active=None, tags=[]):
-        for dof in self._subset_dofs(read_only, active, tags):
-            dof.active = True
-
-    def deactivate(self, read_only=None, active=None, tags=[]):
-        for dof in self._subset_dofs(read_only, active, tags):
-            dof.active = False
+    def deactivate(self, active=None, read_only=None, tag=None):
+        for dof in self.dofs:
+            if self._test_dof(dof, active=active, read_only=read_only, tag=tag):
+                dof.active = False
 
 
 class BrownianMotion(SignalRO):

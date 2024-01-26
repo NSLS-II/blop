@@ -77,22 +77,22 @@ class Objective:
     log: bool = False
     weight: float = 1.0
     active: bool = True
-    trust_bounds: Tuple[float, float] = None
+    trust_bounds: Tuple[float, float] or None = None
     min_noise: float = DEFAULT_MIN_NOISE_LEVEL
     max_noise: float = DEFAULT_MAX_NOISE_LEVEL
     units: str = None
     latent_groups: List[Tuple[str, ...]] = field(default_factory=list)
 
     def __post_init__(self):
-        if self.trust_bounds is None:
-            if self.log:
-                self.trust_bounds = (0, np.inf)
-            else:
-                self.trust_bounds = (-np.inf, np.inf)
-
         if type(self.target) is str:
             if self.target not in ["min", "max"]:
-                raise ValueError("'target' must be either 'min', 'max', or a number.")
+                raise ValueError("'target' must be either 'min', 'max', a number, or a tuple of numbers.")
+
+    @property
+    def _trust_bounds(self):
+        if self.trust_bounds is None:
+            return (0, np.inf) if self.log else (-np.inf, np.inf)
+        return self.trust_bounds
 
     @property
     def label(self):
@@ -219,3 +219,13 @@ class ObjectiveList(Sequence):
     def add(self, objective):
         _validate_objectives([*self.objectives, objective])
         self.objectives.append(objective)
+
+    @staticmethod
+    def _test_obj(obj, active=None):
+        if active is not None:
+            if obj.active != active:
+                return False
+        return True
+
+    def subset(self, active=None):
+        return ObjectiveList([obj for obj in self.objectives if self._test_obj(obj, active=active)])
