@@ -100,9 +100,6 @@ class DOF:
         else:
             raise ValueError("DOF() accepts exactly one of either a name or an ophyd device.")
 
-        if self.description is None:
-            self.description = self.name
-
         if not self.read_only:
             # check that the device has a put method
             if isinstance(self.device, SignalRO):
@@ -110,7 +107,7 @@ class DOF:
 
         if self.log:
             if not self.search_lower_bound > 0:
-                raise ValueError("Search bounds must be positive if log=True.")
+                raise ValueError("Search bounds must be strictly positive if log=True.")
 
         # all dof degrees of freedom are hinted
         self.device.kind = "hinted"

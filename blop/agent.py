@@ -223,6 +223,11 @@ class Agent:
                     f" (the agent is not initialized!)"
                 )
 
+            for obj in self.active_objs:
+                if obj.model_dofs != set(self.active_dofs.names):
+                    self._construct_model(obj)
+                    self._train_model(obj.model)
+
             if acq_func_type == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
@@ -329,11 +334,15 @@ class Agent:
             if train is None:
                 train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
 
-            if (len(obj.model.train_targets) >= 2) and train:
-                t0 = ttime.monotonic()
-                self._train_model(obj.model, hypers=(None if train else cached_hypers))
-                if self.verbose:
-                    print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
+            if len(obj.model.train_targets) >= 4:
+                if train:
+                    t0 = ttime.monotonic()
+                    self._train_model(obj.model)
+                    if self.verbose:
+                        print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
+
+                else:
+                    self._train_model(obj.model, hypers=cached_hypers)
 
     def learn(
         self,
@@ -583,6 +592,8 @@ class Agent:
             input_transform=self._model_input_transform,
             outcome_transform=outcome_transform,
         )
+
+        obj.model_dofs = set(self.active_dofs.names)  # if these change, retrain the model on self.ask()
 
         if trusted.all():
             obj.classifier_conjugate_model = None
@@ -891,3 +902,7 @@ class Agent:
     def plot_history(self, **kwargs):
         """Plot the improvement of the agent over time."""
         plotting._plot_history(self, **kwargs)
+
+    @property
+    def latent_dims(self):
+        return {obj.name: obj.model.covar_module.latent_transform for obj in self.active_objs}
