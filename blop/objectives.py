@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import List, Tuple, Union
 
@@ -146,18 +146,27 @@ class ObjectiveList(Sequence):
         self.objectives = objectives
 
     def __getattr__(self, attr):
+        # This is called if we can't find the attribute in the normal way.
+        if attr in OBJ_FIELD_TYPES.keys():
+            return np.array([getattr(obj, attr) for obj in self.objectives])
         if attr in self.names:
             return self.__getitem__(attr)
-        else:
-            raise AttributeError(f"No attribute named {attr}")
 
-    def __getitem__(self, i):
-        if type(i) is int:
-            return self.objectives[i]
-        elif type(i) is str:
-            return self.objectives[self.names.index(i)]
+        raise AttributeError(f"ObjectiveList object has no attribute named '{attr}'.")
+
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            if key not in self.names:
+                raise ValueError(f"ObjectiveList has no objective named {key}.")
+            return self.objectives[self.names.index(key)]
+        elif isinstance(key, Iterable):
+            return [self.objectives[_key] for _key in key]
+        elif isinstance(key, slice):
+            return [self.objectives[i] for i in range(*key.indices(len(self)))]
+        elif isinstance(key, int):
+            return self.objectives[key]
         else:
-            raise ValueError(f"Invalid index {i}. An ObjectiveList must be indexed by either an integer or a string.")
+            raise ValueError(f"Invalid index {key}.")
 
     def __len__(self):
         return len(self.objectives)
