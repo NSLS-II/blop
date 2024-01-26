@@ -16,7 +16,6 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
-from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.models.transforms.input import AffineInputTransform, ChainedInputTransform, Log10, Normalize
@@ -141,6 +140,14 @@ class Agent:
 
         self.n_last_trained = 0
 
+    @property
+    def active_dofs(self):
+        return self.dofs.subset(active=True)
+
+    @property
+    def active_objs(self):
+        return self.objectives.subset(active=True)
+
     def __iter__(self):
         for index in range(len(self)):
             yield self.dofs[index]
@@ -164,18 +171,16 @@ class Agent:
             How to sample the points. Must be one of 'quasi-random', 'random', or 'grid'.
         """
 
-        active_dofs = self.dofs.subset(active=True)
-
         if method == "quasi-random":
-            X = utils.normalized_sobol_sampler(n, d=len(active_dofs))
+            X = utils.normalized_sobol_sampler(n, d=len(self.active_dofs))
 
         elif method == "random":
-            X = torch.rand(size=(n, 1, len(active_dofs)))
+            X = torch.rand(size=(n, 1, len(self.active_dofs)))
 
         elif method == "grid":
-            n_side_if_settable = int(np.power(n, 1 / np.sum(~active_dofs.read_only)))
+            n_side_if_settable = int(np.power(n, 1 / np.sum(~self.active_dofs.read_only)))
             sides = [
-                torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in active_dofs
+                torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in self.active_dofs
             ]
             X = torch.cat([x.unsqueeze(-1) for x in torch.meshgrid(sides, indexing="ij")], dim=-1).unsqueeze(-2).double()
 
@@ -240,10 +245,8 @@ class Agent:
             # this includes both RO and non-RO DOFs
             candidates = candidates.numpy()
 
-        active_dofs_are_read_only = self.dofs.subset(active=True).read_only
-
-        acq_points = candidates[..., ~active_dofs_are_read_only]
-        read_only_values = candidates[..., active_dofs_are_read_only]
+        acq_points = candidates[..., ~self.active_dofs.read_only]
+        read_only_values = candidates[..., self.active_dofs.read_only]
 
         duration = 1e3 * (ttime.monotonic() - start_time)
 
@@ -315,7 +318,7 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        for obj in self.objectives:
+        for obj in self.active_objs:
             t0 = ttime.monotonic()
 
             cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
@@ -401,7 +404,7 @@ class Agent:
         self.viewer = napari.Viewer()
 
         if item in ["mean", "error"]:
-            for obj in self.objectives:
+            for obj in self.active_objs:
                 p = obj.model.posterior(test_grid)
 
                 if item == "mean":
@@ -456,7 +459,7 @@ class Agent:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).names)
-            for obj in self.objectives:
+            for obj in self.active_objs:
                 products.loc[:, obj.name] = np.nan
 
         if not len(acquisition_inputs) == len(products):
@@ -475,7 +478,7 @@ class Agent:
         """Reset the agent."""
         self.table = pd.DataFrame()
 
-        for obj in self.objectives:
+        for obj in self.active_objs:
             if hasattr(obj, "model"):
                 del obj.model
 
@@ -507,23 +510,19 @@ class Agent:
     @property
     def model(self):
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
-        return ModelListGP(*[obj.model for obj in self.objectives]) if len(self.objectives) > 1 else self.objectives[0].model
+        return (
+            ModelListGP(*[obj.model for obj in self.active_objs]) if len(self.active_objs) > 1 else self.active_objs[0].model
+        )
 
     def posterior(self, x):
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
         return self.model.posterior(torch.tensor(x))
 
     @property
-    def objective_weights_torch(self):
-        return torch.tensor(self.objectives.weights, dtype=torch.double)
-
-    @property
-    def scalarizing_transform(self):
-        return ScalarizedPosteriorTransform(weights=self.objective_weights_torch, offset=0)
-
-    @property
     def targeting_transform(self):
-        return TargetingPosteriorTransform(weights=self.objective_weights_torch, targets=self.objectives.targets)
+        return TargetingPosteriorTransform(
+            weights=torch.tensor(self.active_objs.weights, dtype=torch.double), targets=self.active_objs.targets
+        )
 
     @property
     def scalarized_objectives(self):
@@ -606,13 +605,13 @@ class Agent:
 
     def _construct_all_models(self):
         """Construct a model for each objective."""
-        for obj in self.objectives:
+        for obj in self.active_objs:
             self._construct_model(obj)
 
     def _train_all_models(self, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
         t0 = ttime.monotonic()
-        for obj in self.objectives:
+        for obj in self.active_objs:
             self._train_model(obj.model)
             if obj.classifier_conjugate_model is not None:
                 self._train_model(obj.classifier_conjugate_model)
@@ -640,7 +639,7 @@ class Agent:
         obj = self.objectives[obj_index]
 
         latent_group_index = {}
-        for dof in self.dofs.subset(active=True):
+        for dof in self.active_dofs:
             latent_group_index[dof.name] = dof.name
             for group_index, latent_group in enumerate(obj.latent_groups):
                 if dof.name in latent_group:
@@ -651,11 +650,11 @@ class Agent:
 
     @property
     def _sample_bounds(self):
-        return torch.tensor(self.dofs.subset(active=True).search_bounds, dtype=torch.double).T
+        return torch.tensor(self.active_dofs.search_bounds, dtype=torch.double).T
 
     @property
     def _sample_input_transform(self):
-        tf1 = Log10(indices=list(np.where(self.dofs.subset(active=True).log)[0]))
+        tf1 = Log10(indices=list(np.where(self.active_dofs.log)[0]))
 
         transformed_sample_bounds = tf1.transform(self._sample_bounds)
 
@@ -681,10 +680,8 @@ class Agent:
         Read-only: constrain to the readback value
         """
 
-        active_dofs = self.dofs.subset(active=True)
-
-        tf1 = Log10(indices=list(np.where(active_dofs.log)[0]))
-        tf2 = Normalize(d=len(active_dofs))
+        tf1 = Log10(indices=list(np.where(self.active_dofs.log)[0]))
+        tf2 = Normalize(d=len(self.active_dofs))
 
         return ChainedInputTransform(tf1=tf1, tf2=tf2)
 
@@ -723,7 +720,7 @@ class Agent:
             raise ValueError("Must supply either 'last' or 'index'.")
 
     def _set_hypers(self, hypers):
-        for obj in self.objectives:
+        for obj in self.active_objs:
             obj.model.load_state_dict(hypers[obj.name])
         self.classifier.load_state_dict(hypers["classifier"])
 
@@ -731,7 +728,7 @@ class Agent:
     def classifier(self):
         def f(x):
             p = torch.ones(x.shape[:-1])
-            for obj in self.objectives:
+            for obj in self.active_objs:
                 if obj.classifier_conjugate_model is not None:
                     p *= obj.classifier(x)
             return p
@@ -744,7 +741,7 @@ class Agent:
         hypers = {"classifier": {}}
         for key, value in self.classifier.state_dict().items():
             hypers["classifier"][key] = value
-        for obj in self.objectives:
+        for obj in self.active_objs:
             hypers[obj.name] = {}
             for key, value in obj.model.state_dict().items():
                 hypers[obj.name][key] = value
@@ -793,7 +790,7 @@ class Agent:
         inputs = self.table.loc[:, dof.name].values.copy()
 
         # check that inputs values are inside acceptable values
-        valid = (inputs >= dof.trust_lower_bound) & (inputs <= dof.trust_upper_bound)
+        valid = (inputs >= dof._trust_bounds[0]) & (inputs <= dof._trust_bounds[1])
         inputs = np.where(valid, inputs, np.nan)
 
         return torch.tensor(inputs, dtype=torch.double).unsqueeze(-1)
@@ -808,7 +805,7 @@ class Agent:
         targets = self.table.loc[:, obj.name].values.copy()
 
         # check that targets values are inside acceptable values
-        valid = (targets >= obj.trust_lower_bound) & (targets <= obj.trust_upper_bound)
+        valid = (targets >= obj._trust_bounds[0]) & (targets <= obj._trust_bounds[1])
         targets = np.where(valid, targets, np.nan)
 
         # transform if needed
