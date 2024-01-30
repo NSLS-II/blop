@@ -52,7 +52,7 @@ class DOF:
     search_bounds: tuple
         A tuple of the lower and upper limit of the DOF for the agent to search.
     trust_bounds: tuple, optional
-        The agent will reject all data where the DOF value is outside the trust bounds. Much be larger than search bounds.
+        The agent will reject all data where the DOF value is outside the trust bounds. Must be larger than search bounds.
     read_only: bool
         If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
         device is read-only.
