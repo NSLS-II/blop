@@ -2,6 +2,11 @@
 Release History
 ===============
 
+v0.6.0 (2024-01-30)
+-------------------
+- More sophisticated targeting capabilities for different objectives.
+- More user-friendly agent controls.
+
 v0.5.0 (2023-11-09)
 -------------------
 - Added hypervolume acquisition and constraints.

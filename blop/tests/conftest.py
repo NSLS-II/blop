@@ -8,8 +8,8 @@ from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
 
-from blop.bayesian import DOF, Agent, Objective
-from blop.bayesian.dofs import BrownianMotion
+from blop import DOF, Agent, Objective
+from blop.dofs import BrownianMotion
 from blop.utils import functions
 
 
@@ -51,8 +51,8 @@ def agent(db):
     """
 
     dofs = [
-        DOF(name="x1", limits=(-8.0, 8.0)),
-        DOF(name="x2", limits=(-8.0, 8.0)),
+        DOF(name="x1", search_bounds=(-8.0, 8.0)),
+        DOF(name="x2", search_bounds=(-8.0, 8.0)),
     ]
 
     objectives = [Objective(name="himmelblau", target="min")]
@@ -70,7 +70,7 @@ def agent(db):
 
 
 @pytest.fixture(scope="function")
-def multi_agent(db):
+def agent_with_multiple_objs(db):
     """
     A simple agent minimizing two Himmelblau's functions
     """
@@ -85,8 +85,8 @@ def multi_agent(db):
         return products
 
     dofs = [
-        DOF(name="x1", limits=(-5.0, 5.0)),
-        DOF(name="x2", limits=(-5.0, 5.0)),
+        DOF(name="x1", search_bounds=(-5.0, 5.0)),
+        DOF(name="x2", search_bounds=(-5.0, 5.0)),
     ]
 
     objectives = [Objective(name="obj1", target="min"), Objective(name="obj2", target="min")]
@@ -110,11 +110,11 @@ def agent_with_passive_dofs(db):
     """
 
     dofs = [
-        DOF(name="x1", limits=(-5.0, 5.0)),
-        DOF(name="x2", limits=(-5.0, 5.0)),
-        DOF(name="x3", limits=(-5.0, 5.0), active=False),
-        DOF(BrownianMotion(name="brownian1"), read_only=True),
-        DOF(BrownianMotion(name="brownian2"), read_only=True, active=False),
+        DOF(name="x1", search_bounds=(-5.0, 5.0)),
+        DOF(name="x2", search_bounds=(-5.0, 5.0)),
+        DOF(name="x3", search_bounds=(-5.0, 5.0), active=False),
+        DOF(device=BrownianMotion(name="brownian1"), read_only=True),
+        DOF(device=BrownianMotion(name="brownian2"), read_only=True, active=False),
     ]
 
     objectives = [
