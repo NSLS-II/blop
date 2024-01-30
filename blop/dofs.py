@@ -85,6 +85,10 @@ class DOF:
                 raise ValueError("You must specify search_bounds if the device is not read-only.")
         else:
             self.search_bounds = tuple(self.search_bounds)
+            if len(self.search_bounds) != 2:
+                raise ValueError("'search_bounds' must be a 2-tuple of floats.")
+            if self.search_bounds[0] > self.search_bounds[1]:
+                raise ValueError("The lower search bound must be less than the upper search bound.")
 
         if self.trust_bounds is not None:
             self.trust_bounds = tuple(self.trust_bounds)
@@ -106,7 +110,7 @@ class DOF:
                 raise ValueError("You must specify read_only=True for a read-only device.")
 
         if self.log:
-            if not self.search_lower_bound > 0:
+            if not self.search_bounds[0] > 0:
                 raise ValueError("Search bounds must be strictly positive if log=True.")
 
         # all dof degrees of freedom are hinted

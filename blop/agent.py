@@ -596,15 +596,15 @@ class Agent:
         obj.model_dofs = set(self.active_dofs.names)  # if these change, retrain the model on self.ask()
 
         if trusted.all():
-            obj.classifier_conjugate_model = None
-            obj.classifier = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
+            obj.validity_conjugate_model = None
+            obj.validity_constraint = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
 
         else:
             dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
                 trusted.long(), learn_additional_noise=True
             )
 
-            obj.classifier_conjugate_model = models.LatentDirichletClassifier(
+            obj.validity_conjugate_model = models.LatentDirichletModel(
                 train_inputs=train_inputs,
                 train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
                 skew_dims=skew_dims,
@@ -612,7 +612,7 @@ class Agent:
                 input_transform=self._model_input_transform,
             )
 
-            obj.classifier = GenericDeterministicModel(f=lambda x: obj.classifier_conjugate_model.probabilities(x)[..., -1])
+            obj.validity_ = GenericDeterministicModel(f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1])
 
     def _construct_all_models(self):
         """Construct a model for each objective."""
@@ -624,8 +624,8 @@ class Agent:
         t0 = ttime.monotonic()
         for obj in self.active_objs:
             self._train_model(obj.model)
-            if obj.classifier_conjugate_model is not None:
-                self._train_model(obj.classifier_conjugate_model)
+            if obj.validity_conjugate_model is not None:
+                self._train_model(obj.validity_conjugate_model)
 
         if self.verbose:
             print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
@@ -733,15 +733,19 @@ class Agent:
     def _set_hypers(self, hypers):
         for obj in self.active_objs:
             obj.model.load_state_dict(hypers[obj.name])
-        self.classifier.load_state_dict(hypers["classifier"])
+        self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     @property
-    def classifier(self):
+    def constraint(self):
         def f(x):
             p = torch.ones(x.shape[:-1])
             for obj in self.active_objs:
-                if obj.classifier_conjugate_model is not None:
-                    p *= obj.classifier(x)
+                # if the targeting constraint is non-trivial
+                if obj.use_as_constraint:
+                    p *= obj.targeting_constraint(x)
+                # if the validity constaint is non-trivial
+                if obj.validity_conjugate_model is not None:
+                    p *= obj.validity_constraint(x)
             return p
 
         return GenericDeterministicModel(f=f)
@@ -749,9 +753,9 @@ class Agent:
     @property
     def hypers(self):
         """Returns a dict of all the hyperparameters in all the agent's models."""
-        hypers = {"classifier": {}}
-        for key, value in self.classifier.state_dict().items():
-            hypers["classifier"][key] = value
+        hypers = {"validity_constraint": {}}
+        for key, value in self.validity_constraint.state_dict().items():
+            hypers["validity_constraint"][key] = value
         for obj in self.active_objs:
             hypers[obj.name] = {}
             for key, value in obj.model.state_dict().items():

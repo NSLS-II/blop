@@ -286,7 +286,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
-    constraint = agent.classifier(test_inputs)[..., 0]
+    constraint = agent.constraint(test_inputs)[..., 0]
 
     agent.valid_ax.scatter(x_values, agent.all_objectives_valid, s=size)
     agent.valid_ax.plot(test_inputs.squeeze(-2), constraint, lw=lw)
@@ -308,7 +308,7 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    constraint = agent.classifier(test_inputs)[..., 0].squeeze().numpy()
+    constraint = agent.constraint(test_inputs)[..., 0].squeeze().numpy()
 
     if gridded:
         _ = agent.valid_axes[1].pcolormesh(

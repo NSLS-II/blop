@@ -23,7 +23,7 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
         self.trained = False
 
 
-class LatentDirichletClassifier(LatentGP):
+class LatentDirichletModel(LatentGP):
     def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
         super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
 
