@@ -4,6 +4,8 @@ from typing import List, Tuple, Union
 
 import numpy as np
 import pandas as pd
+import torch
+from torch.special import erf
 
 DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
@@ -84,9 +86,15 @@ class Objective:
     latent_groups: List[Tuple[str, ...]] = field(default_factory=list)
 
     def __post_init__(self):
-        if type(self.target) is str:
+        if isinstance(self.target, str):
             if self.target not in ["min", "max"]:
                 raise ValueError("'target' must be either 'min', 'max', a number, or a tuple of numbers.")
+
+        if isinstance(self.target, float):
+            if self.log and not self.target > 0:
+                return ValueError("'target' must strictly positive if log=True.")
+
+        self.use_as_constraint = True if isinstance(self.target, tuple) else False
 
     @property
     def _trust_bounds(self):
@@ -95,7 +103,7 @@ class Objective:
         return self.trust_bounds
 
     @property
-    def label(self):
+    def label(self) -> str:
         return f"{'log ' if self.log else ''}{self.description}"
 
     @property
@@ -108,12 +116,6 @@ class Objective:
                     value = (0, np.inf) if self.log else (-np.inf, np.inf)
             series[attr] = value
         return series
-
-    def __repr__(self):
-        return self.summary.__repr__()
-
-    def __repr_html__(self):
-        return self.summary.__repr_html__()
 
     @property
     def trust_lower_bound(self):
@@ -128,16 +130,27 @@ class Objective:
         return float(self.trust_bounds[1])
 
     @property
-    def noise(self):
+    def noise(self) -> float:
         return self.model.likelihood.noise.item() if hasattr(self, "model") else None
 
     @property
-    def snr(self):
+    def snr(self) -> float:
         return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if hasattr(self, "model") else None
 
     @property
-    def n(self):
+    def n(self) -> int:
         return self.model.train_targets.shape[0] if hasattr(self, "model") else 0
+
+    def targeting_constraint(self, x: torch.Tensor) -> torch.Tensor:
+        if not isinstance(self.target, tuple):
+            return None
+
+        a, b = self.target
+        p = self.model.posterior(x)
+        m = p.mean
+        s = p.variance.sqrt()
+
+        return 0.5 * (erf((b - m) / (np.sqrt(2) * s)) - erf((a - m) / (np.sqrt(2) * s)))[..., -1]
 
 
 class ObjectiveList(Sequence):
