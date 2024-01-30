@@ -584,7 +584,10 @@ class Agent:
         train_inputs = self.train_inputs(active=True)
         train_targets = self.train_targets(obj.name)
 
-        trusted = ~(torch.isnan(train_inputs).any(axis=1) | torch.isnan(train_targets).any(axis=1))
+        inputs_are_trusted = ~torch.isnan(train_inputs).any(axis=1)
+        targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
+
+        trusted = inputs_are_trusted & targets_are_trusted
 
         obj.model = models.LatentGP(
             train_inputs=train_inputs[trusted],
@@ -607,8 +610,8 @@ class Agent:
             )
 
             obj.validity_conjugate_model = models.LatentDirichletModel(
-                train_inputs=train_inputs,
-                train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2).double(),
+                train_inputs=train_inputs[inputs_are_trusted],
+                train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2)[inputs_are_trusted].double(),
                 skew_dims=skew_dims,
                 likelihood=dirichlet_likelihood,
                 input_transform=self._model_input_transform,
