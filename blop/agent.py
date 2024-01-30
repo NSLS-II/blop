@@ -612,7 +612,9 @@ class Agent:
                 input_transform=self._model_input_transform,
             )
 
-            obj.validity_ = GenericDeterministicModel(f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1])
+            obj.validity_constraint = GenericDeterministicModel(
+                f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
+            )
 
     def _construct_all_models(self):
         """Construct a model for each objective."""
@@ -751,15 +753,18 @@ class Agent:
         return GenericDeterministicModel(f=f)
 
     @property
-    def hypers(self):
-        """Returns a dict of all the hyperparameters in all the agent's models."""
-        hypers = {"validity_constraint": {}}
-        for key, value in self.validity_constraint.state_dict().items():
-            hypers["validity_constraint"][key] = value
-        for obj in self.active_objs:
-            hypers[obj.name] = {}
+    def hypers(self) -> dict:
+        """Returns a dict of all the hyperparameters for each model in each objective."""
+        hypers = {}
+        for obj in self.objectives:
+            hypers[obj.name] = {"model": {}, "validity_conjugate_model": {}}
+
             for key, value in obj.model.state_dict().items():
-                hypers[obj.name][key] = value
+                hypers[obj.name]["model"][key] = value
+
+            if obj.validity_conjugate_model is not None:
+                for key, value in obj.validity_conjugate_model.state_dict().items():
+                    hypers[obj.name]["validity_conjugate_model"][key] = value
 
         return hypers
 
@@ -767,20 +772,31 @@ class Agent:
         """Save the agent's fitted hyperparameters to a given filepath."""
         hypers = self.hypers
         with h5py.File(filepath, "w") as f:
-            for model_key in hypers.keys():
-                f.create_group(model_key)
-                for param_key, param_value in hypers[model_key].items():
-                    f[model_key].create_dataset(param_key, data=param_value)
+            for obj_name in hypers.keys():
+                f.create_group(obj_name)
+                f[obj_name].create_group("model")
+                f[obj_name].create_group("validity_conjugate_model")
+
+                for key, value in hypers[obj_name]["model"].items():
+                    f[obj_name]["model"].create_dataset(key, data=value)
+
+                for key, value in hypers[obj_name]["validity_conjugate_model"].items():
+                    f[obj_name]["validity_conjugate_model"].create_dataset(key, data=value)
 
     @staticmethod
-    def load_hypers(filepath):
+    def load_hypers(filepath) -> dict:
         """Load hyperparameters from a file."""
         hypers = {}
         with h5py.File(filepath, "r") as f:
-            for model_key in f.keys():
-                hypers[model_key] = OrderedDict()
-                for param_key, param_value in f[model_key].items():
-                    hypers[model_key][param_key] = torch.tensor(np.atleast_1d(param_value[()]))
+            for obj_name in f.keys():
+                hypers[obj_name] = {"model": OrderedDict(), "validity_conjugate_model": OrderedDict()}
+
+                for key, value in f[obj_name]["model"].items():
+                    hypers[obj_name]["model"][key] = torch.tensor(np.atleast_1d(value[()]))
+
+                for key, value in f[obj_name]["validity_conjugate_model"].items():
+                    hypers[obj_name]["validity_conjugate_model"][key] = torch.tensor(np.atleast_1d(value[()]))
+
         return hypers
 
     @property

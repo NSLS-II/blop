@@ -1,17 +1,13 @@
 from typing import Union
 
 import botorch
-import numpy as np
-import torch
 from botorch.acquisition.objective import PosteriorTransform
 from botorch.posteriors.gpytorch import GPyTorchPosterior
 from botorch.posteriors.posterior_list import PosteriorList
-from torch.special import erf
-
-sqrt2 = np.sqrt(2)
+from torch import Tensor
 
 
-def targeting_sample_transform(y: torch.Tensor, target) -> torch.Tensor:
+def targeting_transform(y, target):
     if target == "max":
         return y
     if target == "min":
@@ -19,28 +15,7 @@ def targeting_sample_transform(y: torch.Tensor, target) -> torch.Tensor:
     elif not isinstance(target, tuple):
         return -(y - target).abs()
     else:
-        return y * 0  # torch.where((y > target[0]) & (y < target[1]), 0, -np.inf)
-
-
-def targeting_mean_transform(mean: torch.Tensor, variance: torch.Tensor, target) -> torch.Tensor:
-    if target == "max":
-        return mean
-    if target == "min":
-        return -mean
-    elif not isinstance(target, tuple):
-        return -(mean - target).abs()
-    else:
-        s = variance.sqrt()
-        return torch.log(0.5 * (erf((target[1] - mean) / (sqrt2 * s)) - erf((target[0] - mean) / (sqrt2 * s))))
-    # else:
-    #    return -((mean - 0.5 * (target[1] + target[0])).abs() - 0.5 * (target[1] - target[0])).clamp(min=0)
-
-
-def targeting_variance_transform(mean: torch.Tensor, variance: torch.Tensor, target) -> torch.Tensor:
-    if isinstance(target, tuple):
-        return 0
-    else:
-        return variance
+        return -((y - 0.5 * (target[1] + target[0])).abs() - 0.5 * (target[1] - target[0])).clamp(min=0)
 
 
 class TargetingPosteriorTransform(PosteriorTransform):
@@ -48,10 +23,10 @@ class TargetingPosteriorTransform(PosteriorTransform):
 
     scalarize: bool = True
 
-    def __init__(self, weights: torch.Tensor, targets: torch.Tensor) -> None:
+    def __init__(self, weights: Tensor, targets: Tensor) -> None:
         r"""
         Args:
-            weights: A one-dimensional torch.Tensor with `m` elements representing the
+            weights: A one-dimensional tensor with `m` elements representing the
                 linear weights on the outputs.
             offset: An offset to be added to posterior mean.
         """
@@ -61,27 +36,25 @@ class TargetingPosteriorTransform(PosteriorTransform):
 
     def sample_transform(self, y):
         for i, target in enumerate(self.targets):
-            y[..., i] = targeting_sample_transform(y[..., i], target)
+            y[..., i] = targeting_transform(y[..., i], target)
         return y @ self.weights.unsqueeze(-1)
 
     def mean_transform(self, mean, var):
         for i, target in enumerate(self.targets):
-            mean[..., i] = targeting_mean_transform(mean[..., i], var[..., i], target)
+            mean[..., i] = targeting_transform(mean[..., i], target)
         return mean @ self.weights.unsqueeze(-1)
 
     def variance_transform(self, mean, var):
-        for i, target in enumerate(self.targets):
-            mean[..., i] = targeting_variance_transform(mean[..., i], var[..., i], target)
-        return mean @ self.weights.unsqueeze(-1)
+        return var @ self.weights.unsqueeze(-1)
 
-    def evaluate(self, Y: torch.Tensor) -> torch.Tensor:
+    def evaluate(self, Y: Tensor) -> Tensor:
         r"""Evaluate the transform on a set of outcomes.
 
         Args:
-            Y: A `batch_shape x q x m`-dim torch.Tensor of outcomes.
+            Y: A `batch_shape x q x m`-dim tensor of outcomes.
 
         Returns:
-            A `batch_shape x q`-dim torch.Tensor of transformed outcomes.
+            A `batch_shape x q`-dim tensor of transformed outcomes.
         """
         return self.sample_transform(Y)
 
