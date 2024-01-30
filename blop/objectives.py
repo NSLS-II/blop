@@ -26,8 +26,6 @@ OBJ_FIELD_TYPES = {
     "latent_groups": "object",
 }
 
-OBJ_SUMMARY_STYLE = {"min_noise": "{:.2E}", "max_noise": "{:.2E}"}
-
 
 class DuplicateNameError(ValueError):
     ...
