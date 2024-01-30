@@ -4,6 +4,7 @@ databroker
 gpytorch
 h5py
 matplotlib
+napari
 numpy
 ophyd
 ortools

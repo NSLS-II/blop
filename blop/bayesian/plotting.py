@@ -31,7 +31,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
-        test_inputs = agent.test_inputs_grid()
+        test_inputs = agent.sample(method="grid")
         test_x = test_inputs[..., 0].detach().numpy()
 
         test_posterior = obj.model.posterior(test_inputs)
@@ -50,7 +50,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
                 alpha=0.5**z,
             )
 
-        agent.obj_axes[obj_index].set_xlim(*x_dof.limits)
+        agent.obj_axes[obj_index].set_xlim(*x_dof.search_bounds)
         agent.obj_axes[obj_index].set_xlabel(x_dof.label)
         agent.obj_axes[obj_index].set_ylabel(obj.label)
 
@@ -67,10 +67,10 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(agent.objectives),
-        3,
-        figsize=(10, 4 * len(agent.objectives)),
+        4,
+        figsize=(12, 4 * len(agent.objectives)),
         constrained_layout=True,
-        dpi=256,
+        dpi=160,
     )
 
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
@@ -82,7 +82,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
 
     # test_inputs has shape (*input_shape, 1, n_active_dofs)
     # test_x and test_y should be squeezeable
-    test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
+    test_inputs = agent.sample(method="grid") if gridded else agent.sample(n=1024)
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
@@ -144,7 +144,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
         obj_cbar.set_label(obj.label)
         err_cbar.set_label(f"{obj.label} error")
 
-    col_names = ["samples", "posterior mean", "posterior std. dev."]
+    col_names = ["samples", "posterior mean", "posterior std. dev.", "fitness"]
 
     pad = 5
 
@@ -179,8 +179,12 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     for ax in agent.obj_axes.ravel():
         ax.set_xlabel(x_dof.label)
         ax.set_ylabel(y_dof.label)
-        ax.set_xlim(*x_dof.limits)
-        ax.set_ylim(*y_dof.limits)
+        ax.set_xlim(*x_dof.search_bounds)
+        ax.set_ylim(*y_dof.search_bounds)
+        if x_dof.log:
+            ax.set_xscale("log")
+        if y_dof.log:
+            ax.set_yscale("log")
 
 
 def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
@@ -195,7 +199,7 @@ def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
     agent.acq_axes = np.atleast_1d(agent.acq_axes)
     x_dof = agent.dofs.subset(active=True)[0]
 
-    test_inputs = agent.test_inputs_grid()
+    test_inputs = agent.sample(method="grid")
 
     for iacq_func, acq_func_identifier in enumerate(acq_funcs):
         color = DEFAULT_COLOR_LIST[iacq_func]
@@ -205,7 +209,7 @@ def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
 
         agent.acq_axes[iacq_func].plot(test_inputs.squeeze(-2), test_acqf, lw=lw, color=color)
 
-        agent.acq_axes[iacq_func].set_xlim(*x_dof.limits)
+        agent.acq_axes[iacq_func].set_xlim(*x_dof.search_bounds)
         agent.acq_axes[iacq_func].set_xlabel(x_dof.label)
         agent.acq_axes[iacq_func].set_ylabel(acq_func_meta["name"])
 
@@ -232,7 +236,7 @@ def _plot_acqf_many_dofs(
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
     # test_inputs has shape (..., 1, n_active_dofs)
-    test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
+    test_inputs = agent.sample(n=1024, method="grid") if gridded else agent.sample(n=1024)
     *test_dim, input_dim = test_inputs.shape
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
@@ -267,8 +271,12 @@ def _plot_acqf_many_dofs(
     for ax in agent.acq_axes.ravel():
         ax.set_xlabel(x_dof.label)
         ax.set_ylabel(y_dof.label)
-        ax.set_xlim(*x_dof.limits)
-        ax.set_ylim(*y_dof.limits)
+        ax.set_xlim(*x_dof.search_bounds)
+        ax.set_ylim(*y_dof.search_bounds)
+        if x_dof.log:
+            ax.set_xscale("log")
+        if y_dof.log:
+            ax.set_yscale("log")
 
 
 def _plot_valid_one_dof(agent, size=16, lw=1e0):
@@ -277,16 +285,16 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     x_dof = agent.dofs.subset(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
-    test_inputs = agent.test_inputs_grid()
+    test_inputs = agent.sample(method="grid")
     constraint = agent.constraint(test_inputs)[..., 0]
 
     agent.valid_ax.scatter(x_values, agent.all_objectives_valid, s=size)
     agent.valid_ax.plot(test_inputs.squeeze(-2), constraint, lw=lw)
-    agent.valid_ax.set_xlim(*x_dof.limits)
+    agent.valid_ax.set_xlim(*x_dof.search_bounds)
 
 
 def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
-    agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4 * len(agent.objectives)), constrained_layout=True)
+    agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4), constrained_layout=True)
 
     plottable_dofs = agent.dofs.subset(active=True, read_only=False)
 
@@ -296,7 +304,7 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
     # test_inputs has shape (..., 1, n_active_dofs)
-    test_inputs = agent.test_inputs_grid() if gridded else agent.test_inputs(n=1024)
+    test_inputs = agent.sample(method="grid") if gridded else agent.sample(n=1024)
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
@@ -324,11 +332,15 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
             vmax=0,
         )
 
-    for ax in agent.acq_axes.ravel():
+    for ax in agent.valid_axes.ravel():
         ax.set_xlabel(x_dof.label)
         ax.set_ylabel(y_dof.label)
-        ax.set_xlim(*x_dof.limits)
-        ax.set_ylim(*y_dof.limits)
+        ax.set_xlim(*x_dof.search_bounds)
+        ax.set_ylim(*y_dof.search_bounds)
+        if x_dof.log:
+            ax.set_xscale("log")
+        if y_dof.log:
+            ax.set_yscale("log")
 
 
 def _plot_history(agent, x_key="index", show_all_objs=False):
