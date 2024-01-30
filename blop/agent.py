@@ -287,6 +287,7 @@ class Agent:
         y: Optional[Mapping] = {},
         metadata: Optional[Mapping] = {},
         append: bool = True,
+        update_models: bool = True,
         train: bool = None,
     ):
         """
@@ -323,26 +324,27 @@ class Agent:
         self.table = pd.concat([self.table, new_table]) if append else new_table
         self.table.index = np.arange(len(self.table))
 
-        for obj in self.active_objs:
-            t0 = ttime.monotonic()
+        if update_models:
+            for obj in self.active_objs:
+                t0 = ttime.monotonic()
 
-            cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
-            n_before_tell = obj.n
-            self._construct_model(obj)
-            n_after_tell = obj.n
+                cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
+                n_before_tell = obj.n
+                self._construct_model(obj)
+                n_after_tell = obj.n
 
-            if train is None:
-                train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
+                if train is None:
+                    train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
 
-            if len(obj.model.train_targets) >= 4:
-                if train:
-                    t0 = ttime.monotonic()
-                    self._train_model(obj.model)
-                    if self.verbose:
-                        print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
+                if len(obj.model.train_targets) >= 4:
+                    if train:
+                        t0 = ttime.monotonic()
+                        self._train_model(obj.model)
+                        if self.verbose:
+                            print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
 
-                else:
-                    self._train_model(obj.model, hypers=cached_hypers)
+                    else:
+                        self._train_model(obj.model, hypers=cached_hypers)
 
     def learn(
         self,
