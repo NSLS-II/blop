@@ -1,111 +1,33 @@
 Degrees of freedom (DOFs)
 +++++++++++++++++++++++++
 
-A degree of freedom is how
+A degree of freedom is a variable that affects our optimization objective. We can define a simple DOF as
 
 .. code-block:: python
 
     from blop import DOF
 
-    dof = DOF(name="x1", search_bounds=(lower_limit, upper_limit))
+    dof = DOF(name="x1", description="my first DOF", search_bounds=(lower, upper))
 
-
-
-
-
-Degrees of freedom
-++++++++++++++++++
-
-Degrees of freedom (DOFs) are passed as an iterable of dicts, each containing at least the device and set of limits.
+This will instantiate a bunch of stuff under the hood, so that our agent knows how to move things and where to search.
+Typically, this will correspond to a real, physical device available in Python. In that case, we can pass the DOF an ophyd device in place of a name
 
 .. code-block:: python
 
-    my_dofs = [
-        {"device": some_motor, "limits": (lower_limit, upper_limit)},
-        {"device": another_motor, "limits": (lower_limit, upper_limit)},
-    ]
+    from blop import DOF
 
-Here ``some_motor`` and ``another_motor`` are ``ophyd`` objects.
+    dof = DOF(device=my_ophyd_device, description="a real piece of hardware", search_bounds=(lower, upper))
 
+In this case, the agent will control the device as it sees fit, moving it between the search bounds.
 
-
-Tasks
-+++++
-
-Tasks are what we want our agent to try to optimize (either maximize or minimize). We can pass as many as we'd like:
+Sometimes, a DOF may be something we can't directly control (e.g. a changing synchrotron current or a changing sample temperature) but want our agent to be aware of.
+In this case, we can define a read-only DOF as
 
 .. code-block:: python
 
-    my_tasks = [
-        {"key": "something_to_maximize", "kind": "maximize"}
-        {"key": "something_to_minimize", "kind": "minimize"}
-        ]
+    from blop import DOF
 
+    dof = DOF(device=a_read_only_ophyd_device, description="a thermometer or something", read_only=True, trust_bounds=(lower, upper))
 
-
-Digestion
-+++++++++
-
-The digestion function is how we go from what is spit out by the acquisition to the actual values of the tasks.
-
-.. code-block:: python
-
-    def my_digestion_function(db, uid):
-
-        products = db[uid].table(fill=True) # a pandas DataFrame
-
-        # for each entry, do some
-        for index, entry in products.iterrows():
-
-            raw_output_1 = entry.raw_output_1
-            raw_output_2 = entry.raw_output_2
-
-            entry.loc[index, "thing_to_maximize"] = some_fitness_function(raw_output_1, raw_output_2)
-
-        return products
-
-
-Detectors
-+++++++++
-
-Detectors are triggered for each input.
-
-.. code-block:: python
-
-    my_dets = [some_detector, some_other_detector]
-
-
-
-Acquisition
-+++++++++++
-
-We run this plan for each set of DOF inputs. By default, this just moves the active DOFs to the desired points and triggers the supplied detectors.
-
-
-
-
-Building the agent
-++++++++++++++++++
-
-Combining these with a databroker instance will construct an agent.
-
-.. code-block:: python
-
-    import blop
-
-    my_agent = blop.bayesian.Agent(
-        dofs=my_dofs,
-        dets=my_dets,
-        tasks=my_tasks,
-        digestion=my_digestion_function,
-        db=db, # a databroker instance
-    )
-
-    RE(agent.initialize("qr", n_init=24))
-
-
-In the example below, the agent will loop over the following steps in each iteration of learning.
-
-#. Find the most interesting point (or points) to sample, and move the degrees of freedom there.
-#. For each point, run an acquisition plan (e.g., trigger and read the detectors).
-#. Digest the results of the acquisition to find the value of the task.
+and the agent will use the received values to model its objective, but won't try to move it.
+We can also pass a set of ``trust_bounds``, so that our agent will ignore experiments where the DOF value jumps outside of the interval.

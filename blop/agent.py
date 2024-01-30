@@ -236,7 +236,7 @@ class Agent:
             )
 
             NUM_RESTARTS = 8
-            RAW_SAMPLES = 1024
+            RAW_SAMPLES = 256
 
             candidates, acqf_obj = botorch.optim.optimize_acqf(
                 acq_function=acq_func,
@@ -737,20 +737,16 @@ class Agent:
             obj.model.load_state_dict(hypers[obj.name])
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
-    @property
-    def constraint(self):
-        def f(x):
-            p = torch.ones(x.shape[:-1])
-            for obj in self.active_objs:
-                # if the targeting constraint is non-trivial
-                if obj.use_as_constraint:
-                    p *= obj.targeting_constraint(x)
-                # if the validity constaint is non-trivial
-                if obj.validity_conjugate_model is not None:
-                    p *= obj.validity_constraint(x)
-            return p
-
-        return GenericDeterministicModel(f=f)
+    def constraint(self, x):
+        p = torch.ones(x.shape[:-1])
+        for obj in self.active_objs:
+            # if the targeting constraint is non-trivial
+            if obj.use_as_constraint:
+                p *= obj.targeting_constraint(x)
+            # if the validity constaint is non-trivial
+            if obj.validity_conjugate_model is not None:
+                p *= obj.validity_constraint(x)
+        return p
 
     @property
     def hypers(self) -> dict:
@@ -924,5 +920,5 @@ class Agent:
         plotting._plot_history(self, **kwargs)
 
     @property
-    def latent_dims(self):
+    def latent_transforms(self):
         return {obj.name: obj.model.covar_module.latent_transform for obj in self.active_objs}

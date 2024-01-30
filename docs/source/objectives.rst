@@ -1,109 +1,34 @@
-=====
-Usage
-=====
+Objectives
+++++++++++
 
-Working in the Bluesky environment, we need to pass four ingredients to the Bayesian agent:
-
-* ``dofs``: A list of degrees of freedom for the agent to optimize over.
-* ``tasks``: A list of tasks for the agent to optimize.
-* ``digestion``: A function that processes the output of the acquisition into the task values.
-* ``dets``: (Optional) A list of detectors to be triggered during acquisition.
-* ``acquisition``: (Optional) A Bluesky plan to run for each set of inputs.
-
-
-Degrees of freedom
-++++++++++++++++++
-
-Degrees of freedom (DOFs) are passed as an iterable of dicts, each containing at least the device and set of limits.
+We can describe an optimization problem as a list of objectives to. A simple objective is
 
 .. code-block:: python
 
-    my_dofs = [
-        {"device": some_motor, "limits": (lower_limit, upper_limit)},
-        {"device": another_motor, "limits": (lower_limit, upper_limit)},
-    ]
+    from blop import Objective
 
-Here ``some_motor`` and ``another_motor`` are ``ophyd`` objects.
+    objective = Objective(name="y1", target="max")
 
-
-
-Tasks
-+++++
-
-Tasks are what we want our agent to try to optimize (either maximize or minimize). We can pass as many as we'd like:
+Given some data, the ``Objective`` object will try to model the quantity "y1" and find the corresponding inputs that maximize it.
+The objective will expect that this quantity will be spit out by the experimentation loop, so we will check later that it is set up correctly.
+There are many ways to specify an objective's behavior, which is done by changing the objective's target:
 
 .. code-block:: python
 
-    my_tasks = [
-        {"key": "something_to_maximize", "kind": "maximize"}
-        {"key": "something_to_minimize", "kind": "minimize"}
-        ]
+    from blop import Objective
+
+    objective = Objective(name="y1", target="min") # minimize the quantity "y1"
+
+    objective = Objective(name="y1", target=2) # get the quantity "y1" as close to 2 as possible
+
+    objective = Objective(name="y1", target=(1, 3)) # find any input that puts "y1" between 1 and 3.
 
 
-
-Digestion
-+++++++++
-
-The digestion function is how we go from what is spit out by the acquisition to the actual values of the tasks.
-
-.. code-block:: python
-
-    def my_digestion_function(db, uid):
-
-        products = db[uid].table(fill=True) # a pandas DataFrame
-
-        # for each entry, do some
-        for index, entry in products.iterrows():
-
-            raw_output_1 = entry.raw_output_1
-            raw_output_2 = entry.raw_output_2
-
-            entry.loc[index, "thing_to_maximize"] = some_fitness_function(raw_output_1, raw_output_2)
-
-        return products
-
-
-Detectors
-+++++++++
-
-Detectors are triggered for each input.
+Often, the objective being modeled is some strictly positive quantity (e.g. the size of a beam being aligned).
+In this case, a smart thing to do is to set ``log=True``, which will model and subsequently optimize the logarithm of the objective:
 
 .. code-block:: python
 
-    my_dets = [some_detector, some_other_detector]
+    from blop import Objective
 
-
-
-Acquisition
-+++++++++++
-
-We run this plan for each set of DOF inputs. By default, this just moves the active DOFs to the desired points and triggers the supplied detectors.
-
-
-
-
-Building the agent
-++++++++++++++++++
-
-Combining these with a databroker instance will construct an agent.
-
-.. code-block:: python
-
-    import blop
-
-    my_agent = blop.bayesian.Agent(
-        dofs=my_dofs,
-        dets=my_dets,
-        tasks=my_tasks,
-        digestion=my_digestion_function,
-        db=db, # a databroker instance
-    )
-
-    RE(agent.initialize("qr", n_init=24))
-
-
-In the example below, the agent will loop over the following steps in each iteration of learning.
-
-#. Find the most interesting point (or points) to sample, and move the degrees of freedom there.
-#. For each point, run an acquisition plan (e.g., trigger and read the detectors).
-#. Digest the results of the acquisition to find the value of the task.
+    objective = Objective(name="some_strictly_positive_quantity", target="max", log=True)
