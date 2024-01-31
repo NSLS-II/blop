@@ -1,3 +1,6 @@
+[tool.setuptools_scm]
+version_file = "blop/_version.py"
+
 [tool.black]
 line-length = 125
 include = '\.pyi?$'
