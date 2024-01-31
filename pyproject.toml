@@ -1,5 +1,92 @@
-[tool.setuptools_scm]
-version_file = "blop/_version.py"
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "blop"
+description = "Beamline optimization with machine learning"
+readme = { file = "README.rst", content-type = "text/x-rst" }
+authors = [
+  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" }
+]
+maintainers = [
+  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" }
+]
+requires-python = ">=3.9"
+
+dependencies = [
+    "bluesky",
+    "botorch",
+    "databroker",
+    "gpytorch",
+    "h5py",
+    "matplotlib",
+    "napari",
+    "numpy",
+    "ophyd",
+    "ortools",
+    "scipy",
+    "tables",
+    "torch",
+    "zict<3.0.0",
+]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "License :: OSI Approved :: BSD License",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Topic :: Scientific/Engineering :: Physics",
+]
+
+dynamic = ["version"]
+
+[project.optional-dependencies]
+
+sirepo = [
+    "sirepo-bluesky"
+]
+
+dev = [
+    "black",
+    "pytest-codecov",
+    "coverage",
+    "flake8",
+    "furo",
+    "isort",
+    "nbstripout",
+    "pre-commit",
+    "pre-commit-hooks",
+    "pytest",
+    "sphinx",
+    "twine",
+    "ipython",
+    "jupyter",
+    "matplotlib",
+    "nbsphinx",
+    "numpydoc",
+    "pandoc",
+    "sphinx-copybutton",
+    "sphinx_rtd_theme",
+]
+
+
+[project.urls]
+Homepage = "https://github.com/nsls-ii/blop"
+Documentation = "https://nsls-ii.github.io/blop"
+"Bug Reports" = "https://github.com/nsls-ii/blop/issues"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  "docs",
+  "blop/tests",
+]
+
+[tool.hatch]
+version.source = "vcs"
+build.hooks.vcs.version-file = "blop/_version.py"
 
 [tool.black]
 line-length = 125
