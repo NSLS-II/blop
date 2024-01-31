@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling", "hatch-vcs", "setuptools_scm"]
 build-backend = "hatchling.build"
 
 [project]
@@ -80,9 +80,11 @@ Documentation = "https://nsls-ii.github.io/blop"
 
 [tool.hatch.build.targets.sdist]
 exclude = [
-  "docs",
   "blop/tests",
 ]
+
+[tool.setuptools_scm]
+version_file = "pkg/_version.py"
 
 [tool.hatch]
 version.source = "vcs"

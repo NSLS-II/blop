@@ -73,5 +73,5 @@ jobs:
       - name: Test with pytest
         run: |
           set -vxeuo pipefail
-          coverage run -m pytest -vv -s -m test_func
+          coverage run -m pytest -vv -s
           coverage report -m
