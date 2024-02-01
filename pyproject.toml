@@ -21,7 +21,6 @@ dependencies = [
     "gpytorch",
     "h5py",
     "matplotlib",
-    "napari",
     "numpy",
     "ophyd",
     "ortools",
@@ -47,6 +46,10 @@ dynamic = ["version"]
 
 sirepo = [
     "sirepo-bluesky"
+]
+
+napari = [
+    "napari"
 ]
 
 dev = [
@@ -84,11 +87,14 @@ exclude = [
 ]
 
 [tool.setuptools_scm]
-version_file = "pkg/_version.py"
+version_file = "blop/_version.py"
 
 [tool.hatch]
 version.source = "vcs"
 build.hooks.vcs.version-file = "blop/_version.py"
+
+[tool.hatch.version.raw-options]
+local_scheme = "no-local-version"
 
 [tool.black]
 line-length = 125
