@@ -8,6 +8,7 @@ name: PyPI upload
 on:
   release:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   publish_pypi:
@@ -30,8 +31,8 @@ jobs:
         run: |
           set -vxeuo pipefail
           python -m pip install --upgrade pip
-          pip install wheel setuptools
-          python setup.py sdist bdist_wheel
+          pip install build
+          python -m build
 
       - name: Publish wheels to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
