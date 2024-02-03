@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         host-os: ["ubuntu-latest"]
-        python-version: ["3.8", "3.9", "3.10"]
+        python-version: ["3.9", "3.10", "3.11"]
       fail-fast: false
 
     defaults:
@@ -67,12 +67,11 @@ jobs:
           set -vxeo pipefail
 
           pip install --upgrade pip wheel
-          pip install -v .
-          pip install -r requirements-dev.txt
+          pip install -v .[dev]
           pip list
 
       - name: Test with pytest
         run: |
           set -vxeuo pipefail
-          coverage run -m pytest -vv -s -m test_func
+          coverage run -m pytest -vv -s
           coverage report -m

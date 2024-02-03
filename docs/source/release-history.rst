@@ -2,7 +2,7 @@
 Release History
 ===============
 
-v0.6.0 (2024-01-30)
+v0.6.0 (2024-02-01)
 -------------------
 - More sophisticated targeting capabilities for different objectives.
 - More user-friendly agent controls.

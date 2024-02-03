@@ -17,7 +17,7 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
             skew_dims=skew_dims,
             priors=True,
             scale=True,
-            **kwargs
+            **kwargs,
         )
 
         self.trained = False

@@ -77,8 +77,7 @@ jobs:
           set -vxeo pipefail
 
           pip install --upgrade pip wheel
-          pip install -v .
-          pip install -r requirements-dev.txt
+          pip install -v .[dev]
           pip list
 
       - name: Build Docs

@@ -11,7 +11,6 @@ import botorch
 import gpytorch
 import h5py
 import matplotlib as mpl
-import napari
 import numpy as np
 import pandas as pd
 import scipy as sp
@@ -409,6 +408,8 @@ class Agent:
         item : str
             The thing to be viewed. Either 'mean', 'error', or an acquisition function.
         """
+
+        import napari  # noqa E402
 
         test_grid = self.sample(n=max_inputs, method="grid")
 
