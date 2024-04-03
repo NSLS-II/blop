@@ -10,15 +10,18 @@ from ophyd import Signal, SignalRO
 
 DOF_FIELD_TYPES = {
     "description": "str",
-    "readback": "float",
-    "search_bounds": "object",
-    "trust_bounds": "object",
+    "readback": "object",
+    "type": "str",
+    "search_domain": "object",
+    "trust_domain": "object",
     "units": "str",
     "active": "bool",
     "read_only": "bool",
     "log": "bool",
     "tags": "object",
 }
+
+SUPPORTED_DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
 
 
 class ReadOnlyError(Exception):
@@ -49,10 +52,10 @@ class DOF:
         A longer name for the DOF.
     units: str
         The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
-    search_bounds: tuple
+    search_domain: tuple
         A tuple of the lower and upper limit of the DOF for the agent to search.
-    trust_bounds: tuple, optional
-        The agent will reject all data where the DOF value is outside the trust bounds. Must be larger than search bounds.
+    trust_domain: tuple, optional
+        The agent will reject all data where the DOF value is outside the trust domain. Must be larger than search domain.
     read_only: bool
         If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
         device is read-only.
@@ -65,12 +68,19 @@ class DOF:
         A list of tags. These make it easier to subset large groups of dofs.
     device: Signal, optional
         An ophyd device. If not supplied, a dummy ophyd device will be generated.
+    type: str
+        What kind of DOF it is. A DOF can be:
+        - Continuous, meaning that it can vary to any point between two domain.
+        - Binary, meaning that it can take one of two values (e.g. [on, off])
+        - Ordinal, meaning ordered categories (e.g. [low, medium, high])
+        - Categorical, meaning non-ordered categories (e.g. )
     """
 
     name: str = None
     description: str = ""
-    search_bounds: Tuple[float, float] = None
-    trust_bounds: Tuple[float, float] = None
+    type: bool = "continuous"
+    search_domain: Tuple[float, float] = None
+    trust_domain: Tuple[float, float] = None
     units: str = ""
     read_only: bool = False
     active: bool = True
@@ -80,57 +90,80 @@ class DOF:
 
     # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
-        if self.search_bounds is None:
-            if not self.read_only:
-                raise ValueError("You must specify search_bounds if the device is not read-only.")
-        else:
-            self.search_bounds = tuple(self.search_bounds)
-            if len(self.search_bounds) != 2:
-                raise ValueError("'search_bounds' must be a 2-tuple of floats.")
-            if self.search_bounds[0] > self.search_bounds[1]:
-                raise ValueError("The lower search bound must be less than the upper search bound.")
-
-        if self.trust_bounds is not None:
-            self.trust_bounds = tuple(self.trust_bounds)
-            if not self.read_only:
-                if (self.search_bounds[0] < self.trust_bounds[0]) or (self.search_bounds[1] > self.trust_bounds[1]):
-                    raise ValueError("Trust bounds must be larger than search bounds.")
+        if self.type not in SUPPORTED_DOF_TYPES:
+            raise ValueError(f"'type' must be one of {SUPPORTED_DOF_TYPES}")
 
         if (self.name is None) ^ (self.device is None):
             if self.name is None:
                 self.name = self.device.name
-            if self.device is None:
-                self.device = Signal(name=self.name)
         else:
             raise ValueError("DOF() accepts exactly one of either a name or an ophyd device.")
+
+        # if our input is continuous
+        if self.type == "continuous":
+            if self.search_domain is None:
+                if not self.read_only:
+                    raise ValueError("You must specify search_domain if the device is not read-only.")
+            else:
+                self.search_domain = tuple(self.search_domain)
+                if len(self.search_domain) != 2:
+                    raise ValueError("'search_domain' must be a 2-tuple of floats.")
+                if self.search_domain[0] > self.search_domain[1]:
+                    raise ValueError("The lower search bound must be less than the upper search bound.")
+
+            if self.trust_domain is not None:
+                self.trust_domain = tuple(self.trust_domain)
+                if not self.read_only:
+                    if (self.search_domain[0] < self.trust_domain[0]) or (self.search_domain[1] > self.trust_domain[1]):
+                        raise ValueError("Trust domain must be larger than search domain.")
+
+            if self.log:
+                if not self.search_domain[0] > 0:
+                    raise ValueError("Search domain must be strictly positive if log=True.")
+
+            if self.device is None:
+                center_value = np.mean(np.log(self.search_domain)) if self.log else np.mean(self.search_domain)
+                self.device = Signal(name=self.name, value=center_value)
+
+        # otherwise it must be discrete
+        else:
+            if self.type == "binary":
+                if self.search_domain is None:
+                    self.search_domain = [False, True]
+                if len(self.search_domain) != 2:
+                    raise ValueError("A binary DOF must have a domain of 2.")
+            else:
+                if self.search_domain is None:
+                    raise ValueError("Discrete domain must be supplied for ordinal and categorical degrees of freedom.")
+
+            self.search_domain = set(self.search_domain)
+
+            self.device = Signal(name=self.name, value=list(self.search_domain)[0])
 
         if not self.read_only:
             # check that the device has a put method
             if isinstance(self.device, SignalRO):
                 raise ValueError("You must specify read_only=True for a read-only device.")
 
-        if self.log:
-            if not self.search_bounds[0] > 0:
-                raise ValueError("Search bounds must be strictly positive if log=True.")
-
         # all dof degrees of freedom are hinted
         self.device.kind = "hinted"
 
     @property
-    def _search_bounds(self):
+    def _search_domain(self):
         if self.read_only:
             _readback = self.readback
             return (_readback, _readback)
-        return self.search_bounds
+        return self.search_domain
 
     @property
-    def _trust_bounds(self):
-        if self.trust_bounds is None:
+    def _trust_domain(self):
+        if self.trust_domain is None:
             return (0, np.inf) if self.log else (-np.inf, np.inf)
-        return self.trust_bounds
+        return self.trust_domain
 
     @property
     def readback(self):
+        # there is probably a better way to do this
         return self.device.read()[self.device.name]["value"]
 
     @property
@@ -181,10 +214,17 @@ class DOFList(Sequence):
         return len(self.dofs)
 
     def __repr__(self):
-        return self.summary.__repr__()
+        return self.summary.T.__repr__()
 
-    def __repr_html__(self):
-        return self.summary.__repr_html__()
+    def _repr_html_(self):
+        return self.summary.T._repr_html_()
+
+    @property
+    def readback(self):
+        """
+        Return the readback from each DOF as a list. It is a list because they might be different types.
+        """
+        return [dof.readback for dof in self.dofs]
 
     @property
     def summary(self) -> pd.DataFrame:
@@ -208,18 +248,18 @@ class DOFList(Sequence):
         return [dof.device for dof in self.dofs]
 
     @property
-    def search_bounds(self) -> np.array:
+    def search_domain(self) -> np.array:
         """
-        Returns a (n_dof, 2) array of bounds.
+        Returns a (n_dof, 2) array of domain.
         """
-        return np.array([dof._search_bounds for dof in self.dofs])
+        return np.array([dof._search_domain for dof in self.dofs])
 
     @property
-    def trust_bounds(self) -> np.array:
+    def trust_domain(self) -> np.array:
         """
-        Returns a (n_dof, 2) array of bounds.
+        Returns a (n_dof, 2) array of domain.
         """
-        return np.array([dof._trust_bounds for dof in self.dofs])
+        return np.array([dof._trust_domain for dof in self.dofs])
 
     def add(self, dof):
         _validate_dofs([*self.dofs, dof])
