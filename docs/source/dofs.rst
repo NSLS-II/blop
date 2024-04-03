@@ -7,7 +7,7 @@ A degree of freedom is a variable that affects our optimization objective. We ca
 
     from blop import DOF
 
-    dof = DOF(name="x1", description="my first DOF", search_bounds=(lower, upper))
+    dof = DOF(name="x1", description="my first DOF", search_domain=(lower, upper))
 
 This will instantiate a bunch of stuff under the hood, so that our agent knows how to move things and where to search.
 Typically, this will correspond to a real, physical device available in Python. In that case, we can pass the DOF an ophyd device in place of a name
@@ -16,7 +16,7 @@ Typically, this will correspond to a real, physical device available in Python. 
 
     from blop import DOF
 
-    dof = DOF(device=my_ophyd_device, description="a real piece of hardware", search_bounds=(lower, upper))
+    dof = DOF(device=my_ophyd_device, description="a real piece of hardware", search_domain=(lower, upper))
 
 In this case, the agent will control the device as it sees fit, moving it between the search bounds.
 
