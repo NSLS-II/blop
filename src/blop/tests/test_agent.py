@@ -4,6 +4,8 @@ import pytest  # noqa F401
 def test_agent(agent, RE):
     RE(agent.learn("qr", n=4))
 
+    agent.best
+
 
 def test_forget(agent, RE):
     RE(agent.learn("qr", n=4))
