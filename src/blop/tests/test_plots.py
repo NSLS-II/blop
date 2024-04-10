@@ -10,13 +10,13 @@ def test_plots(RE, agent):
     agent.plot_history()
 
 
-def test_plots_multiple_objs(RE, agent_with_multiple_objs):
-    RE(agent_with_multiple_objs.learn("qr", n=16))
+def test_plots_multiple_objs(RE, mo_agent):
+    RE(mo_agent.learn("qr", n=16))
 
-    agent_with_multiple_objs.plot_objectives()
-    agent_with_multiple_objs.plot_acquisition()
-    agent_with_multiple_objs.plot_validity()
-    agent_with_multiple_objs.plot_history()
+    mo_agent.plot_objectives()
+    mo_agent.plot_acquisition()
+    mo_agent.plot_validity()
+    mo_agent.plot_history()
 
 
 def test_plots_passive_dofs(RE, agent_with_passive_dofs):

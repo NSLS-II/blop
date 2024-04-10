@@ -6,6 +6,8 @@ from botorch.posteriors.gpytorch import GPyTorchPosterior
 from botorch.posteriors.posterior_list import PosteriorList
 from torch import Tensor
 
+# This file is deprecated for now, but we may need it later
+
 
 def targeting_transform(y, target):
     if target == "max":

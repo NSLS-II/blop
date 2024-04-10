@@ -17,15 +17,19 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
+
+# from botorch.utils.transforms import normalize
+from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.models.transforms.input import AffineInputTransform, ChainedInputTransform, Log10, Normalize
 from databroker import Broker
 from ophyd import Signal
 
-from . import utils
-from .bayesian import acquisition, models, plotting
-from .bayesian.transforms import TargetingPosteriorTransform
+from . import plotting, utils
+from .bayesian import acquisition, models
+
+# from .bayesian.transforms import TargetingPosteriorTransform
 from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
@@ -532,7 +536,7 @@ class Agent:
 
     @property
     def model(self):
-        """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
+        """A model encompassing all the fitnesses and constraints."""
         return (
             ModelListGP(*[obj.model for obj in self.active_objs]) if len(self.active_objs) > 1 else self.active_objs[0].model
         )
@@ -542,32 +546,86 @@ class Agent:
         return self.model.posterior(torch.tensor(x))
 
     @property
-    def targeting_transform(self):
-        return TargetingPosteriorTransform(
-            weights=torch.tensor(self.active_objs.weights, dtype=torch.double), targets=self.active_objs.targets
+    def fitness_model(self):
+        return (
+            ModelListGP(*[obj.model for obj in self.active_objs if obj.type == "fitness"])
+            if len(self.active_objs) > 1
+            else self.active_objs[0].model
         )
 
     @property
-    def scalarized_objectives(self):
-        """Returns a (n_obs,) array of scalarized objectives"""
-        return self.targeting_transform.evaluate(self.train_targets(active=True)).sum(axis=-1)
+    def fitness_weights(self):
+        return torch.tensor([obj.weight for obj in self.objectives if obj.type == "fitness"], dtype=torch.double)
 
     @property
-    def max_scalarized_objective(self):
-        """Returns the value of the best scalarized objective seen so far."""
-        f = self.scalarized_objectives
-        return np.max(np.where(np.isnan(f), -np.inf, f))
+    def fitness_scalarization(self):
+        return ScalarizedPosteriorTransform(weights=self.fitness_weights)
 
     @property
-    def argmax_scalarized_objective(self):
-        """Returns the index of the best scalarized objective seen so far."""
-        f = self.scalarized_objectives
-        return np.argmax(np.where(np.isnan(f), -np.inf, f))
+    def evaluated_fitnesses(self):
+        return self.train_targets()[:, self.objectives.type == "fitness"]
+
+    @property
+    def scalarized_fitnesses(self):
+        return self.fitness_scalarization.evaluate(self.evaluated_fitnesses)
+
+    @property
+    def evaluated_constraints(self):
+        if sum(self.objectives.type == "constraint"):
+            y = self.train_targets()
+            return torch.cat(
+                [
+                    ((y[:, i] >= obj.target[0]) & (y[:, i] <= obj.target[1])).unsqueeze(0)
+                    for i, obj in enumerate(self.objectives)
+                    if obj.type == "constraint"
+                ],
+                dim=0,
+            ).T
+        else:
+            return torch.ones(size=(len(self.table), 0), dtype=torch.bool)
+
+    @property
+    def argmax_best_f(self):
+        f = self.scalarized_fitnesses
+        c = self.evaluated_constraints.all(axis=-1)
+        mask = (~f.isnan()) & c
+
+        if not mask.sum():
+            raise ValueError("There are no valid points that satisfy the constraints!")
+
+        return torch.where(mask)[0][f[mask].argmax()]
+
+    @property
+    def best_f(self):
+        return self.scalarized_fitnesses[self.argmax_best_f]
+
+    @property
+    def pareto_front_mask(self):
+        # a point is on the Pareto front if it is Pareto dominant
+        # a point is Pareto dominant if it is there is no other point that is better at every objective
+        y = self.train_targets()[:, self.objectives.type == "fitness"]
+        in_pareto_front = ~(y.unsqueeze(1) > y.unsqueeze(0)).all(axis=-1).any(axis=0)
+        all_constraints_satisfied = self.evaluated_constraints.all(axis=-1)
+        return in_pareto_front & all_constraints_satisfied
+
+    @property
+    def pareto_front(self):
+        return self.table.loc[self.pareto_front_mask.numpy()]
+
+    @property
+    def min_ref_point(self):
+        y = self.train_targets()[:, self.objectives.type == "fitness"]
+        return y[y.argmax(axis=0)].min(axis=0).values
+
+    @property
+    def random_ref_point(self):
+        pareto_front_index = torch.where(self.pareto_front_mask)[0]
+        return self.evaluated_fitnesses[np.random.choice(pareto_front_index)]
 
     @property
     def all_objectives_valid(self):
         """A mask of whether all objectives are valid for each data point."""
-        return ~torch.isnan(self.scalarized_objectives)
+        return ~torch.isnan(self.scalarized_fitnesses)
 
     def _train_model(self, model, hypers=None, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
@@ -621,7 +679,7 @@ class Agent:
                 trusted.long(), learn_additional_noise=True
             )
 
-            obj.validity_conjugate_model = models.LatentDirichletModel(
+            obj.validity_conjugate_model = models.LatentDirichletClassifier(
                 train_inputs=train_inputs[inputs_are_trusted],
                 train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2)[inputs_are_trusted].double(),
                 skew_dims=skew_dims,
@@ -760,12 +818,12 @@ class Agent:
         p = torch.ones(x.shape[:-1])
         for obj in self.active_objs:
             # if the targeting constraint is non-trivial
-            if obj.use_as_constraint:
+            if obj.type == "constraint":
                 p *= obj.targeting_constraint(x)
             # if the validity constaint is non-trivial
             if obj.validity_conjugate_model is not None:
                 p *= obj.validity_constraint(x)
-        return p
+        return p  # + 1e-6 * normalize(x, self._sample_domain).square().sum(axis=-1)
 
     @property
     def hypers(self) -> dict:
@@ -848,22 +906,20 @@ class Agent:
             return torch.cat([self.train_targets(obj.name) for obj in self.objectives], dim=-1)
 
         obj = self.objectives[index]
-        targets = self.table.loc[:, obj.name].values.copy()
+        values = self.table.loc[:, obj.name].values.copy()
 
         # check that targets values are inside acceptable values
-        valid = (targets >= obj._trust_domain[0]) & (targets <= obj._trust_domain[1])
-        targets = np.where(valid, targets, np.nan)
+        valid = (values >= obj._trust_domain[0]) & (values <= obj._trust_domain[1])
+        values = np.where(valid, values, np.nan)
 
-        # transform if needed
-        if obj.log:
-            targets = np.where(targets > 0, np.log(targets), np.nan)
+        targets = obj.fitness_forward(values)
 
         return torch.tensor(targets, dtype=torch.double).unsqueeze(-1)
 
     @property
     def best(self):
         """Returns all data for the best point."""
-        return self.table.loc[self.argmax_scalarized_objective]
+        return self.table.loc[self.argmax_best_f]
 
     @property
     def best_inputs(self):
@@ -941,3 +997,7 @@ class Agent:
     @property
     def latent_transforms(self):
         return {obj.name: obj.model.covar_module.latent_transform for obj in self.active_objs}
+
+    def plot_pareto_front(self, **kwargs):
+        """Plot the improvement of the agent over time."""
+        plotting._plot_pareto_front(self, **kwargs)
