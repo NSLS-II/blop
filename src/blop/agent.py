@@ -39,7 +39,7 @@ warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputData
 
 mpl.rc("image", cmap="coolwarm")
 
-DEFAULT_MAX_SAMPLES = 2**11
+DEFAULT_MAX_SAMPLES = 2**12
 
 
 def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
@@ -919,7 +919,7 @@ class Agent:
     @property
     def best(self):
         """Returns all data for the best point."""
-        return self.table.loc[self.argmax_best_f]
+        return self.table.loc[self.argmax_best_f.item()]
 
     @property
     def best_inputs(self):
