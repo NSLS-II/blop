@@ -105,14 +105,16 @@ class DOF:
                 if not self.read_only:
                     raise ValueError("You must specify search_domain if the device is not read-only.")
             else:
-                self.search_domain = tuple(self.search_domain)
                 if len(self.search_domain) != 2:
-                    raise ValueError("'search_domain' must be a 2-tuple of floats.")
+                    raise ValueError("'search_domain' must have length 2.")
+                self.search_domain = tuple([float(self.search_domain[0]), float(self.search_domain[1])])
                 if self.search_domain[0] > self.search_domain[1]:
                     raise ValueError("The lower search bound must be less than the upper search bound.")
 
             if self.trust_domain is not None:
-                self.trust_domain = tuple(self.trust_domain)
+                if len(self.trust_domain) != 2:
+                    raise ValueError("'trust_domain' must have length 2.")
+                self.trust_domain = tuple([float(self.trust_domain[0]), float(self.trust_domain[1])])
                 if not self.read_only:
                     if (self.search_domain[0] < self.trust_domain[0]) or (self.search_domain[1] > self.trust_domain[1]):
                         raise ValueError("Trust domain must be larger than search domain.")

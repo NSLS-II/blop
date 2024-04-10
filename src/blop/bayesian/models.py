@@ -1,11 +1,11 @@
-import botorch
 import gpytorch
 import torch
+from botorch.models.gp_regression import SingleTaskGP
 
 from . import kernels
 
 
-class LatentGP(botorch.models.gp_regression.SingleTaskGP):
+class LatentGP(SingleTaskGP):
     def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
         super().__init__(train_inputs, train_targets, *args, **kwargs)
 
@@ -23,7 +23,22 @@ class LatentGP(botorch.models.gp_regression.SingleTaskGP):
         self.trained = False
 
 
-class LatentDirichletModel(LatentGP):
+class LatentConstraintModel(LatentGP):
+    def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
+        super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
+
+        self.trained = False
+
+    def fitness(self, x, n_samples=1024):
+        """
+        Takes in a (..., m) dimension tensor and returns a (..., n_classes) tensor
+        """
+        *input_shape, n_dim = x.shape
+        samples = self.posterior(x.reshape(-1, n_dim)).sample(torch.Size((n_samples,))).exp()
+        return (samples / samples.sum(-1, keepdim=True)).mean(0).reshape(*input_shape, -1)
+
+
+class LatentDirichletClassifier(LatentGP):
     def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
         super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
 

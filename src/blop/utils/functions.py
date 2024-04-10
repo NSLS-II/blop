@@ -1,4 +1,11 @@
 import numpy as np
+import torch
+
+
+def approximate_erf(x):
+    # we want to compute erf(x) to compute the definite integral of the Gaussian PDF
+    # we instead use an approximation with tanh(x) which is faster and better-conditioned near +/- infinity
+    return torch.tanh(1.20278247 * x)
 
 
 def sigmoid(x):
