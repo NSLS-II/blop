@@ -39,7 +39,7 @@ warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputData
 
 mpl.rc("image", cmap="coolwarm")
 
-DEFAULT_MAX_SAMPLES = 2**12
+DEFAULT_MAX_SAMPLES = 3200
 
 
 def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
