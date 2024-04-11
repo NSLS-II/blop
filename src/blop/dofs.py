@@ -78,7 +78,7 @@ class DOF:
 
     name: str = None
     description: str = ""
-    type: bool = "continuous"
+    type: str = "continuous"
     search_domain: Tuple[float, float] = None
     trust_domain: Tuple[float, float] = None
     units: str = ""

@@ -10,7 +10,7 @@ The blop ``Agent`` takes care of the entire optimization loop, from data acquisi
     dofs = [
         DOF(name="x1", description="the first DOF", search_domain=(-10, 10))
         DOF(name="x2", description="another DOF", search_domain=(-5, 5))
-        DOF(name="x3", description="ayet nother DOF", search_domain=(0, 1))
+        DOF(name="x3", description="yet nother DOF", search_domain=(0, 1))
     ]
 
     objective = [
