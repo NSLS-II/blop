@@ -51,8 +51,8 @@ def agent(db):
     """
 
     dofs = [
-        DOF(name="x1", search_domain=(-8.0, 8.0)),
-        DOF(name="x2", search_domain=(-8.0, 8.0)),
+        DOF(name="x1", search_domain=(-5.0, 5.0)),
+        DOF(name="x2", search_domain=(-5.0, 5.0)),
     ]
 
     objectives = [Objective(name="himmelblau", target="min")]
@@ -60,7 +60,7 @@ def agent(db):
     agent = Agent(
         dofs=dofs,
         objectives=objectives,
-        digestion=functions.constrained_himmelblau_digestion,
+        digestion=functions.himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,
@@ -79,8 +79,8 @@ def mo_agent(db):
         products = db[uid].table()
 
         for index, entry in products.iterrows():
-            products.loc[index, "obj1"] = functions.himmelblau(entry.x1, entry.x2)
-            products.loc[index, "obj2"] = functions.himmelblau(entry.x2, entry.x1)
+            products.loc[index, "f1"] = functions.himmelblau(entry.x1, entry.x2)
+            products.loc[index, "f2"] = functions.himmelblau(entry.x2, entry.x1)
 
         return products
 
@@ -89,7 +89,7 @@ def mo_agent(db):
         DOF(name="x2", search_domain=(-5.0, 5.0)),
     ]
 
-    objectives = [Objective(name="obj1", target="min"), Objective(name="obj2", target="min")]
+    objectives = [Objective(name="f1", target="min"), Objective(name="f2", target="min")]
 
     agent = Agent(
         dofs=dofs,
@@ -124,7 +124,7 @@ def agent_with_passive_dofs(db):
     agent = Agent(
         dofs=dofs,
         objectives=objectives,
-        digestion=functions.constrained_himmelblau_digestion,
+        digestion=functions.himmelblau_digestion,
         db=db,
         verbose=True,
         tolerate_acquisition_errors=False,
