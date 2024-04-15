@@ -736,12 +736,7 @@ class Agent:
 
     @property
     def _sample_domain(self):
-        """
-        Returns a (2, n_active_dof) array of lower and upper bounds for dofs.
-        Read-only DOFs are set to exactly their last known value.
-        Discrete DOFs are relaxed to some continuous domain.
-        """
-        return self.dofs.transform(self.dofs.subset(active=True).search_domain.T)
+        return torch.tensor(self.active_dofs.search_domain, dtype=torch.double).T
 
     @property
     def _model_input_transform(self):
