@@ -1,27 +1,30 @@
 import time as ttime
 import uuid
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
+from operator import attrgetter
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
+import torch
 from ophyd import Signal, SignalRO
 
 DOF_FIELD_TYPES = {
     "description": "str",
     "readback": "object",
     "type": "str",
+    "transform": "str",
     "search_domain": "object",
     "trust_domain": "object",
     "units": "str",
     "active": "bool",
     "read_only": "bool",
-    "log": "bool",
     "tags": "object",
 }
 
 SUPPORTED_DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
+SUPPORTED_DOF_TRANSFORMS = {"log": (0.0, np.inf), "sigmoid": (0.0, 1.0), "tanh": (-1.0, 1.0)}
 
 
 class ReadOnlyError(Exception):
@@ -38,6 +41,51 @@ def _validate_dofs(dofs):
         raise ValueError(f"Duplicate name(s) in supplied dofs: {duplicate_dof_names}")
 
     return list(dofs)
+
+
+def _validate_dof_transform(transform):
+    if transform is None:
+        return (-np.inf, np.inf)
+
+    if transform not in SUPPORTED_DOF_TRANSFORMS:
+        raise ValueError(f"'transform' must be a callable with one argument, or one of {SUPPORTED_DOF_TRANSFORMS}")
+
+
+def _validate_continuous_dof_domains(search_domain, trust_domain, domain):
+    """
+    A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain.
+
+    Check that all the domains are kosher by enforcing that:
+    search_domain \\subseteq trust_domain \\subseteq domain
+    """
+
+    if len(search_domain) != 2:
+        raise ValueError("'search_domain' must be a 2-tuple of numbers.")
+
+    if search_domain[0] >= search_domain[1]:
+        raise ValueError("The lower search bound must be strictly less than the upper search bound.")
+
+    if domain is not None:
+        if (search_domain[0] < domain[0]) or (search_domain[1] > domain[1]):
+            raise ValueError(f"The search domain {search_domain} is outside the transform domain {domain}.")
+
+    if trust_domain is not None:
+        if (search_domain[0] < trust_domain[0]) or (search_domain[1] > trust_domain[1]):
+            raise ValueError(f"The search domain {search_domain} is outside the trust domain {trust_domain}.")
+
+    if (trust_domain is not None) and (domain is not None):
+        if (trust_domain[0] < domain[0]) or (trust_domain[1] > domain[1]):
+            raise ValueError(f"The trust domain {trust_domain} is outside the transform domain {domain}.")
+
+
+def _validate_discrete_dof_domains(search_domain, trust_domain, domain):
+    """
+    A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
+
+    Check that all the domains are kosher by enforcing that:
+    search_domain \\subseteq trust_domain \\subseteq domain
+    """
+    ...
 
 
 @dataclass
@@ -68,8 +116,8 @@ class DOF:
     active: bool
         If True, the agent will try to use the DOF in its optimization. If False, the agent will
         still read the DOF but not include it any model or acquisition function.
-    log: bool
-        Whether to apply a log to the objective, i.e. to make the process outputs more Gaussian.
+    transform: Callable
+        A transform to apply to the objective, to make the process outputs more Gaussian.
     tags: list
         A list of tags. These make it easier to subset large groups of dofs.
     device: Signal, optional
@@ -81,17 +129,32 @@ class DOF:
     type: str = "continuous"
     search_domain: Tuple[float, float] = None
     trust_domain: Tuple[float, float] = None
-    units: str = ""
+    units: str = None
     read_only: bool = False
     active: bool = True
-    log: bool = False
+    transform: str = None
     tags: list = field(default_factory=list)
     device: Signal = None
+
+    def __repr__(self):
+        nodef_f_vals = ((f.name, attrgetter(f.name)(self)) for f in fields(self))
+
+        nodef_f_repr = []
+        for name, value in nodef_f_vals:
+            if (name == "search_domain") and (self.type == "continuous"):
+                search_min, search_max = self.search_domain
+                nodef_f_repr.append(f"search_domain=({search_min:.03e}, {search_max:.03e})")
+            else:
+                nodef_f_repr.append(f"{name}={value}")
+
+        return f"{self.__class__.__name__}({', '.join(nodef_f_repr)})"
 
     # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
         if self.type not in SUPPORTED_DOF_TYPES:
             raise ValueError(f"'type' must be one of {SUPPORTED_DOF_TYPES}")
+
+        _validate_dof_transform(self.transform)
 
         if (self.name is None) ^ (self.device is None):
             if self.name is None:
@@ -105,30 +168,16 @@ class DOF:
                 if not self.read_only:
                     raise ValueError("You must specify search_domain if the device is not read-only.")
             else:
-                if len(self.search_domain) != 2:
-                    raise ValueError("'search_domain' must have length 2.")
-                self.search_domain = tuple([float(self.search_domain[0]), float(self.search_domain[1])])
-                if self.search_domain[0] > self.search_domain[1]:
-                    raise ValueError("The lower search bound must be less than the upper search bound.")
-
-            if self.trust_domain is not None:
-                if len(self.trust_domain) != 2:
-                    raise ValueError("'trust_domain' must have length 2.")
-                self.trust_domain = tuple([float(self.trust_domain[0]), float(self.trust_domain[1])])
-                if not self.read_only:
-                    if (self.search_domain[0] < self.trust_domain[0]) or (self.search_domain[1] > self.trust_domain[1]):
-                        raise ValueError("Trust domain must be larger than search domain.")
-
-            if self.log:
-                if not self.search_domain[0] > 0:
-                    raise ValueError("Search domain must be strictly positive if log=True.")
+                _validate_continuous_dof_domains(self.search_domain, self.trust_domain, self.domain)
 
             if self.device is None:
-                center_value = np.mean(np.log(self.search_domain)) if self.log else np.mean(self.search_domain)
-                self.device = Signal(name=self.name, value=center_value)
+                center = float(self._untransform(np.mean([self._transform(np.array(self.search_domain))])))
+                self.device = Signal(name=self.name, value=center)
 
         # otherwise it must be discrete
         else:
+            _validate_discrete_dof_domains(self.search_domain, self.trust_domain, self.domain)
+
             if self.type == "binary":
                 if self.search_domain is None:
                     self.search_domain = [False, True]
@@ -151,17 +200,76 @@ class DOF:
         self.device.kind = "hinted"
 
     @property
+    def domain(self):
+        """
+        The total domain of the DOF.
+        """
+        if self.transform is None:
+            if self.type == "continuous":
+                return (-np.inf, np.inf)
+            else:
+                return self.search_domain
+        return SUPPORTED_DOF_TRANSFORMS[self.transform]
+
+    @property
     def _search_domain(self):
         if self.read_only:
             _readback = self.readback
-            return (_readback, _readback)
-        return self.search_domain
+            return np.array([_readback, _readback])
+        return np.array(self.search_domain)
+
+    def _trust(self, x):
+        return (self.trust_domain[0] <= x) & (x <= self.trust_domain[1])
 
     @property
     def _trust_domain(self):
         if self.trust_domain is None:
-            return (0, np.inf) if self.log else (-np.inf, np.inf)
+            return self.domain
         return self.trust_domain
+
+    def _transform(self, x, normalize=True):
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x, dtype=torch.double)
+
+        x = torch.where((x > self.domain[0]) & (x < self.domain[1]), x, torch.nan)
+
+        if self.transform == "log":
+            x = torch.log(x)
+        if self.transform == "sigmoid":
+            x = (x / (1 - x)).log()
+        if self.transform == "tanh":
+            x = torch.arctanh(x)
+
+        if normalize and not self.read_only:
+            min, max = self._transform(self._search_domain, normalize=False)
+            x = (x - min) / (max - min)
+
+        return x
+
+    def _untransform(self, x):
+        if not isinstance(x, torch.Tensor):
+            x = torch.tensor(x, dtype=torch.double)
+
+        if not self.read_only:
+            min, max = self._transform(self._search_domain, normalize=False)
+            x = x * (max - min) + min
+
+        if self.transform is None:
+            return x
+        if self.transform == "log":
+            return torch.exp(x)
+        if self.transform == "sigmoid":
+            return 1 / (1 + torch.exp(-x))
+        if self.transform == "tanh":
+            return torch.tanh(x)
+
+    # @property
+    # def _transformed_search_domain(self):
+    #     return self._transform(np.array(self._search_domain), normalize=False)
+
+    # @property
+    # def _transformed_trust_domain(self):
+    #     return self._transform(np.array(self._trust_domain), normalize=False)
 
     @property
     def readback(self):
@@ -172,12 +280,16 @@ class DOF:
     def summary(self) -> pd.Series:
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
-            series[attr] = getattr(self, attr)
+            value = getattr(self, attr)
+            if attr == "search_domain":
+                if (self.type == "continuous") and not self.read_only:
+                    value = f"({value[0]:.02e}, {value[1]:.02e})"
+            series[attr] = value if value is not None else ""
         return series
 
     @property
-    def label(self) -> str:
-        return f"{self.description}{f' [{self.units}]' if len(self.units) > 0 else ''}"
+    def label_with_units(self) -> str:
+        return f"{self.description}{f' [{self.units}]' if self.units else ''}"
 
     @property
     def has_model(self):
@@ -220,6 +332,32 @@ class DOFList(Sequence):
 
     def _repr_html_(self):
         return self.summary.T._repr_html_()
+
+    def transform(self, X):
+        """
+        Transform X to the transformed unit hypercube.
+        """
+        if X.shape[-1] != len(self.subset(active=True)):
+            raise ValueError()
+
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.double)
+
+        return torch.cat([dof._transform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(self.subset(active=True))], dim=-1)
+
+    def untransform(self, X):
+        """
+        Transform the transformed unit hypercube to the search domain.
+        """
+        if X.shape[-1] != len(self.subset(active=True)):
+            raise ValueError()
+
+        if not isinstance(X, torch.Tensor):
+            X = torch.tensor(X, dtype=torch.double)
+
+        return torch.cat(
+            [dof._untransform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(self.subset(active=True))], dim=-1
+        )
 
     @property
     def readback(self):

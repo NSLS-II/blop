@@ -44,8 +44,8 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
         acq_func = analytic.ConstrainedLogExpectedImprovement(
             constraint=agent.constraint,
             model=agent.fitness_model,
-            best_f=agent.best_f,
-            posterior_transform=agent.fitness_scalarization,
+            best_f=agent.best_f(),
+            posterior_transform=agent.fitness_scalarization(),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -53,8 +53,8 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
         acq_func = monte_carlo.qConstrainedExpectedImprovement(
             constraint=agent.constraint,
             model=agent.fitness_model,
-            best_f=agent.best_f,
-            posterior_transform=agent.fitness_scalarization,
+            best_f=agent.best_f(),
+            posterior_transform=agent.fitness_scalarization(),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -62,8 +62,8 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
         acq_func = analytic.ConstrainedLogProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.fitness_model,
-            best_f=agent.best_f,
-            posterior_transform=agent.fitness_scalarization,
+            best_f=agent.best_f(),
+            posterior_transform=agent.fitness_scalarization(),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -71,8 +71,8 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
         acq_func = monte_carlo.qConstrainedProbabilityOfImprovement(
             constraint=agent.constraint,
             model=agent.fitness_model,
-            best_f=agent.best_f,
-            posterior_transform=agent.fitness_scalarization,
+            best_f=agent.best_f(),
+            posterior_transform=agent.fitness_scalarization(),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
@@ -101,7 +101,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.fitness_model,
             beta=beta,
-            posterior_transform=agent.fitness_scalarization,
+            posterior_transform=agent.fitness_scalarization(),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
@@ -112,7 +112,7 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
             constraint=agent.constraint,
             model=agent.fitness_model,
             beta=beta,
-            posterior_transform=agent.fitness_scalarization,
+            posterior_transform=agent.fitness_scalarization(),
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
