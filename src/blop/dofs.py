@@ -222,6 +222,18 @@ class DOF:
         self.device.kind = "hinted"
 
     @property
+    def domain(self):
+        """
+        The total domain of the DOF.
+        """
+        if self.transform is None:
+            if self.type == "continuous":
+                return (-np.inf, np.inf)
+            else:
+                return self.search_domain
+        return SUPPORTED_DOF_TRANSFORMS[self.transform]
+
+    @property
     def _search_domain(self):
         """
         Compute the search domain of the DOF.
