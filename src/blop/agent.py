@@ -259,8 +259,11 @@ class Agent:
                 raw_samples=RAW_SAMPLES,  # used for intialization heuristic
             )
 
-            # this includes both RO and non-RO DOFs
-            candidates = candidates.numpy()
+            # this includes both RO and non-RO DOFs.
+            # and is in the transformed model space
+            candidates = self.dofs.untransform(candidates).numpy()
+
+        p = self.posterior(candidates) if hasattr(self, "model") else None
 
         acq_points = candidates[..., ~self.active_dofs.read_only]
         read_only_values = candidates[..., self.active_dofs.read_only]
@@ -276,7 +279,7 @@ class Agent:
             upsampled_idx = np.linspace(0, len(idx) - 1, upsample * len(idx) - 1)
             acq_points = sp.interpolate.interp1d(idx, acq_points, axis=0)(upsampled_idx)
 
-        p = self.posterior(candidates) if hasattr(self, "model") else None
+        
 
         res = {
             "points": acq_points,
@@ -735,7 +738,7 @@ class Agent:
 
     @property
     def _sample_domain(self):
-        return torch.tensor(self.active_dofs.search_domain, dtype=torch.double).T
+        return self.dofs.transform(self.dofs.search_domain).T
 
     @property
     def _model_input_transform(self):
@@ -796,11 +799,14 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
+
+        x = self.dofs.transform(x)
+
         p = torch.ones(x.shape[:-1])
         for obj in self.active_objs:
             # if the targeting constraint is non-trivial
-            if obj.type == "constraint":
-                p *= obj.targeting_constraint(x)
+            # if obj.kind == "constraint":
+            #     p *= obj.targeting_constraint(x)
             # if the validity constaint is non-trivial
             if obj.validity_conjugate_model is not None:
                 p *= obj.validity_constraint(x)

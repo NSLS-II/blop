@@ -12,6 +12,7 @@ from blop import DOF, Agent, Objective
 from blop.dofs import BrownianMotion
 from blop.utils import functions
 
+import numpy as np
 
 @pytest.fixture(scope="function")
 def db():
@@ -72,7 +73,7 @@ def agent(db):
 @pytest.fixture(scope="function")
 def mo_agent(db):
     """
-    A simple agent minimizing two Himmelblau's functions
+    An agent minimizing two Himmelblau's functions
     """
 
     def digestion(db, uid):
@@ -90,6 +91,47 @@ def mo_agent(db):
     ]
 
     objectives = [Objective(name="f1", target="min"), Objective(name="f2", target="min")]
+
+    agent = Agent(
+        dofs=dofs,
+        objectives=objectives,
+        digestion=digestion,
+        db=db,
+        verbose=True,
+        tolerate_acquisition_errors=False,
+    )
+
+    return agent
+
+
+@pytest.fixture(scope="function")
+def constrained_agent(db):
+    """
+    https://en.wikipedia.org/wiki/Test_functions_for_optimization
+    """
+
+    def digestion(db, uid):
+        products = db[uid].table()
+
+        for index, entry in products.iterrows():
+            products.loc[index, "f1"]  = (entry.x1 - 2)**2 + (entry.x2 - 1) + 2
+            products.loc[index, "f2"]  = 9 * entry.x1 - (entry.x2 - 1) + 2
+            products.loc[index, "c1"]  = entry.x1**2 + entry.x2**2
+            products.loc[index, "c2"]  = entry.x1 - 3*entry.x2 + 10
+
+        return products
+
+    dofs = [
+        DOF(description="The first DOF", name="x1", search_domain=(-20, 20)),
+        DOF(description="The second DOF", name="x2", search_domain=(-20, 20)),
+    ]
+
+    objectives = [
+        Objective(description="f1", name="f1", target="min"), 
+        Objective(description="f2", name="f2", target="min"),
+        Objective(description="c1", name="c1", target=(-np.inf, 225)),
+        Objective(description="c2", name="c2", target=(-np.inf, 0)),
+    ]
 
     agent = Agent(
         dofs=dofs,

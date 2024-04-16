@@ -23,8 +23,8 @@ DOF_FIELD_TYPES = {
     "tags": "object",
 }
 
-SUPPORTED_DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
-SUPPORTED_DOF_TRANSFORMS = {"log": (0.0, np.inf), "sigmoid": (0.0, 1.0), "tanh": (-1.0, 1.0)}
+DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
+TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "sigmoid": (0.0, 1.0), "tanh": (-1.0, 1.0)}
 
 
 class ReadOnlyError(Exception):
@@ -47,8 +47,8 @@ def _validate_dof_transform(transform):
     if transform is None:
         return (-np.inf, np.inf)
 
-    if transform not in SUPPORTED_DOF_TRANSFORMS:
-        raise ValueError(f"'transform' must be a callable with one argument, or one of {SUPPORTED_DOF_TRANSFORMS}")
+    if transform not in TRANSFORM_DOMAINS:
+        raise ValueError(f"'transform' must be a callable with one argument, or one of {TRANSFORM_DOMAINS}")
 
 
 def _validate_continuous_dof_domains(search_domain, trust_domain, domain):
@@ -151,10 +151,8 @@ class DOF:
 
     # Some post-processing. This is specific to dataclasses
     def __post_init__(self):
-        if self.type not in SUPPORTED_DOF_TYPES:
-            raise ValueError(f"'type' must be one of {SUPPORTED_DOF_TYPES}")
-
-        _validate_dof_transform(self.transform)
+        if self.type not in DOF_TYPES:
+            raise ValueError(f"'type' must be one of {DOF_TYPES}")
 
         if (self.name is None) ^ (self.device is None):
             if self.name is None:
@@ -164,6 +162,12 @@ class DOF:
 
         # if our input is continuous
         if self.type == "continuous":
+
+            _validate_dof_transform(self.transform)
+
+            if self.trust_domain is None:
+                self.trust_domain = TRANSFORM_DOMAINS[self.transform] if self.transform is not None else (-np.inf, np.inf)
+
             if self.search_domain is None:
                 if not self.read_only:
                     raise ValueError("You must specify search_domain if the device is not read-only.")
@@ -209,7 +213,7 @@ class DOF:
                 return (-np.inf, np.inf)
             else:
                 return self.search_domain
-        return SUPPORTED_DOF_TRANSFORMS[self.transform]
+        return TRANSFORM_DOMAINS[self.transform]
 
     @property
     def _search_domain(self):
@@ -281,9 +285,10 @@ class DOF:
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
-            if attr == "search_domain":
+            if attr in ["search_domain", "trust_domain"]:
                 if (self.type == "continuous") and not self.read_only:
-                    value = f"({value[0]:.02e}, {value[1]:.02e})"
+                    if value is not None:
+                        value = f"({value[0]:.02e}, {value[1]:.02e})"
             series[attr] = value if value is not None else ""
         return series
 
@@ -295,6 +300,11 @@ class DOF:
     def has_model(self):
         return hasattr(self, "model")
 
+    def activate(self):
+        self.active = True
+
+    def deactivate(self):
+        self.active = False
 
 class DOFList(Sequence):
     def __init__(self, dofs: list = []):
@@ -406,7 +416,10 @@ class DOFList(Sequence):
         self.dofs.append(dof)
 
     @staticmethod
-    def _test_dof(dof, active=None, read_only=None, tag=None):
+    def _test_dof(dof, type=None, active=None, read_only=None, tag=None):
+        if type is not None:
+            if dof.type != type:
+                return False
         if active is not None:
             if dof.active != active:
                 return False
@@ -418,18 +431,33 @@ class DOFList(Sequence):
                 return False
         return True
 
-    def subset(self, active=None, read_only=None, tag=None):
-        return DOFList([dof for dof in self.dofs if self._test_dof(dof, active=active, read_only=read_only, tag=tag)])
+    def subset(self, type=None, active=None, read_only=None, tag=None):
+        return DOFList([dof for dof in self.dofs if self._test_dof(dof, type=type, active=active, read_only=read_only, tag=tag)])
 
-    def activate(self, active=None, read_only=None, tag=None):
+    def activate(self, **subset_kwargs):
         for dof in self.dofs:
-            if self._test_dof(dof, active=active, read_only=read_only, tag=tag):
+            if self._test_dof(dof, **subset_kwargs):
                 dof.active = True
 
-    def deactivate(self, active=None, read_only=None, tag=None):
+    def deactivate(self, **subset_kwargs):
         for dof in self.dofs:
-            if self._test_dof(dof, active=active, read_only=read_only, tag=tag):
+            if self._test_dof(dof, **subset_kwargs):
                 dof.active = False
+
+    def activate_only(self, **subset_kwargs):
+        for dof in self.dofs:
+            if self._test_dof(dof, **subset_kwargs):
+                dof.active = True
+            else:
+                dof.active = False
+
+    def deactivate_only(self, **subset_kwargs):
+        for dof in self.dofs:
+            if self._test_dof(dof, **subset_kwargs):
+                dof.active = False
+            else:
+                dof.active = True
+
 
 
 class BrownianMotion(SignalRO):
