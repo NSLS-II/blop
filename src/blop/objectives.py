@@ -21,15 +21,14 @@ OBJ_FIELD_TYPES = {
     "active": "bool",
     "weight": "bool",
     "units": "object",
-    "min_noise": "float",
-    "max_noise": "float",
+    "noise_bounds": "object",
     "noise": "float",
     "n": "int",
     "latent_groups": "object",
 }
 
 SUPPORTED_OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
-SUPPORTED_OBJ_TRANSFORMS = {"log": (0.0, np.inf), "sigmoid": (0.0, 1.0), "tanh": (-1.0, 1.0)}
+TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "sigmoid": (0.0, 1.0), "tanh": (-1.0, 1.0)}
 
 
 class DuplicateNameError(ValueError):
@@ -51,8 +50,8 @@ def _validate_obj_transform(transform):
     if transform is None:
         return (-np.inf, np.inf)
 
-    if transform not in SUPPORTED_OBJ_TRANSFORMS:
-        raise ValueError(f"'transform' must be a callable with one argument, or one of {SUPPORTED_OBJ_TRANSFORMS}")
+    if transform not in TRANSFORM_DOMAINS:
+        raise ValueError(f"'transform' must be a callable with one argument, or one of {TRANSFORM_DOMAINS}")
 
 
 def _validate_continuous_domains(trust_domain, domain):
@@ -136,7 +135,7 @@ class Objective:
         if self.transform is None:
             if self.type == "continuous":
                 return (-np.inf, np.inf)
-        return SUPPORTED_OBJ_TRANSFORMS[self.transform]
+        return TRANSFORM_DOMAINS[self.transform]
 
     def constrain(self, y):
         """
@@ -191,13 +190,24 @@ class Objective:
         return f"{self.description}{f' [{self.units}]' if self.units else ''}"
 
     @property
+    def noise_bounds(self) -> tuple:
+        return (self.min_noise, self.max_noise) 
+
+    @property
     def summary(self) -> pd.Series:
         series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
-            # if attr == "trust_domain":
 
-            #         value = self._trust_domain
+            if attr in ["search_domain", "trust_domain"]:
+                if (self.type == "continuous"):
+                    if value is not None:
+                        value = f"({value[0]:.02e}, {value[1]:.02e})"
+
+            if attr in ["noise_bounds"]:
+                if value is not None:
+                    value = f"({value[0]:.01e}, {value[1]:.01e})"
+
             series[attr] = value if value is not None else ""
         return series
 
@@ -223,7 +233,7 @@ class Objective:
 
     @property
     def n(self) -> int:
-        return self.model.train_targets.shape[0] if hasattr(self, "model") else 0
+        return int((~self.model.train_targets.isnan()).sum()) if hasattr(self, "model") else 0
 
     def targeting_constraint(self, x: torch.Tensor) -> torch.Tensor:
         if not isinstance(self.target, tuple):
@@ -234,7 +244,9 @@ class Objective:
         m = p.mean
         s = p.variance.sqrt()
 
-        return 0.5 * (approximate_erf((b - m) / (np.sqrt(2) * s)) - approximate_erf((a - m) / (np.sqrt(2) * s)))[..., -1]
+        sish = s + 0.1 * m.std()
+
+        return 0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
 
     # def fitness_forward(self, y):
     #     f = y
@@ -327,7 +339,7 @@ class ObjectiveList(Sequence):
         return self.summary.__repr__()
 
     def _repr_html_(self):
-        return self.summary._repr_html_()
+        return self.summary.T._repr_html_()
 
     # @property
     # def descriptions(self) -> list:
