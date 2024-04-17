@@ -1,4 +1,5 @@
-blop/_version.py
+# setuptools_scm
+src/*/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
