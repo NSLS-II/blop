@@ -49,13 +49,19 @@ class DOF:
     name: str
         The name of the DOF. This is used as a key to index observed data.
     description: str, optional
-        A longer name for the DOF.
-    units: str
-        The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
+        A longer, more descriptive name for the DOF.
+    type: str
+        What kind of DOF it is. A DOF can be:
+        - Continuous, meaning that it can vary to any point between a lower and upper bound.
+        - Binary, meaning that it can take one of two values (e.g. [on, off])
+        - Ordinal, meaning ordered categories (e.g. [low, medium, high])
+        - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
     search_domain: tuple
         A tuple of the lower and upper limit of the DOF for the agent to search.
     trust_domain: tuple, optional
         The agent will reject all data where the DOF value is outside the trust domain. Must be larger than search domain.
+    units: str
+        The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
     read_only: bool
         If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
         device is read-only.
@@ -68,12 +74,6 @@ class DOF:
         A list of tags. These make it easier to subset large groups of dofs.
     device: Signal, optional
         An ophyd device. If not supplied, a dummy ophyd device will be generated.
-    type: str
-        What kind of DOF it is. A DOF can be:
-        - Continuous, meaning that it can vary to any point between two domain.
-        - Binary, meaning that it can take one of two values (e.g. [on, off])
-        - Ordinal, meaning ordered categories (e.g. [low, medium, high])
-        - Categorical, meaning non-ordered categories (e.g. )
     """
 
     name: str = None
