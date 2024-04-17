@@ -162,7 +162,6 @@ class DOF:
 
         # if our input is continuous
         if self.type == "continuous":
-
             _validate_dof_transform(self.transform)
 
             if self.trust_domain is None:
@@ -306,6 +305,7 @@ class DOF:
     def deactivate(self):
         self.active = False
 
+
 class DOFList(Sequence):
     def __init__(self, dofs: list = []):
         _validate_dofs(dofs)
@@ -347,6 +347,7 @@ class DOFList(Sequence):
         """
         Transform X to the transformed unit hypercube.
         """
+
         if X.shape[-1] != len(self.subset(active=True)):
             raise ValueError()
 
@@ -432,7 +433,9 @@ class DOFList(Sequence):
         return True
 
     def subset(self, type=None, active=None, read_only=None, tag=None):
-        return DOFList([dof for dof in self.dofs if self._test_dof(dof, type=type, active=active, read_only=read_only, tag=tag)])
+        return DOFList(
+            [dof for dof in self.dofs if self._test_dof(dof, type=type, active=active, read_only=read_only, tag=tag)]
+        )
 
     def activate(self, **subset_kwargs):
         for dof in self.dofs:
@@ -457,7 +460,6 @@ class DOFList(Sequence):
                 dof.active = False
             else:
                 dof.active = True
-
 
 
 class BrownianMotion(SignalRO):

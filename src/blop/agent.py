@@ -279,8 +279,6 @@ class Agent:
             upsampled_idx = np.linspace(0, len(idx) - 1, upsample * len(idx) - 1)
             acq_points = sp.interpolate.interp1d(idx, acq_points, axis=0)(upsampled_idx)
 
-        
-
         res = {
             "points": acq_points,
             "acq_func": acq_func_name,
@@ -738,7 +736,12 @@ class Agent:
 
     @property
     def _sample_domain(self):
-        return self.dofs.transform(self.dofs.search_domain).T
+        """
+        Returns a (2, n_active_dof) array of lower and upper bounds for dofs.
+        Read-only DOFs are set to exactly their last known value.
+        Discrete DOFs are relaxed to some continuous domain.
+        """
+        return self.dofs.transform(self.dofs.subset(active=True).search_domain.T)
 
     @property
     def _model_input_transform(self):
@@ -799,7 +802,6 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
-
         x = self.dofs.transform(x)
 
         p = torch.ones(x.shape[:-1])
