@@ -50,7 +50,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
                 alpha=0.5**z,
             )
 
-        agent.obj_axes[obj_index].set_xlim(*x_dof.search_bounds)
+        agent.obj_axes[obj_index].set_xlim(*x_dof.search_domain)
         agent.obj_axes[obj_index].set_xlabel(x_dof.label)
         agent.obj_axes[obj_index].set_ylabel(obj.label)
 
@@ -179,8 +179,8 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     for ax in agent.obj_axes.ravel():
         ax.set_xlabel(x_dof.label)
         ax.set_ylabel(y_dof.label)
-        ax.set_xlim(*x_dof.search_bounds)
-        ax.set_ylim(*y_dof.search_bounds)
+        ax.set_xlim(*x_dof.search_domain)
+        ax.set_ylim(*y_dof.search_domain)
         if x_dof.log:
             ax.set_xscale("log")
         if y_dof.log:
@@ -209,7 +209,7 @@ def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
 
         agent.acq_axes[iacq_func].plot(test_inputs.squeeze(-2), test_acqf, lw=lw, color=color)
 
-        agent.acq_axes[iacq_func].set_xlim(*x_dof.search_bounds)
+        agent.acq_axes[iacq_func].set_xlim(*x_dof.search_domain)
         agent.acq_axes[iacq_func].set_xlabel(x_dof.label)
         agent.acq_axes[iacq_func].set_ylabel(acq_func_meta["name"])
 
@@ -271,8 +271,8 @@ def _plot_acqf_many_dofs(
     for ax in agent.acq_axes.ravel():
         ax.set_xlabel(x_dof.label)
         ax.set_ylabel(y_dof.label)
-        ax.set_xlim(*x_dof.search_bounds)
-        ax.set_ylim(*y_dof.search_bounds)
+        ax.set_xlim(*x_dof.search_domain)
+        ax.set_ylim(*y_dof.search_domain)
         if x_dof.log:
             ax.set_xscale("log")
         if y_dof.log:
@@ -290,7 +290,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
 
     agent.valid_ax.scatter(x_values, agent.all_objectives_valid, s=size)
     agent.valid_ax.plot(test_inputs.squeeze(-2), constraint, lw=lw)
-    agent.valid_ax.set_xlim(*x_dof.search_bounds)
+    agent.valid_ax.set_xlim(*x_dof.search_domain)
 
 
 def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
@@ -335,8 +335,8 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
     for ax in agent.valid_axes.ravel():
         ax.set_xlabel(x_dof.label)
         ax.set_ylabel(y_dof.label)
-        ax.set_xlim(*x_dof.search_bounds)
-        ax.set_ylim(*y_dof.search_bounds)
+        ax.set_xlim(*x_dof.search_domain)
+        ax.set_ylim(*y_dof.search_domain)
         if x_dof.log:
             ax.set_xscale("log")
         if y_dof.log:

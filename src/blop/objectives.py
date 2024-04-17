@@ -12,9 +12,10 @@ DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
     "description": "object",
+    "type": "str",
     "target": "object",
     "active": "bool",
-    "trust_bounds": "object",
+    "trust_domain": "object",
     "active": "bool",
     "weight": "bool",
     "units": "object",
@@ -25,6 +26,8 @@ OBJ_FIELD_TYPES = {
     "n": "int",
     "latent_groups": "object",
 }
+
+ALLOWED_OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
 
 
 class DuplicateNameError(ValueError):
@@ -73,11 +76,12 @@ class Objective:
 
     name: str
     description: str = ""
+    type: str = "continuous"
     target: Union[Tuple[float, float], float, str] = "max"
     log: bool = False
     weight: float = 1.0
     active: bool = True
-    trust_bounds: Tuple[float, float] or None = None
+    trust_domain: Tuple[float, float] or None = None
     min_noise: float = DEFAULT_MIN_NOISE_LEVEL
     max_noise: float = DEFAULT_MAX_NOISE_LEVEL
     units: str = None
@@ -95,10 +99,10 @@ class Objective:
         self.use_as_constraint = True if isinstance(self.target, tuple) else False
 
     @property
-    def _trust_bounds(self):
-        if self.trust_bounds is None:
+    def _trust_domain(self):
+        if self.trust_domain is None:
             return (0, np.inf) if self.log else (-np.inf, np.inf)
-        return self.trust_bounds
+        return self.trust_domain
 
     @property
     def label(self) -> str:
@@ -109,7 +113,7 @@ class Objective:
         series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
-            if attr == "trust_bounds":
+            if attr == "trust_domain":
                 if value is None:
                     value = (0, np.inf) if self.log else (-np.inf, np.inf)
             series[attr] = value
@@ -117,15 +121,15 @@ class Objective:
 
     @property
     def trust_lower_bound(self):
-        if self.trust_bounds is None:
+        if self.trust_domain is None:
             return 0 if self.log else -np.inf
-        return float(self.trust_bounds[0])
+        return float(self.trust_domain[0])
 
     @property
     def trust_upper_bound(self):
-        if self.trust_bounds is None:
+        if self.trust_domain is None:
             return np.inf
-        return float(self.trust_bounds[1])
+        return float(self.trust_domain[1])
 
     @property
     def noise(self) -> float:

@@ -51,8 +51,8 @@ def agent(db):
     """
 
     dofs = [
-        DOF(name="x1", search_bounds=(-8.0, 8.0)),
-        DOF(name="x2", search_bounds=(-8.0, 8.0)),
+        DOF(name="x1", search_domain=(-8.0, 8.0)),
+        DOF(name="x2", search_domain=(-8.0, 8.0)),
     ]
 
     objectives = [Objective(name="himmelblau", target="min")]
@@ -85,8 +85,8 @@ def agent_with_multiple_objs(db):
         return products
 
     dofs = [
-        DOF(name="x1", search_bounds=(-5.0, 5.0)),
-        DOF(name="x2", search_bounds=(-5.0, 5.0)),
+        DOF(name="x1", search_domain=(-5.0, 5.0)),
+        DOF(name="x2", search_domain=(-5.0, 5.0)),
     ]
 
     objectives = [Objective(name="obj1", target="min"), Objective(name="obj2", target="min")]
@@ -110,9 +110,9 @@ def agent_with_passive_dofs(db):
     """
 
     dofs = [
-        DOF(name="x1", search_bounds=(-5.0, 5.0)),
-        DOF(name="x2", search_bounds=(-5.0, 5.0)),
-        DOF(name="x3", search_bounds=(-5.0, 5.0), active=False),
+        DOF(name="x1", search_domain=(-5.0, 5.0)),
+        DOF(name="x2", search_domain=(-5.0, 5.0)),
+        DOF(name="x3", search_domain=(-5.0, 5.0), active=False),
         DOF(device=BrownianMotion(name="brownian1"), read_only=True),
         DOF(device=BrownianMotion(name="brownian2"), read_only=True, active=False),
     ]
