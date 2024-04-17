@@ -1,4 +1,6 @@
 import logging
+import os
+import pathlib
 import time as ttime
 import warnings
 from collections import OrderedDict
@@ -139,6 +141,12 @@ class Agent:
 
         self.n_last_trained = 0
 
+    def unpack_run(self):
+        return
+
+    def measurement_plan(self):
+        return
+
     @property
     def active_dofs(self):
         return self.dofs.subset(active=True)
@@ -239,7 +247,7 @@ class Agent:
 
             candidates, acqf_obj = botorch.optim.optimize_acqf(
                 acq_function=acq_func,
-                bounds=self._sample_bounds,
+                bounds=self._sample_domain,
                 q=n,
                 sequential=sequential,
                 num_restarts=NUM_RESTARTS,
@@ -383,7 +391,7 @@ class Agent:
         """
 
         if self.sample_center_on_init and not self.initialized:
-            center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).search_bounds.mean(axis=1))
+            center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).search_domain.mean(axis=1))
             new_table = yield from self.acquire(center_inputs)
             new_table.loc[:, "acq_func"] = "sample_center_on_init"
 
@@ -497,7 +505,10 @@ class Agent:
         self.n_last_trained = 0
 
     def benchmark(
-        self, output_dir="./", runs=16, n_init=64, learning_kwargs_list=[{"acq_func": "qei", "n": 4, "iterations": 16}]
+        self,
+        output_dir="./",
+        iterations=16,
+        per_iter_learn_kwargs_list=[{"acq_func": "qr", "n": 32}, {"acq_func": "qei", "n": 4, "iterations": 4}],
     ):
         """Iterate over having the agent learn from scratch, and save the results to an output directory.
 
@@ -505,19 +516,19 @@ class Agent:
         ----------
         output_dir :
             Where to save the agent output.
-        runs : int
+        iterations : int
             How many benchmarks to run
-        learning_kwargs_list:
-            A list of kwargs to pass to the learn method which the agent will run sequentially for each run.
+        per_iter_learn_kwargs_list:
+            A list of kwargs to pass to the agent.learn() method that the agent will run sequentially for each iteration.
         """
 
-        for run in range(runs):
+        for _ in range(iterations):
             self.reset()
 
-            for kwargs in learning_kwargs_list:
+            for kwargs in per_iter_learn_kwargs_list:
                 yield from self.learn(**kwargs)
 
-            self.save_data(output_dir + f"benchmark-{int(ttime.time())}.h5")
+            self.save_data(f"{output_dir}/blop_benchmark_{int(ttime.time())}.h5")
 
     @property
     def model(self):
@@ -668,17 +679,17 @@ class Agent:
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
 
     @property
-    def _sample_bounds(self):
-        return torch.tensor(self.active_dofs.search_bounds, dtype=torch.double).T
+    def _sample_domain(self):
+        return torch.tensor(self.active_dofs.search_domain, dtype=torch.double).T
 
     @property
     def _sample_input_transform(self):
         tf1 = Log10(indices=list(np.where(self.active_dofs.log)[0]))
 
-        transformed_sample_bounds = tf1.transform(self._sample_bounds)
+        transformed_sample_domain = tf1.transform(self._sample_domain)
 
-        offset = transformed_sample_bounds.min(dim=0).values
-        coefficient = (transformed_sample_bounds.max(dim=0).values - offset).clamp(min=1e-16)
+        offset = transformed_sample_domain.min(dim=0).values
+        coefficient = (transformed_sample_domain.max(dim=0).values - offset).clamp(min=1e-16)
 
         tf2 = AffineInputTransform(d=len(offset), coefficient=coefficient, offset=offset)
 
@@ -691,7 +702,7 @@ class Agent:
 
         For modeling:
 
-        Always normalize between min and max values. This is always inside the trust bounds, sometimes smaller.
+        Always normalize between min and max values. This is always inside the trust domain, sometimes smaller.
 
         For sampling:
 
@@ -704,13 +715,15 @@ class Agent:
 
         return ChainedInputTransform(tf1=tf1, tf2=tf2)
 
-    def save_data(self, filepath="./self_data.h5"):
+    def save_data(self, path="./data.h5"):
         """
         Save the sampled inputs and targets of the agent to a file, which can be used
-        to initialize a future self.
+        to initialize a future agent.
         """
 
-        self.table.to_hdf(filepath, key="table")
+        save_dir, _ = os.path.split(path)
+        pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
+        self.table.to_hdf(path, key="table")
 
     def forget(self, last=None, index=None, train=True):
         """
@@ -823,7 +836,7 @@ class Agent:
         inputs = self.table.loc[:, dof.name].values.copy()
 
         # check that inputs values are inside acceptable values
-        valid = (inputs >= dof._trust_bounds[0]) & (inputs <= dof._trust_bounds[1])
+        valid = (inputs >= dof._trust_domain[0]) & (inputs <= dof._trust_domain[1])
         inputs = np.where(valid, inputs, np.nan)
 
         return torch.tensor(inputs, dtype=torch.double).unsqueeze(-1)
@@ -838,7 +851,7 @@ class Agent:
         targets = self.table.loc[:, obj.name].values.copy()
 
         # check that targets values are inside acceptable values
-        valid = (targets >= obj._trust_bounds[0]) & (targets <= obj._trust_bounds[1])
+        valid = (targets >= obj._trust_domain[0]) & (targets <= obj._trust_domain[1])
         targets = np.where(valid, targets, np.nan)
 
         # transform if needed
