@@ -13,11 +13,13 @@ DEFAULT_SCATTER_SIZE = 16
 MAX_TEST_INPUTS = 2**11
 
 
-def _plot_objs_one_dof(agent, size=16, lw=1e0):
+def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
+    fitness_objs = agent.objectives.subset(kind="fitness")
+
     agent.obj_fig, agent.obj_axes = plt.subplots(
-        len(agent.objectives),
+        len(fitness_objs),
         1,
-        figsize=(6, 4 * len(agent.objectives)),
+        figsize=(6, 4 * len(fitness_objs)),
         sharex=True,
         constrained_layout=True,
     )
@@ -27,7 +29,10 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
     x_dof = agent.dofs.subset(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
-    for obj_index, obj in enumerate(agent.objectives):
+    test_inputs = agent.sample(method="grid")
+    test_model_inputs = agent.dofs.transform(test_inputs)
+
+    for obj_index, obj in enumerate(fitness_objs):
         obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
@@ -35,7 +40,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
         test_inputs = agent.sample(method="grid")
         test_x = test_inputs[..., 0].detach().numpy()
 
-        test_posterior = obj.model.posterior(test_inputs)
+        test_posterior = obj.model.posterior(test_model_inputs)
         test_mean = test_posterior.mean[..., 0].detach().numpy()
         test_sigma = test_posterior.variance.sqrt()[..., 0].detach().numpy()
 
@@ -54,6 +59,69 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
         agent.obj_axes[obj_index].set_xlim(*x_dof.search_domain)
         agent.obj_axes[obj_index].set_xlabel(x_dof.label_with_units)
         agent.obj_axes[obj_index].set_ylabel(obj.label_with_units)
+
+
+def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
+    constraint_objs = agent.objectives.subset(kind="constraint")
+
+    agent.obj_fig, agent.obj_axes = plt.subplots(
+        len(constraint_objs),
+        2,
+        figsize=(8, 4 * len(constraint_objs)),
+        sharex=True,
+        constrained_layout=True,
+    )
+
+    agent.obj_axes = np.atleast_2d(agent.obj_axes)
+
+    x_dof = agent.dofs.subset(active=True)[0]
+    x_values = agent.table.loc[:, x_dof.device.name].values
+
+    test_inputs = agent.sample(method="grid")
+    test_model_inputs = agent.dofs.transform(test_inputs)
+
+    for obj_index, obj in enumerate(constraint_objs):
+        val_ax = agent.obj_axes[obj_index, 0]
+        con_ax = agent.obj_axes[obj_index, 1]
+
+        obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
+
+        color = DEFAULT_COLOR_LIST[obj_index]
+
+        test_inputs = agent.sample(method="grid")
+        test_x = test_inputs[..., 0].detach().numpy()
+
+        test_posterior = obj.model.posterior(test_model_inputs)
+        test_mean = test_posterior.mean[..., 0].detach().numpy()
+        test_sigma = test_posterior.variance.sqrt()[..., 0].detach().numpy()
+
+        val_ax.scatter(x_values, obj_values, s=size, color=color)
+
+        con_ax.plot(test_x, obj.targeting_constraint(test_model_inputs).detach())
+
+        for z in [0, 1, 2]:
+            val_ax.fill_between(
+                test_x.ravel(),
+                (test_mean - z * test_sigma).ravel(),
+                (test_mean + z * test_sigma).ravel(),
+                lw=lw,
+                color=color,
+                alpha=0.5**z,
+            )
+
+        ymin, ymax = val_ax.get_ylim()
+
+        val_ax.fill_between(
+            test_x.ravel(), y1=np.maximum(obj.target[0], ymin), y2=np.minimum(obj.target[1], ymax), alpha=0.2
+        )
+        val_ax.set_ylim(ymin, ymax)
+
+        con_ax.set_ylabel(r"P(constraint)")
+        val_ax.set_ylabel(obj.label_with_units)
+
+        for ax in [val_ax, con_ax]:
+            ax.set_xlim(*x_dof.search_domain)
+            ax.set_xlabel(x_dof.label_with_units)
 
 
 def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, grid_zoom=1):

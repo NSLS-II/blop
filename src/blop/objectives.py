@@ -13,6 +13,7 @@ DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
     "description": "object",
+    "kind": "str",
     "type": "str",
     "target": "object",
     "active": "bool",
@@ -191,7 +192,7 @@ class Objective:
 
     @property
     def noise_bounds(self) -> tuple:
-        return (self.min_noise, self.max_noise) 
+        return (self.min_noise, self.max_noise)
 
     @property
     def summary(self) -> pd.Series:
@@ -200,7 +201,7 @@ class Objective:
             value = getattr(self, attr)
 
             if attr in ["search_domain", "trust_domain"]:
-                if (self.type == "continuous"):
+                if self.type == "continuous":
                     if value is not None:
                         value = f"({value[0]:.02e}, {value[1]:.02e})"
 
@@ -246,7 +247,9 @@ class Objective:
 
         sish = s + 0.1 * m.std()
 
-        return 0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
+        return (
+            0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
+        )
 
     # def fitness_forward(self, y):
     #     f = y
