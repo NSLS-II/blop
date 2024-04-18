@@ -1,6 +1,7 @@
 import os
 
 import yaml
+from botorch.utils.transforms import normalize
 
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
@@ -42,53 +43,53 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
     if acq_func_name == "expected_improvement":
         acq_func = analytic.ConstrainedLogExpectedImprovement(
             constraint=agent.constraint,
-            model=agent.model,
-            best_f=agent.max_scalarized_objective,
-            posterior_transform=agent.targeting_transform,
+            model=agent.fitness_model,
+            best_f=agent.best_f,
+            posterior_transform=agent.fitness_scalarization,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "monte_carlo_expected_improvement":
         acq_func = monte_carlo.qConstrainedExpectedImprovement(
             constraint=agent.constraint,
-            model=agent.model,
-            best_f=agent.max_scalarized_objective,
-            posterior_transform=agent.targeting_transform,
+            model=agent.fitness_model,
+            best_f=agent.best_f,
+            posterior_transform=agent.fitness_scalarization,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "probability_of_improvement":
         acq_func = analytic.ConstrainedLogProbabilityOfImprovement(
             constraint=agent.constraint,
-            model=agent.model,
-            best_f=agent.max_scalarized_objective,
-            posterior_transform=agent.targeting_transform,
+            model=agent.fitness_model,
+            best_f=agent.best_f,
+            posterior_transform=agent.fitness_scalarization,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "monte_carlo_probability_of_improvement":
         acq_func = monte_carlo.qConstrainedProbabilityOfImprovement(
             constraint=agent.constraint,
-            model=agent.model,
-            best_f=agent.max_scalarized_objective,
-            posterior_transform=agent.targeting_transform,
+            model=agent.fitness_model,
+            best_f=agent.best_f,
+            posterior_transform=agent.fitness_scalarization,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
     elif acq_func_name == "lower_bound_max_value_entropy":
         acq_func = monte_carlo.qConstrainedLowerBoundMaxValueEntropy(
             constraint=agent.constraint,
-            model=agent.model,
+            model=agent.fitness_model,
             candidate_set=agent.test_inputs(n=1024).squeeze(1),
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
 
-    elif acq_func_name == "noisy_expected_hypervolume_improvement":
+    elif acq_func_name == "monte_carlo_noisy_expected_hypervolume_improvement":
         acq_func = monte_carlo.qConstrainedNoisyExpectedHypervolumeImprovement(
             constraint=agent.constraint,
-            model=agent.model,
-            ref_point=agent.train_targets.min(dim=0).values,
-            X_baseline=agent.train_inputs,
+            model=agent.fitness_model,
+            ref_point=agent.random_ref_point,
+            X_baseline=normalize(agent.train_inputs(), agent._sample_domain),
             prune_baseline=True,
         )
         acq_func_meta = {"name": acq_func_name, "args": {}}
@@ -98,9 +99,9 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
 
         acq_func = analytic.ConstrainedUpperConfidenceBound(
             constraint=agent.constraint,
-            model=agent.model,
+            model=agent.fitness_model,
             beta=beta,
-            posterior_transform=agent.targeting_transform,
+            posterior_transform=agent.fitness_scalarization,
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 
@@ -109,9 +110,9 @@ def get_acquisition_function(agent, identifier="qei", return_metadata=True, verb
 
         acq_func = monte_carlo.qConstrainedUpperConfidenceBound(
             constraint=agent.constraint,
-            model=agent.model,
+            model=agent.fitness_model,
             beta=beta,
-            posterior_transform=agent.targeting_transform,
+            posterior_transform=agent.fitness_scalarization,
         )
         acq_func_meta = {"name": acq_func_name, "args": {"beta": beta}}
 

@@ -3,10 +3,11 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
-from . import acquisition
+from .bayesian import acquisition
 
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
-DEFAULT_COLORMAP = "magma"
+# Note: the values near 1 are hard to see on a white background. Turbo goes from red to blue and isn't white in the middle.
+DEFAULT_COLORMAP = "turbo"
 DEFAULT_SCATTER_SIZE = 16
 
 MAX_TEST_INPUTS = 2**11
@@ -89,77 +90,131 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     for obj_index, obj in enumerate(agent.objectives):
         targets = agent.train_targets(obj.name).squeeze(-1).numpy()
 
-        obj_vmin, obj_vmax = np.nanpercentile(targets, q=[1, 99])
+        values = obj.fitness_inverse(targets)
+
+        val_vmin, val_vmax = np.quantile(values, q=[0.01, 0.99])
+        val_norm = mpl.colors.LogNorm(val_vmin, val_vmax) if obj.log else mpl.colors.Normalize(val_vmin, val_vmax)
+
+        obj_vmin, obj_vmax = np.quantile(targets, q=[0.01, 0.99])
         obj_norm = mpl.colors.Normalize(obj_vmin, obj_vmax)
 
-        data_ax = agent.obj_axes[obj_index, 0].scatter(x_values, y_values, c=targets, s=size, norm=obj_norm, cmap=cmap)
+        val_ax = agent.obj_axes[obj_index, 0].scatter(x_values, y_values, c=values, s=size, norm=val_norm, cmap=cmap)
 
         # mean and sigma will have shape (*input_shape,)
         test_posterior = obj.model.posterior(test_inputs)
         test_mean = test_posterior.mean[..., 0, 0].detach().squeeze().numpy()
         test_sigma = test_posterior.variance.sqrt()[..., 0, 0].detach().squeeze().numpy()
 
+        # test_values = obj.fitness_inverse(test_mean) if obj.is_fitness else test_mean
+
+        test_constraint = None
+        if not obj.is_fitness:
+            test_constraint = obj.targeting_constraint(test_inputs).detach().squeeze().numpy()
+
         if gridded:
-            _ = agent.obj_axes[obj_index, 1].pcolormesh(
-                test_x,
-                test_y,
-                test_mean,
-                shading=shading,
-                cmap=cmap,
-                norm=obj_norm,
-            )
-            sigma_ax = agent.obj_axes[obj_index, 2].pcolormesh(
-                test_x,
-                test_y,
-                test_sigma,
-                shading=shading,
-                cmap=cmap,
-                norm=mpl.colors.LogNorm(),
-            )
+            # _ = agent.obj_axes[obj_index, 1].pcolormesh(
+            #     test_x,
+            #     test_y,
+            #     test_values,
+            #     shading=shading,
+            #     cmap=cmap,
+            #     norm=val_norm,
+            # )
+            if obj.is_fitness:
+                fitness_ax = agent.obj_axes[obj_index, 1].pcolormesh(
+                    test_x,
+                    test_y,
+                    test_mean,
+                    shading=shading,
+                    cmap=cmap,
+                    norm=obj_norm,
+                )
+                fit_err_ax = agent.obj_axes[obj_index, 2].pcolormesh(
+                    test_x,
+                    test_y,
+                    test_sigma,
+                    shading=shading,
+                    cmap=cmap,
+                    norm=mpl.colors.LogNorm(),
+                )
+
+            if test_constraint is not None:
+                constraint_ax = agent.obj_axes[obj_index, 3].pcolormesh(
+                    test_x,
+                    test_y,
+                    test_constraint,
+                    shading=shading,
+                    cmap=cmap,
+                    # norm=mpl.colors.LogNorm(),
+                )
 
         else:
-            _ = agent.obj_axes[obj_index, 1].scatter(
-                test_x,
-                test_y,
-                c=test_mean,
-                s=size,
-                norm=obj_norm,
-                cmap=cmap,
+            # _ = agent.obj_axes[obj_index, 1].scatter(
+            #     test_x,
+            #     test_y,
+            #     c=test_values,
+            #     s=size,
+            #     norm=val_norm,
+            #     cmap=cmap,
+            # )
+            if obj.is_fitness:
+                fitness_ax = agent.obj_axes[obj_index, 1].scatter(
+                    test_x,
+                    test_y,
+                    c=test_mean,
+                    s=size,
+                    norm=obj_norm,
+                    cmap=cmap,
+                )
+                fit_err_ax = agent.obj_axes[obj_index, 2].scatter(
+                    test_x,
+                    test_y,
+                    c=test_sigma,
+                    s=size,
+                    cmap=cmap,
+                    norm=mpl.colors.LogNorm(),
+                )
+
+            if test_constraint is not None:
+                constraint_ax = agent.obj_axes[obj_index, 3].scatter(
+                    test_x,
+                    test_y,
+                    c=test_constraint,
+                    s=size,
+                    cmap=cmap,
+                    norm=mpl.colors.LogNorm(),
+                )
+
+        val_cbar = agent.obj_fig.colorbar(val_ax, ax=agent.obj_axes[obj_index, 0], location="bottom", aspect=32, shrink=0.8)
+        val_cbar.set_label(f"{obj.units or ''}")
+
+        if obj.is_fitness:
+            _ = agent.obj_fig.colorbar(fitness_ax, ax=agent.obj_axes[obj_index, 1], location="bottom", aspect=32, shrink=0.8)
+            _ = agent.obj_fig.colorbar(fit_err_ax, ax=agent.obj_axes[obj_index, 2], location="bottom", aspect=32, shrink=0.8)
+
+            # obj_cbar.set_label(f"{obj.label}")
+            # err_cbar.set_label(f"{obj.label}")
+
+        if test_constraint is not None:
+            constraint_cbar = agent.obj_fig.colorbar(
+                constraint_ax, ax=agent.obj_axes[obj_index, 3], location="bottom", aspect=32, shrink=0.8
             )
-            sigma_ax = agent.obj_axes[obj_index, 2].scatter(
-                test_x,
-                test_y,
-                c=test_sigma,
-                s=size,
-                cmap=cmap,
-                norm=mpl.colors.LogNorm(),
+
+            constraint_cbar.set_label(f"{obj.label} constraint")
+
+        col_names = [
+            f"{obj.description} samples",
+            f"pred. {obj.description} fitness",
+            f"pred. {obj.description} fitness error",
+            f"{obj.description} constraint",
+        ]
+
+        pad = 5
+
+        for column_index, ax in enumerate(agent.obj_axes[obj_index]):
+            ax.set_title(
+                col_names[column_index],
             )
-
-        obj_cbar = agent.obj_fig.colorbar(
-            data_ax, ax=agent.obj_axes[obj_index, :2], location="bottom", aspect=32, shrink=0.8
-        )
-        err_cbar = agent.obj_fig.colorbar(
-            sigma_ax, ax=agent.obj_axes[obj_index, 2], location="bottom", aspect=32, shrink=0.8
-        )
-        obj_cbar.set_label(obj.label)
-        err_cbar.set_label(f"{obj.label} error")
-
-    col_names = ["samples", "posterior mean", "posterior std. dev.", "fitness"]
-
-    pad = 5
-
-    for column_index, ax in enumerate(agent.obj_axes[0]):
-        ax.annotate(
-            col_names[column_index],
-            xy=(0.5, 1),
-            xytext=(0, pad),
-            color="k",
-            xycoords="axes fraction",
-            textcoords="offset points",
-            size="large",
-            ha="center",
-            va="baseline",
-        )
 
     if len(agent.objectives) > 1:
         for row_index, ax in enumerate(agent.obj_axes[:, 0]):
@@ -370,7 +425,7 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
             hist_axes[obj_index].plot(x, y, lw=5e-1, c="k")
             hist_axes[obj_index].set_ylabel(obj.key)
 
-    y = agent.scalarized_objectives
+    y = agent.scalarized_fitnesses
 
     cummax_y = np.array([np.nanmax(y[: i + 1]) for i in range(len(y))])
 
@@ -406,3 +461,25 @@ def inspect_beam(agent, index, border=None):
     if border is not None:
         plt.xlim(x_min - border * width_x, x_min + border * width_x)
         plt.ylim(y_min - border * width_y, y_min + border * width_y)
+
+
+def _plot_pareto_front(agent, obj_indices=(0, 1)):
+    f_objs = agent.objectives[agent.objectives.type == "fitness"]
+    (i, j) = obj_indices
+
+    if len(f_objs) < 2:
+        raise ValueError("Cannot plot Pareto front for agents with fewer than two fitness objectives")
+
+    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+
+    y = agent.train_targets()[:, agent.objectives.type == "fitness"]
+
+    front_mask = agent.pareto_front_mask
+
+    ax.scatter(y[front_mask, i], y[front_mask, j], c="b", label="Pareto front")
+    ax.scatter(y[~front_mask, i], y[~front_mask, j], c="r")
+
+    ax.set_xlabel(f"{f_objs[i].name} fitness")
+    ax.set_ylabel(f"{f_objs[j].name} fitness")
+
+    ax.legend()

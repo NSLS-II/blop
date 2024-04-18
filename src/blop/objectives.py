@@ -5,7 +5,8 @@ from typing import List, Tuple, Union
 import numpy as np
 import pandas as pd
 import torch
-from torch.special import erf
+
+from .utils.functions import approximate_erf
 
 DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
@@ -76,7 +77,7 @@ class Objective:
 
     name: str
     description: str = ""
-    type: str = "continuous"
+    type: str = None
     target: Union[Tuple[float, float], float, str] = "max"
     log: bool = False
     weight: float = 1.0
@@ -96,7 +97,7 @@ class Objective:
             if self.log and not self.target > 0:
                 return ValueError("'target' must strictly positive if log=True.")
 
-        self.use_as_constraint = True if isinstance(self.target, tuple) else False
+        self.type = "fitness" if self.target in ["min", "max"] else "constraint"
 
     @property
     def _trust_domain(self):
@@ -152,7 +153,45 @@ class Objective:
         m = p.mean
         s = p.variance.sqrt()
 
-        return 0.5 * (erf((b - m) / (np.sqrt(2) * s)) - erf((a - m) / (np.sqrt(2) * s)))[..., -1]
+        return 0.5 * (approximate_erf((b - m) / (np.sqrt(2) * s)) - approximate_erf((a - m) / (np.sqrt(2) * s)))[..., -1]
+
+    def fitness_forward(self, y):
+        f = y
+        if self.log:
+            f = np.log(f)
+        if self.target == "min":
+            f = -f
+        return f
+
+    def fitness_inverse(self, f):
+        y = f
+        if self.target == "min":
+            y = -y
+        if self.log:
+            y = np.exp(y)
+        return y
+
+    @property
+    def is_fitness(self):
+        return self.target in ["min", "max"]
+
+    def value_prediction(self, X):
+        p = self.model.posterior(X)
+
+        if self.is_fitness:
+            return self.fitness_inverse(p.mean)
+
+        if isinstance(self.target, tuple):
+            return p.mean
+
+    def fitness_prediction(self, X):
+        p = self.model.posterior(X)
+
+        if self.is_fitness:
+            return self.fitness_inverse(p.mean)
+
+        if isinstance(self.target, tuple):
+            return self.targeting_constraint(X).log().clamp(min=-16)
 
 
 class ObjectiveList(Sequence):
@@ -197,13 +236,13 @@ class ObjectiveList(Sequence):
         for attr, dtype in OBJ_FIELD_TYPES.items():
             table[attr] = table[attr].astype(dtype)
 
-        return table
+        return table.T
 
     def __repr__(self):
         return self.summary.__repr__()
 
-    def __repr_html__(self):
-        return self.summary.__repr_html__()
+    def _repr_html_(self):
+        return self.summary._repr_html_()
 
     @property
     def descriptions(self) -> list:
@@ -232,6 +271,13 @@ class ObjectiveList(Sequence):
         Returns an array of the objective weights.
         """
         return np.array([obj.weight for obj in self.objectives])
+
+    @property
+    def is_fitness(self) -> np.array:
+        """
+        Returns an array of the objective weights.
+        """
+        return np.array([obj.target in ["min", "max"] for obj in self.objectives])
 
     @property
     def signed_weights(self) -> np.array:

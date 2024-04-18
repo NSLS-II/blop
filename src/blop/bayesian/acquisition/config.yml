@@ -48,6 +48,14 @@ noisy_expected_hypervolume_improvement:
   pretty_name: Noisy expected hypervolume improvement
   type: analytic
 
+monte_carlo_noisy_expected_hypervolume_improvement:
+  description: It's like a big box. How big is the box?
+  identifiers:
+  - qnehvi
+  multitask_only: true
+  pretty_name: Noisy expected hypervolume improvement
+  type: monte_carlo
+
 probability_of_improvement:
   description: The probability that this input improves on the current maximum.
   identifiers:
