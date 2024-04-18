@@ -546,12 +546,12 @@ def _plot_pareto_front(agent, obj_indices=(0, 1)):
 
     y = agent.train_targets()[:, agent.objectives.kind == "fitness"]
 
-    pareto_mask = agent.pareto_mask
+    pareto_front_mask = agent.pareto_front_mask
     constraint = agent.evaluated_constraints.all(axis=-1)
 
-    ax.scatter(*y[(~pareto_mask) & constraint].T[[i, j]], c="k")
+    ax.scatter(*y[(~pareto_front_mask) & constraint].T[[i, j]], c="k")
     ax.scatter(*y[~constraint].T[[i, j]], c="r", marker="x", label="invalid")
-    ax.scatter(*y[pareto_mask].T[[i, j]], c="b", label="Pareto front")
+    ax.scatter(*y[pareto_front_mask].T[[i, j]], c="b", label="Pareto front")
 
     ax.set_xlabel(f"{f_objs[i].name} fitness")
     ax.set_ylabel(f"{f_objs[j].name} fitness")
