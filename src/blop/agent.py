@@ -28,7 +28,7 @@ from ophyd import Signal
 
 from . import plotting, utils
 from .bayesian import acquisition, models
-from .bayesian.acquisition import parse_acqf_identifier, _construct_acqf
+from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
 
 # from .bayesian.transforms import TargetingPosteriorTransform
 from .digestion import default_digestion_function
@@ -157,7 +157,7 @@ class Agent:
             yield self.dofs[index]
 
     def __getattr__(self, attr):
-        acqf_config = acquisition.parse_acqf_identifier(attr)
+        acqf_config = acquisition.parse_acqf_identifier(attr, strict=False)
         if acqf_config is not None:
             acqf, _ = _construct_acqf(acqf_name=acqf_config["name"])
             return acqf
@@ -228,11 +228,10 @@ class Agent:
             acqf_kwargs, acqf_obj = {}, torch.zeros(len(candidates))
 
         else:
-            # check that all the objectives have models 
+            # check that all the objectives have models
             if not all(hasattr(obj, "model") for obj in active_objs):
                 raise RuntimeError(
-                    f"Can't construct non-trivial acquisition function '{acqf}'"
-                    f" (the agent is not initialized!)"
+                    f"Can't construct non-trivial acquisition function '{acqf}'" f" (the agent is not initialized!)"
                 )
 
             # if the model for any active objective mismatches the active dofs, reconstrut and train it
@@ -244,7 +243,7 @@ class Agent:
             if acqf_config["type"] == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            # we may pick up some more kwargs 
+            # we may pick up some more kwargs
             acqf, acqf_kwargs = _construct_acqf(self, acqf_name=acqf_config["name"], **acqf_kwargs)
 
             NUM_RESTARTS = 16
@@ -628,7 +627,7 @@ class Agent:
     @property
     def all_objectives_valid(self):
         """A mask of whether all objectives are valid for each data point."""
-        return ~torch.isnan(self.scalarized_fitnesses)
+        return ~torch.isnan(self.scalarized_fitnesses())
 
     def _train_model(self, model, hypers=None, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
@@ -719,7 +718,7 @@ class Agent:
 
         acquisition._construct_acqf(self, identifier=identifier, return_metadata=return_metadata)
 
-        return 
+        return
 
     def _latent_dim_tuples(self, obj_index=None):
         """
