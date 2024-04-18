@@ -6,6 +6,7 @@ from matplotlib.patches import Patch
 from .bayesian import acquisition
 
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
+# Note: the values near 1 are hard to see on a white background. Turbo goes from red to blue and isn't white in the middle.
 DEFAULT_COLORMAP = "turbo"
 DEFAULT_SCATTER_SIZE = 16
 
