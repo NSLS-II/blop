@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
-from .bayesian import acquisition
+from .bayesian.acquisition import parse_acqf_identifier, _construct_acqf
 
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
 # Note: the values near 1 are hard to see on a white background. Turbo goes from red to blue and isn't white in the middle.
@@ -314,11 +314,11 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
             ax.set_yscale("log")
 
 
-def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
+def _plot_acqf_one_dof(agent, acqfs, lw=1e0, **kwargs):
     agent.acq_fig, agent.acq_axes = plt.subplots(
         1,
-        len(acq_funcs),
-        figsize=(4 * len(acq_funcs), 4),
+        len(acqfs),
+        figsize=(4 * len(acqfs), 4),
         sharex=True,
         constrained_layout=True,
     )
@@ -328,26 +328,26 @@ def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
 
     test_inputs = agent.sample(method="grid")
 
-    for iacq_func, acq_func_identifier in enumerate(acq_funcs):
-        color = DEFAULT_COLOR_LIST[iacq_func]
+    for iacqf, acqf_identifier in enumerate(acqfs):
+        color = DEFAULT_COLOR_LIST[iacqf]
 
-        acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
-        test_acqf = acq_func(test_inputs).detach().numpy()
+        acqf, acqf_meta = acquisition.get_acquisition_function(agent, acqf_identifier)
+        test_acqf = acqf(test_inputs).detach().numpy()
 
-        agent.acq_axes[iacq_func].plot(test_inputs.squeeze(-2), test_acqf, lw=lw, color=color)
+        agent.acq_axes[iacqf].plot(test_inputs.squeeze(-2), test_acqf, lw=lw, color=color)
 
-        agent.acq_axes[iacq_func].set_xlim(*x_dof.search_domain)
-        agent.acq_axes[iacq_func].set_xlabel(x_dof.label_with_units)
-        agent.acq_axes[iacq_func].set_ylabel(acq_func_meta["name"])
+        agent.acq_axes[iacqf].set_xlim(*x_dof.search_domain)
+        agent.acq_axes[iacqf].set_xlabel(x_dof.label_with_units)
+        agent.acq_axes[iacqf].set_ylabel(acqf_meta["name"])
 
 
 def _plot_acqf_many_dofs(
-    agent, acq_funcs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
+    agent, acqfs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
 ):
     agent.acq_fig, agent.acq_axes = plt.subplots(
         1,
-        len(acq_funcs),
-        figsize=(4 * len(acq_funcs), 4),
+        len(acqfs),
+        figsize=(4 * len(acqfs), 4),
         sharex=True,
         sharey=True,
         constrained_layout=True,
@@ -368,14 +368,17 @@ def _plot_acqf_many_dofs(
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    for iacq_func, acq_func_identifier in enumerate(acq_funcs):
-        acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
+    for iacqf, acqf_identifier in enumerate(acqfs):
 
-        test_acqf = acq_func(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
+        acqf_config = par
+
+        acqf, acqf_meta = acquisition.get_acquisition_function(agent, acqf_identifier)
+
+        test_acqf = acqf(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
 
         if gridded:
-            agent.acq_axes[iacq_func].set_title(acq_func_meta["name"])
-            obj_ax = agent.acq_axes[iacq_func].pcolormesh(
+            agent.acq_axes[iacqf].set_title(acqf_meta["name"])
+            obj_ax = agent.acq_axes[iacqf].pcolormesh(
                 test_x,
                 test_y,
                 test_acqf,
@@ -383,17 +386,17 @@ def _plot_acqf_many_dofs(
                 cmap=cmap,
             )
 
-            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
+            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
         else:
-            agent.acq_axes[iacq_func].set_title(acq_func_meta["name"])
-            obj_ax = agent.acq_axes[iacq_func].scatter(
+            agent.acq_axes[iacqf].set_title(acqf_meta["name"])
+            obj_ax = agent.acq_axes[iacqf].scatter(
                 test_x,
                 test_y,
                 c=test_acqf,
             )
 
-            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
+            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
     for ax in agent.acq_axes.ravel():
         ax.set_xlabel(x_dof.label_with_units)
@@ -484,11 +487,11 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
     )
     hist_axes = np.atleast_1d(hist_axes)
 
-    unique_strategies, acq_func_index, acq_func_inverse = np.unique(
-        agent.table.acq_func, return_index=True, return_inverse=True
+    unique_strategies, acqf_index, acqf_inverse = np.unique(
+        agent.table.acqf, return_index=True, return_inverse=True
     )
 
-    sample_colors = np.array(DEFAULT_COLOR_LIST)[acq_func_inverse]
+    sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
 
     if show_all_objs:
         for obj_index, obj in enumerate(agent.objectives):
@@ -510,8 +513,8 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
     hist_axes[-1].set_xlabel(x_key)
 
     handles = []
-    for i_acq_func, acq_func in enumerate(unique_strategies):
-        handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acq_func], label=acq_func))
+    for i_acqf, acqf in enumerate(unique_strategies):
+        handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acqf], label=acqf))
     legend = hist_axes[0].legend(handles=handles, fontsize=8)
     legend.set_title("acquisition function")
 

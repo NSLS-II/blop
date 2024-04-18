@@ -28,6 +28,7 @@ from ophyd import Signal
 
 from . import plotting, utils
 from .bayesian import acquisition, models
+from .bayesian.acquisition import parse_acqf_identifier, _construct_acqf
 
 # from .bayesian.transforms import TargetingPosteriorTransform
 from .digestion import default_digestion_function
@@ -151,23 +152,15 @@ class Agent:
     def measurement_plan(self):
         return
 
-    @property
-    def active_dofs(self):
-        return self.dofs.subset(active=True)
-
-    @property
-    def active_objs(self):
-        return self.objectives.subset(active=True)
-
     def __iter__(self):
         for index in range(len(self)):
             yield self.dofs[index]
 
     def __getattr__(self, attr):
-        acq_func_name = acquisition.parse_acq_func_identifier(attr)
-        if acq_func_name is not None:
-            return self._get_acquisition_function(identifier=acq_func_name)
-
+        acqf_config = acquisition.parse_acqf_identifier(attr)
+        if acqf_config is not None:
+            acqf, _ = _construct_acqf(acqf_name=acqf_config["name"])
+            return acqf
         raise AttributeError(f"No attribute named '{attr}'.")
 
     def sample(self, n: int = DEFAULT_MAX_SAMPLES, method: str = "quasi-random") -> torch.Tensor:
@@ -182,16 +175,18 @@ class Agent:
             How to sample the points. Must be one of 'quasi-random', 'random', or 'grid'.
         """
 
+        active_dofs = self.dofs.subset(active=True)
+
         if method == "quasi-random":
-            X = utils.normalized_sobol_sampler(n, d=len(self.active_dofs))
+            X = utils.normalized_sobol_sampler(n, d=len(active_dofs))
 
         elif method == "random":
-            X = torch.rand(size=(n, 1, len(self.active_dofs)))
+            X = torch.rand(size=(n, 1, len(active_dofs)))
 
         elif method == "grid":
-            n_side_if_settable = int(np.power(n, 1 / np.sum(~self.active_dofs.read_only)))
+            n_side_if_settable = int(np.power(n, 1 / np.sum(~active_dofs.read_only)))
             sides = [
-                torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in self.active_dofs
+                torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in active_dofs
             ]
             X = torch.cat([x.unsqueeze(-1) for x in torch.meshgrid(sides, indexing="ij")], dim=-1).unsqueeze(-2).double()
 
@@ -200,13 +195,13 @@ class Agent:
 
         return self.dofs.subset(active=True).untransform(X)
 
-    def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1, **acq_func_kwargs):
+    def ask(self, acqf="qei", n=1, route=True, sequential=True, upsample=1, **acqf_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
 
         Parameters
         ----------
-        acq_func_identifier :
-            Which acquisition function to use. Supported values can be found in `agent.all_acq_funcs`
+        acqf_identifier :
+            Which acquisition function to use. Supported values can be found in `agent.all_acqfs`
         n : int
             How many points you want
         route : bool
@@ -216,42 +211,48 @@ class Agent:
             finding one points and constructing a fantasy posterior about its value to generate the next point.
         """
 
-        acq_func_name = acquisition.parse_acq_func_identifier(acq_func_identifier)
-        acq_func_type = acquisition.config[acq_func_name]["type"]
+        acqf_config = parse_acqf_identifier(acqf)
+        if acqf_config is None:
+            raise ValueError(f"'{acqf}' is an invalid acquisition function.")
 
         start_time = ttime.monotonic()
 
-        if acq_func_name in ["quasi-random", "random", "grid"]:
-            candidates = self.sample(n=n, method=acq_func_name).squeeze(1).numpy()
+        active_dofs = self.dofs.subset(active=True)
+        active_objs = self.objectives.subset(active=True)
 
-            # define dummy acqf objective
-            acqf_obj = torch.zeros(len(candidates))
+        # these are the fake acquisiton functions that we don't need to construct
+        if acqf_config["name"] in ["quasi-random", "random", "grid"]:
+            candidates = self.sample(n=n, method=acqf_config["name"]).squeeze(1).numpy()
 
-        elif acq_func_type in ["analytic", "monte_carlo"]:
-            if not all(hasattr(obj, "model") for obj in self.objectives):
+            # define dummy acqf kwargs and objective
+            acqf_kwargs, acqf_obj = {}, torch.zeros(len(candidates))
+
+        else:
+            # check that all the objectives have models 
+            if not all(hasattr(obj, "model") for obj in active_objs):
                 raise RuntimeError(
-                    f"Can't construct non-trivial acquisition function '{acq_func_identifier}'"
+                    f"Can't construct non-trivial acquisition function '{acqf}'"
                     f" (the agent is not initialized!)"
                 )
 
-            for obj in self.active_objs:
-                if obj.model_dofs != set(self.active_dofs.names):
+            # if the model for any active objective mismatches the active dofs, reconstrut and train it
+            for obj in active_objs:
+                if obj.model_dofs != set(active_dofs.names):
                     self._construct_model(obj)
                     self._train_model(obj.model)
 
-            if acq_func_type == "analytic" and n > 1:
+            if acqf_config["type"] == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
 
-            acq_func, _ = self._get_acquisition_function(
-                identifier=acq_func_identifier, return_metadata=True, **acq_func_kwargs
-            )
+            # we may pick up some more kwargs 
+            acqf, acqf_kwargs = _construct_acqf(self, acqf_name=acqf_config["name"], **acqf_kwargs)
 
             NUM_RESTARTS = 16
             RAW_SAMPLES = 1024
 
             candidates, acqf_obj = botorch.optim.optimize_acqf(
-                acq_function=acq_func,
-                bounds=self._sample_domain,
+                acq_function=acqf,
+                bounds=self.sample_domain,
                 q=n,
                 sequential=sequential,
                 num_restarts=NUM_RESTARTS,
@@ -264,25 +265,29 @@ class Agent:
 
         p = self.posterior(candidates) if hasattr(self, "model") else None
 
-        acq_points = candidates[..., ~self.active_dofs.read_only]
-        read_only_values = candidates[..., self.active_dofs.read_only]
+        active_dofs = self.dofs.subset(active=True)
+
+        points = candidates[..., ~active_dofs.read_only]
+        read_only_values = candidates[..., active_dofs.read_only]
 
         duration = 1e3 * (ttime.monotonic() - start_time)
 
         if route and n > 1:
-            routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, acq_points)
-            acq_points = acq_points[routing_index]
+            routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, points)
+            points = points[routing_index]
 
         if upsample > 1:
-            idx = np.arange(len(acq_points))
+            if n == 1:
+                raise ValueError("Cannot upsample points unless n > 1.")
+            idx = np.arange(len(points))
             upsampled_idx = np.linspace(0, len(idx) - 1, upsample * len(idx) - 1)
-            acq_points = sp.interpolate.interp1d(idx, acq_points, axis=0)(upsampled_idx)
+            points = sp.interpolate.interp1d(idx, points, axis=0)(upsampled_idx)
 
         res = {
-            "points": acq_points,
-            "acq_func": acq_func_name,
-            "acq_func_kwargs": acq_func_kwargs,
-            "acq_func_obj": np.atleast_1d(acqf_obj.numpy()),
+            "points": points,
+            "acqf_name": acqf_config["name"],
+            "acqf_obj": np.atleast_1d(acqf_obj.numpy()),
+            "acqf_kwargs": acqf_kwargs,
             "duration_ms": duration,
             "sequential": sequential,
             "upsample": upsample,
@@ -337,7 +342,7 @@ class Agent:
         self.table.index = np.arange(len(self.table))
 
         if update_models:
-            for obj in self.active_objs:
+            for obj in self.objectives.subset(active=True):
                 t0 = ttime.monotonic()
 
                 cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
@@ -360,7 +365,7 @@ class Agent:
 
     def learn(
         self,
-        acq_func: str = "qei",
+        acqf: str = "qei",
         n: int = 1,
         iterations: int = 1,
         upsample: int = 1,
@@ -368,7 +373,7 @@ class Agent:
         append: bool = True,
         hypers: str = None,
         route: bool = True,
-        **acq_func_kwargs,
+        **acqf_kwargs,
     ):
         """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
 
@@ -379,7 +384,7 @@ class Agent:
 
         Parameters
         ----------
-        acq_func : str
+        acqf : str
             A valid identifier for an implemented acquisition function.
         n : int
             How many points to sample on each iteration.
@@ -399,7 +404,7 @@ class Agent:
         if self.sample_center_on_init and not self.initialized:
             center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).search_domain.mean(axis=1))
             new_table = yield from self.acquire(center_inputs)
-            new_table.loc[:, "acq_func"] = "sample_center_on_init"
+            new_table.loc[:, "acqf"] = "sample_center_on_init"
 
         for i in range(iterations):
             if self.verbose:
@@ -407,7 +412,7 @@ class Agent:
             for single_acq_func in np.atleast_1d(acq_func):
                 res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample, route=route, **acq_func_kwargs)
                 new_table = yield from self.acquire(res["points"])
-                new_table.loc[:, "acq_func"] = res["acq_func"]
+                new_table.loc[:, "acqf"] = res["acqf_name"]
 
                 x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
                 y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
@@ -431,7 +436,7 @@ class Agent:
         self.viewer = napari.Viewer()
 
         if item in ["mean", "error"]:
-            for obj in self.active_objs:
+            for obj in self.objectives.subset(active=True):
                 p = obj.model.posterior(test_grid)
 
                 if item == "mean":
@@ -444,14 +449,14 @@ class Agent:
 
         else:
             try:
-                acq_func_identifier = acquisition.parse_acq_func_identifier(identifier=item)
+                acqf_identifier = acquisition.parse_acqf_identifier(identifier=item)
             except Exception:
                 raise ValueError("'item' must be either 'mean', 'error', or a valid acq func.")
 
-            acq_func, acq_func_meta = self._get_acquisition_function(identifier=acq_func_identifier, return_metadata=True)
-            a = acq_func(test_grid).detach().numpy()
+            acqf, acqf_meta = self._get_acquisition_function(identifier=acqf_identifier, return_metadata=True)
+            a = acqf(test_grid).detach().numpy()
 
-            self.viewer.add_image(data=a, name=f"{acq_func_identifier}", colormap=cmap)
+            self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
 
         self.viewer.dims.axis_labels = self.dofs.names
 
@@ -486,7 +491,7 @@ class Agent:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).names)
-            for obj in self.active_objs:
+            for obj in self.objectives.subset(active=True):
                 products.loc[:, obj.name] = np.nan
 
         if not len(acquisition_inputs) == len(products):
@@ -505,7 +510,7 @@ class Agent:
         """Reset the agent."""
         self.table = pd.DataFrame()
 
-        for obj in self.active_objs:
+        for obj in self.objectives.subset(active=True):
             if hasattr(obj, "model"):
                 del obj.model
 
@@ -515,7 +520,7 @@ class Agent:
         self,
         output_dir="./",
         iterations=16,
-        per_iter_learn_kwargs_list=[{"acq_func": "qr", "n": 32}, {"acq_func": "qei", "n": 4, "iterations": 4}],
+        per_iter_learn_kwargs_list=[{"acqf": "qr", "n": 32}, {"acqf": "qei", "n": 1, "iterations": 4}],
     ):
         """Iterate over having the agent learn from scratch, and save the results to an output directory.
 
@@ -540,9 +545,8 @@ class Agent:
     @property
     def model(self):
         """A model encompassing all the fitnesses and constraints."""
-        return (
-            ModelListGP(*[obj.model for obj in self.active_objs]) if len(self.active_objs) > 1 else self.active_objs[0].model
-        )
+        active_objs = self.objectives.subset(active=True)
+        return ModelListGP(*[obj.model for obj in active_objs]) if len(active_objs) > 1 else active_objs[0].model
 
     def posterior(self, x):
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
@@ -550,11 +554,12 @@ class Agent:
 
     @property
     def fitness_model(self):
-        return (
-            ModelListGP(*[obj.model for obj in self.objectives.subset(active=True, kind="fitness")])
-            if len(self.active_objs) > 1
-            else self.active_objs[0].model
-        )
+        active_fitness_models = self.objectives.subset(active=True, kind="fitness")
+        if len(active_fitness_models) == 0:
+            raise ValueError("Having no fitness objectives is unhandled.")
+        if len(active_fitness_models) == 1:
+            return active_fitness_models[0].model
+        return ModelListGP(*[obj.model for obj in active_fitness_models])
 
     @property
     def evaluated_constraints(self):
@@ -662,11 +667,11 @@ class Agent:
             train_targets=train_targets[trusted],
             likelihood=likelihood,
             skew_dims=skew_dims,
-            input_transform=self._model_input_transform,
+            input_transform=self.input_normalization,
             outcome_transform=outcome_transform,
         )
 
-        obj.model_dofs = set(self.active_dofs.names)  # if these change, retrain the model on self.ask()
+        obj.model_dofs = set(self.dofs.subset(active=True).names)  # if these change, retrain the model on self.ask()
 
         if trusted.all():
             obj.validity_conjugate_model = None
@@ -682,7 +687,7 @@ class Agent:
                 train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2)[inputs_are_trusted].double(),
                 skew_dims=skew_dims,
                 likelihood=dirichlet_likelihood,
-                input_transform=self._model_input_transform,
+                input_transform=self.input_normalization,
             )
 
             obj.validity_constraint = GenericDeterministicModel(
@@ -691,13 +696,13 @@ class Agent:
 
     def _construct_all_models(self):
         """Construct a model for each objective."""
-        for obj in self.active_objs:
+        for obj in self.objectives.subset(active=True):
             self._construct_model(obj)
 
     def _train_all_models(self, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
         t0 = ttime.monotonic()
-        for obj in self.active_objs:
+        for obj in self.objectives.subset(active=True):
             self._train_model(obj.model)
             if obj.validity_conjugate_model is not None:
                 self._train_model(obj.validity_conjugate_model)
@@ -709,9 +714,12 @@ class Agent:
 
     def _get_acquisition_function(self, identifier, return_metadata=False):
         """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
-        found in `agent.all_acq_funcs`.
+        found in `agent.all_acqfs`.
         """
-        return acquisition.get_acquisition_function(self, identifier=identifier, return_metadata=return_metadata)
+
+        acquisition._construct_acqf(self, identifier=identifier, return_metadata=return_metadata)
+
+        return 
 
     def _latent_dim_tuples(self, obj_index=None):
         """
@@ -725,7 +733,7 @@ class Agent:
         obj = self.objectives[obj_index]
 
         latent_group_index = {}
-        for dof in self.active_dofs:
+        for dof in self.dofs.subset(active=True):
             latent_group_index[dof.name] = dof.name
             for group_index, latent_group in enumerate(obj.latent_groups):
                 if dof.name in latent_group:
@@ -744,7 +752,7 @@ class Agent:
         return self.dofs.subset(active=True).transform(self.dofs.subset(active=True).search_domain.T)
 
     @property
-    def _model_input_transform(self):
+    def input_normalization(self):
         """
         Suitably transforms model inputs to the unit hypercube.
 
@@ -758,7 +766,7 @@ class Agent:
         Read-only: constrain to the readback value
         """
 
-        return Normalize(d=len(self.active_dofs))
+        return Normalize(d=self.dofs.active.sum())
 
     def save_data(self, path="./data.h5"):
         """
@@ -797,7 +805,7 @@ class Agent:
             raise ValueError("Must supply either 'last' or 'index'.")
 
     def _set_hypers(self, hypers):
-        for obj in self.active_objs:
+        for obj in self.objectives.subset(active=True):
             obj.model.load_state_dict(hypers[obj.name])
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
@@ -805,14 +813,14 @@ class Agent:
         x = self.dofs.subset(active=True).transform(x)
 
         p = torch.ones(x.shape[:-1])
-        for obj in self.active_objs:
+        for obj in self.objectives.subset(active=True):
             # if the targeting constraint is non-trivial
             # if obj.kind == "constraint":
             #     p *= obj.targeting_constraint(x)
             # if the validity constaint is non-trivial
             if obj.validity_conjugate_model is not None:
                 p *= obj.validity_constraint(x)
-        return p  # + 1e-6 * normalize(x, self._sample_domain).square().sum(axis=-1)
+        return p  # + 1e-6 * normalize(x, self.sample_domain).square().sum(axis=-1)
 
     @property
     def hypers(self) -> dict:
@@ -862,16 +870,11 @@ class Agent:
         return hypers
 
     @property
-    def all_acq_funcs(self):
-        """Description and identifiers for all supported acquisition functions."""
-        entries = []
-        for k, d in acquisition.config.items():
-            ret = ""
-            ret += f"{d['pretty_name'].upper()} (identifiers: {d['identifiers']})\n"
-            ret += f"-> {d['description']}"
-            entries.append(ret)
-
-        print("\n\n".join(entries))
+    def all_acqfs(self):
+        """
+        Description and identifiers for all supported acquisition functions.
+        """
+        return acquisition.all_acqfs()
 
     def raw_inputs(self, index=None, **subset_kwargs):
         """
@@ -958,26 +961,30 @@ class Agent:
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
+
         if len(self.dofs.subset(active=True, read_only=False)) == 1:
-            plotting._plot_objs_one_dof(self, **kwargs)
+            if len(self.objectives.subset(active=True, kind="fitness")) > 0:
+                plotting._plot_fitness_objs_one_dof(self, **kwargs)
+            if len(self.objectives.subset(active=True, kind="constraint")) > 0:
+                plotting._plot_constraint_objs_one_dof(self, **kwargs)
         else:
             plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)
 
-    def plot_acquisition(self, acq_func="ei", axes: Tuple = (0, 1), **kwargs):
+    def plot_acquisition(self, acqf="ei", axes: Tuple = (0, 1), **kwargs):
         """Plot an acquisition function over test inputs sampling the limits of the parameter space.
 
         Parameters
         ----------
-        acq_func :
+        acqf :
             Which acquisition function to plot. Can also take a list of acquisition functions.
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
         if len(self.dofs.subset(active=True, read_only=False)) == 1:
-            plotting._plot_acqf_one_dof(self, acq_funcs=np.atleast_1d(acq_func), **kwargs)
+            plotting._plot_acqf_one_dof(self, acqfs=np.atleast_1d(acqf), **kwargs)
 
         else:
-            plotting._plot_acqf_many_dofs(self, acq_funcs=np.atleast_1d(acq_func), axes=axes, **kwargs)
+            plotting._plot_acqf_many_dofs(self, acqfs=np.atleast_1d(acqf), axes=axes, **kwargs)
 
     def plot_validity(self, axes: Tuple = (0, 1), **kwargs):
         """Plot the modeled constraint over test inputs sampling the limits of the parameter space.
@@ -999,7 +1006,7 @@ class Agent:
 
     @property
     def latent_transforms(self):
-        return {obj.name: obj.model.covar_module.latent_transform for obj in self.active_objs}
+        return {obj.name: obj.model.covar_module.latent_transform for obj in self.objectives.subset(active=True)}
 
     def plot_pareto_front(self, **kwargs):
         """Plot the improvement of the agent over time."""

@@ -351,6 +351,17 @@ class DOFList(Sequence):
         _validate_dofs(dofs)
         self.dofs = dofs
 
+    @property
+    def names(self) -> list:
+        return [dof.name for dof in self.dofs]
+
+    @property
+    def devices(self) -> list:
+        return [dof.device for dof in self.dofs]
+
+    def __call__(self, *args, **kwargs):
+        return self.subset(*args, **kwargs)
+
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
         if attr in DOF_FIELD_TYPES.keys():
@@ -428,14 +439,6 @@ class DOFList(Sequence):
             table[attr] = table[attr].astype(dtype)
 
         return table
-
-    @property
-    def names(self) -> list:
-        return [dof.name for dof in self.dofs]
-
-    @property
-    def devices(self) -> list:
-        return [dof.device for dof in self.dofs]
 
     @property
     def search_domain(self) -> np.array:
