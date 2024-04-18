@@ -604,7 +604,7 @@ class Agent:
         """
         A mask for all data points that is true when the point is on the Pareto front.
         A point is on the Pareto front if it is Pareto dominant
-        A point is Pareto dominant if it is there is no other point that is better at every objective
+        A point is Pareto dominant if there is no other point that is better at every objective
         Points that violate any constraint are excluded.
         """
         y = self.train_targets()[:, self.objectives.type == "fitness"]
