@@ -46,7 +46,7 @@ def RE(db):
 
 
 @pytest.fixture(scope="function")
-def agent_1dof_1fit(db):
+def agent_1d_1f(db):
     """
     A one dimensional agent.
     """
@@ -55,13 +55,12 @@ def agent_1dof_1fit(db):
         products = db[uid].table()
 
         for index, entry in products.iterrows():
-            products.loc[index, "f1"]  = functions.himmelblau(entry.x1, 3)
+            products.loc[index, "f1"] = functions.himmelblau(entry.x1, 3)
 
         return products
 
     dofs = DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))
     objectives = Objective(description="f1", name="f1", target="min")
-
 
     agent = Agent(
         dofs=dofs,
@@ -70,13 +69,11 @@ def agent_1dof_1fit(db):
         db=db,
     )
 
-
     return agent
 
 
-
 @pytest.fixture(scope="function")
-def agent_2dof_1fit(db):
+def agent_2d_1f(db):
     """
     A simple agent minimizing Himmelblau's function
     """
@@ -101,7 +98,7 @@ def agent_2dof_1fit(db):
 
 
 @pytest.fixture(scope="function")
-def agent_2dof_2fit(db):
+def agent_2d_2f(db):
     """
     An agent minimizing two Himmelblau's functions
     """
@@ -135,7 +132,7 @@ def agent_2dof_2fit(db):
 
 
 @pytest.fixture(scope="function")
-def agent_2dof_2fit_2con(db):
+def agent_2d_2f_2c(db):
     """
     Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_for_optimization
     """

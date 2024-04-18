@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
-from .bayesian.acquisition import parse_acqf_identifier, _construct_acqf
+from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
 
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
 # Note: the values near 1 are hard to see on a white background. Turbo goes from red to blue and isn't white in the middle.
@@ -331,14 +331,16 @@ def _plot_acqf_one_dof(agent, acqfs, lw=1e0, **kwargs):
     for iacqf, acqf_identifier in enumerate(acqfs):
         color = DEFAULT_COLOR_LIST[iacqf]
 
-        acqf, acqf_meta = acquisition.get_acquisition_function(agent, acqf_identifier)
-        test_acqf = acqf(test_inputs).detach().numpy()
+        acqf_config = parse_acqf_identifier(acqf_identifier)
+        acqf, _ = _construct_acqf(agent, acqf_config["name"])
 
-        agent.acq_axes[iacqf].plot(test_inputs.squeeze(-2), test_acqf, lw=lw, color=color)
+        test_acqf_value = acqf(test_inputs).detach().numpy()
+
+        agent.acq_axes[iacqf].plot(test_inputs.squeeze(-2), test_acqf_value, lw=lw, color=color)
 
         agent.acq_axes[iacqf].set_xlim(*x_dof.search_domain)
         agent.acq_axes[iacqf].set_xlabel(x_dof.label_with_units)
-        agent.acq_axes[iacqf].set_ylabel(acqf_meta["name"])
+        agent.acq_axes[iacqf].set_ylabel(acqf_config["name"])
 
 
 def _plot_acqf_many_dofs(
@@ -369,19 +371,17 @@ def _plot_acqf_many_dofs(
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
     for iacqf, acqf_identifier in enumerate(acqfs):
+        acqf_config = parse_acqf_identifier(acqf_identifier)
+        acqf, _ = _construct_acqf(agent, acqf_config["name"])
 
-        acqf_config = par
-
-        acqf, acqf_meta = acquisition.get_acquisition_function(agent, acqf_identifier)
-
-        test_acqf = acqf(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
+        test_acqf_value = acqf(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
 
         if gridded:
-            agent.acq_axes[iacqf].set_title(acqf_meta["name"])
+            agent.acq_axes[iacqf].set_title(acqf_config["name"])
             obj_ax = agent.acq_axes[iacqf].pcolormesh(
                 test_x,
                 test_y,
-                test_acqf,
+                test_acqf_value,
                 shading=shading,
                 cmap=cmap,
             )
@@ -389,11 +389,11 @@ def _plot_acqf_many_dofs(
             agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
         else:
-            agent.acq_axes[iacqf].set_title(acqf_meta["name"])
+            agent.acq_axes[iacqf].set_title(acqf_config["name"])
             obj_ax = agent.acq_axes[iacqf].scatter(
                 test_x,
                 test_y,
-                c=test_acqf,
+                c=test_acqf_value,
             )
 
             agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
@@ -487,9 +487,7 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
     )
     hist_axes = np.atleast_1d(hist_axes)
 
-    unique_strategies, acqf_index, acqf_inverse = np.unique(
-        agent.table.acqf, return_index=True, return_inverse=True
-    )
+    unique_strategies, acqf_index, acqf_inverse = np.unique(agent.table.acqf, return_index=True, return_inverse=True)
 
     sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
 
