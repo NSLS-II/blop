@@ -601,8 +601,12 @@ class Agent:
 
     @property
     def pareto_front_mask(self):
-        # a point is on the Pareto front if it is Pareto dominant
-        # a point is Pareto dominant if it is there is no other point that is better at every objective
+        """
+        A mask for all data points that is true when the point is on the Pareto front.
+        A point is on the Pareto front if it is Pareto dominant
+        A point is Pareto dominant if it is there is no other point that is better at every objective
+        Points that violate any constraint are excluded.
+        """
         y = self.train_targets()[:, self.objectives.type == "fitness"]
         in_pareto_front = ~(y.unsqueeze(1) > y.unsqueeze(0)).all(axis=-1).any(axis=0)
         all_constraints_satisfied = self.evaluated_constraints.all(axis=-1)
@@ -610,6 +614,9 @@ class Agent:
 
     @property
     def pareto_front(self):
+        """
+        A subset of the data table containing only points on the Pareto front.
+        """
         return self.table.loc[self.pareto_front_mask.numpy()]
 
     @property

@@ -3,8 +3,10 @@ import torch
 
 
 def approximate_erf(x):
-    # we want to compute erf(x) to compute the definite integral of the Gaussian PDF
-    # we instead use an approximation with tanh(x) which is faster and better-conditioned near +/- infinity
+    """
+    An approximation of erf(x), to compute the definite integral of the Gaussian PDF
+    This is faster and better-conditioned near +/- infinity
+    """
     return torch.tanh(1.20278247 * x)
 
 

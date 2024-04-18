@@ -185,7 +185,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
                 )
 
         val_cbar = agent.obj_fig.colorbar(val_ax, ax=agent.obj_axes[obj_index, 0], location="bottom", aspect=32, shrink=0.8)
-        val_cbar.set_label(f"{obj.units if obj.units else ''}")
+        val_cbar.set_label(f"{obj.units or ''}")
 
         if obj.is_fitness:
             _ = agent.obj_fig.colorbar(fitness_ax, ax=agent.obj_axes[obj_index, 1], location="bottom", aspect=32, shrink=0.8)
