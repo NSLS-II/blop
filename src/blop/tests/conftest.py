@@ -2,6 +2,7 @@ import asyncio
 import datetime
 
 import databroker
+import numpy as np
 import pytest
 from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
@@ -12,7 +13,6 @@ from blop import DOF, Agent, Objective
 from blop.dofs import BrownianMotion
 from blop.utils import functions
 
-import numpy as np
 
 @pytest.fixture(scope="function")
 def db():
@@ -114,10 +114,10 @@ def constrained_agent(db):
         products = db[uid].table()
 
         for index, entry in products.iterrows():
-            products.loc[index, "f1"]  = (entry.x1 - 2)**2 + (entry.x2 - 1) + 2
-            products.loc[index, "f2"]  = 9 * entry.x1 - (entry.x2 - 1) + 2
-            products.loc[index, "c1"]  = entry.x1**2 + entry.x2**2
-            products.loc[index, "c2"]  = entry.x1 - 3*entry.x2 + 10
+            products.loc[index, "f1"] = (entry.x1 - 2) ** 2 + (entry.x2 - 1) + 2
+            products.loc[index, "f2"] = 9 * entry.x1 - (entry.x2 - 1) + 2
+            products.loc[index, "c1"] = entry.x1**2 + entry.x2**2
+            products.loc[index, "c2"] = entry.x1 - 3 * entry.x2 + 10
 
         return products
 
@@ -127,7 +127,7 @@ def constrained_agent(db):
     ]
 
     objectives = [
-        Objective(description="f1", name="f1", target="min"), 
+        Objective(description="f1", name="f1", target="min"),
         Objective(description="f2", name="f2", target="min"),
         Objective(description="c1", name="c1", target=(-np.inf, 225)),
         Objective(description="c2", name="c2", target=(-np.inf, 0)),
