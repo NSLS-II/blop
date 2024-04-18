@@ -284,11 +284,14 @@ class ObjectiveList(Sequence):
         _validate_objs(objectives)
         self.objectives = objectives
 
+    def __call__(self, *args, **kwargs):
+        return self.subset(*args, **kwargs)
+
     @property
     def names(self):
         return [obj.name for obj in self.objectives]
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr):    
         # This is called if we can't find the attribute in the normal way.
         if attr in [*OBJ_FIELD_TYPES.keys(), "kind"]:
             return np.array([getattr(obj, attr) for obj in self.objectives])
