@@ -19,10 +19,10 @@ def test_plots_multiple_objs(RE, mo_agent):
     mo_agent.plot_history()
 
 
-def test_plots_passive_dofs(RE, agent_with_passive_dofs):
-    RE(agent_with_passive_dofs.learn("qr", n=16))
+def test_plots_read_only_dofs(RE, agent_with_read_only_dofs):
+    RE(agent_with_read_only_dofs.learn("qr", n=16))
 
-    agent_with_passive_dofs.plot_objectives()
-    agent_with_passive_dofs.plot_acquisition()
-    agent_with_passive_dofs.plot_validity()
-    agent_with_passive_dofs.plot_history()
+    agent_with_read_only_dofs.plot_objectives()
+    agent_with_read_only_dofs.plot_acquisition()
+    agent_with_read_only_dofs.plot_validity()
+    agent_with_read_only_dofs.plot_history()

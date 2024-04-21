@@ -9,23 +9,21 @@ def test_dof_types():
         description="A binary DOF",
         type="binary",
         name="x2",
-        search_domain=["in", "out"],
-        trust_domain=["in"],
+        search_domain={"in", "out"},
         units="is it in or out?",
     )
     dof3 = DOF(
         description="An ordinal DOF",
         type="ordinal",
         name="x3",
-        search_domain=["low", "medium", "high"],
-        trust_domain=["low", "medium"],
+        search_domain={"low", "medium", "high"},
         units="noise level",
     )
     dof4 = DOF(
         description="A categorical DOF",
         type="categorical",
         name="x4",
-        search_domain=["mango", "orange", "banana", "papaya"],
+        search_domain={"mango", "orange", "banana", "papaya"},
         units="fruit",
     )
 
