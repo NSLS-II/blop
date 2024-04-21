@@ -25,7 +25,6 @@ from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.models.transforms.input import Normalize
 from databroker import Broker
 from ophyd import Signal
-from tqdm import tqdm
 
 from . import plotting, utils
 from .bayesian import acquisition, models
@@ -402,8 +401,9 @@ class Agent:
             new_table = yield from self.acquire(center_inputs)
             new_table.loc[:, "acq_func"] = "sample_center_on_init"
 
-        for i in tqdm(range(iterations), desc="Learning..."):
-            print(f"running iteration {i + 1} / {iterations}")
+        for i in range(iterations):
+            if self.verbose:
+                print(f"running iteration {i + 1} / {iterations}")
             for single_acq_func in np.atleast_1d(acq_func):
                 res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample, route=route, **acq_func_kwargs)
                 new_table = yield from self.acquire(res["points"])

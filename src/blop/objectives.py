@@ -13,23 +13,23 @@ DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
     "description": "object",
-    "kind": "str",
+    # "kind": "str",
     "type": "str",
     "target": "object",
-    "active": "bool",
     "transform": "str",
+    "domain": "str",
     "trust_domain": "object",
-    "active": "bool",
-    "weight": "bool",
+    "weight": "float",
     "units": "object",
     "noise_bounds": "object",
     "noise": "float",
-    "n": "int",
+    "n_valid": "int",
     "latent_groups": "object",
+    "active": "bool",
 }
 
 SUPPORTED_OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
-TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "sigmoid": (0.0, 1.0), "tanh": (-1.0, 1.0)}
+TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0, 1.0)}
 
 
 class DuplicateNameError(ValueError):
@@ -160,9 +160,9 @@ class Objective:
 
         if self.transform == "log":
             y = y.log()
-        if self.transform == "sigmoid":
+        if self.transform == "logit":
             y = (y / (1 - y)).log()
-        if self.transform == "tanh":
+        if self.transform == "arctanh":
             y = torch.arctanh(y)
 
         if self.target == "min":
@@ -179,9 +179,9 @@ class Objective:
 
         if self.transform == "log":
             y = y.exp()
-        if self.transform == "sigmoid":
+        if self.transform == "logit":
             y = 1 / (1 + torch.exp(-y))
-        if self.transform == "tanh":
+        if self.transform == "arctanh":
             y = torch.tanh(y)
 
         return y
@@ -212,21 +212,9 @@ class Objective:
             series[attr] = value if value is not None else ""
         return series
 
-    # @property
-    # def trust_lower_bound(self):
-    #     if self.trust_domain is None:
-    #         return 0 if self.log else -np.inf
-    #     return float(self.trust_domain[0])
-
-    # @property
-    # def trust_upper_bound(self):
-    #     if self.trust_domain is None:
-    #         return np.inf
-    #     return float(self.trust_domain[1])
-
     @property
     def noise(self) -> float:
-        return self.model.likelihood.noise.item() if hasattr(self, "model") else None
+        return self.model.likelihood.noise.item() if hasattr(self, "model") else np.nan
 
     @property
     def snr(self) -> float:
@@ -245,7 +233,7 @@ class Objective:
         m = p.mean
         s = p.variance.sqrt()
 
-        sish = s + 0.1 * m.std()
+        sish = s + 0.1 * m.std()  # for numerical stability
 
         return (
             0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
