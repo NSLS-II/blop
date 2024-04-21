@@ -146,7 +146,7 @@ def constrained_agent(db):
 
 
 @pytest.fixture(scope="function")
-def agent_with_passive_dofs(db):
+def agent_with_read_only_dofs(db):
     """
     A simple agent minimizing two Himmelblau's functions
     """

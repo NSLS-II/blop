@@ -1,5 +1,6 @@
 import time as ttime
 import uuid
+import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, fields
 from operator import attrgetter
@@ -44,30 +45,30 @@ def _validate_dofs(dofs):
     return list(dofs)
 
 
-def _validate_continuous_dof_domains(search_domain, trust_domain, domain):
+def _validate_continuous_dof_domains(search_domain, trust_domain, domain, read_only):
     """
     A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain.
 
     Check that all the domains are kosher by enforcing that:
     search_domain \\subseteq trust_domain \\subseteq domain
     """
+    if not read_only:
+        try:
+            search_domain = tuple((float(search_domain[0]), float(search_domain[1])))
+            assert len(search_domain) == 2
+        except:  # noqa
+            raise ValueError("If type='continuous', then 'search_domain' must be a tuple of two numbers.")
 
-    try:
-        search_domain = tuple((float(search_domain[0]), float(search_domain[1])))
-        assert len(search_domain) == 2
-    except:  # noqa
-        raise ValueError("If type='continuous', then 'search_domain' must be a tuple of two numbers.")
+        if search_domain[0] >= search_domain[1]:
+            raise ValueError("The lower search bound must be strictly less than the upper search bound.")
 
-    if search_domain[0] >= search_domain[1]:
-        raise ValueError("The lower search bound must be strictly less than the upper search bound.")
+        if domain is not None:
+            if (search_domain[0] <= domain[0]) or (search_domain[1] >= domain[1]):
+                raise ValueError(f"The search domain {search_domain} must be a strict subset of the domain {domain}.")
 
-    if domain is not None:
-        if (search_domain[0] <= domain[0]) or (search_domain[1] >= domain[1]):
-            raise ValueError(f"The search domain {search_domain} must be a strict subset of the domain {domain}.")
-
-    if trust_domain is not None:
-        if (search_domain[0] < trust_domain[0]) or (search_domain[1] > trust_domain[1]):
-            raise ValueError(f"The search domain {search_domain} must be a subset of the trust domain {trust_domain}.")
+        if trust_domain is not None:
+            if (search_domain[0] < trust_domain[0]) or (search_domain[1] > trust_domain[1]):
+                raise ValueError(f"The search domain {search_domain} must be a subset of the trust domain {trust_domain}.")
 
     if (trust_domain is not None) and (domain is not None):
         if (trust_domain[0] < domain[0]) or (trust_domain[1] > domain[1]):
@@ -153,36 +154,50 @@ class DOF:
                 self.name = self.device.name
         else:
             raise ValueError("You must specify exactly one of 'name' or 'device'.")
-
-        if self.search_domain is None:
-            if not self.read_only:
-                raise ValueError("You must specify search_domain if read_only=False.")
-
-        if self.type is None:
-            if isinstance(self.search_domain, tuple):
-                self.type = "continuous"
-            elif isinstance(self.search_domain, set):
-                if len(self.search_domain) == 2:
-                    self.type = "binary"
+        if self.read_only:
+            if self.type is None:
+                if isinstance(self.readback, float):
+                    self.type = "continuous"
                 else:
                     self.type = "categorical"
+                warnings.warn(f"No type was specified for DOF {self.name}. Assuming type={self.type}.")
+        else:
+            if self.search_domain is None:
+                raise ValueError("You must specify the search domain if read_only=False.")
+            # if there is no type, infer it from the search_domain
+            if self.type is None:
+                if isinstance(self.search_domain, tuple):
+                    self.type = "continuous"
+                elif isinstance(self.search_domain, set):
+                    if len(self.search_domain) == 2:
+                        self.type = "binary"
+                    else:
+                        self.type = "categorical"
+                else:
+                    raise TypeError("'search_domain' must be either a 2-tuple of numbers or a set.")
 
         if self.type not in DOF_TYPES:
-            raise ValueError(f"'type' must be one of {DOF_TYPES}")
+            raise ValueError(f"Invalid DOF type '{self.type}'. 'type' must be one of {DOF_TYPES}.")
 
         # our input is usually continuous
         if self.type == "continuous":
-            _validate_continuous_dof_domains(self._search_domain, self._trust_domain, self.domain)
+            if not self.read_only:
+                _validate_continuous_dof_domains(
+                    search_domain=self._search_domain,
+                    trust_domain=self._trust_domain,
+                    domain=self.domain,
+                    read_only=self.read_only,
+                )
 
-            self.search_domain = tuple((float(self.search_domain[0]), float(self.search_domain[1])))
+                self.search_domain = tuple((float(self.search_domain[0]), float(self.search_domain[1])))
 
-            if self.device is None:
-                center = float(self._untransform(np.mean([self._transform(np.array(self.search_domain))])))
-                self.device = Signal(name=self.name, value=center)
+                if self.device is None:
+                    center = float(self._untransform(np.mean([self._transform(np.array(self.search_domain))])))
+                    self.device = Signal(name=self.name, value=center)
 
         # otherwise it must be discrete
         else:
-            _validate_discrete_dof_domains(self._search_domain, self._trust_domain)
+            _validate_discrete_dof_domains(search_domain=self._search_domain, trust_domain=self._trust_domain)
 
             if self.type == "binary":
                 if self.search_domain is None:
@@ -213,7 +228,7 @@ class DOF:
         if self.read_only:
             value = self.readback
             if self.type == "continuous":
-                return tuple(value, value)
+                return tuple((value, value))
             else:
                 return {value}
         else:
