@@ -212,7 +212,6 @@ class Objective:
             series[attr] = value if value is not None else ""
         return series
 
->>>>>>> 319737d (better control of DOFs and objectives)
     @property
     def noise(self) -> float:
         return self.model.likelihood.noise.item() if hasattr(self, "model") else np.nan
@@ -222,7 +221,7 @@ class Objective:
         return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if hasattr(self, "model") else None
 
     @property
-    def n(self) -> int:
+    def n_valid(self) -> int:
         return int((~self.model.train_targets.isnan()).sum()) if hasattr(self, "model") else 0
 
     def targeting_constraint(self, x: torch.Tensor) -> torch.Tensor:
@@ -291,7 +290,7 @@ class ObjectiveList(Sequence):
     def names(self):
         return [obj.name for obj in self.objectives]
 
-    def __getattr__(self, attr):    
+    def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
         if attr in [*OBJ_FIELD_TYPES.keys(), "kind"]:
             return np.array([getattr(obj, attr) for obj in self.objectives])
@@ -335,48 +334,6 @@ class ObjectiveList(Sequence):
 
     def _repr_html_(self):
         return self.summary._repr_html_()
-
-    @property
-    def descriptions(self) -> list:
-        """
-        Returns an array of the objective names.
-        """
-        return [obj.description for obj in self.objectives]
-
-    @property
-    def names(self) -> list:
-        """
-        Returns an array of the objective names.
-        """
-        return [obj.name for obj in self.objectives]
-
-    @property
-    def targets(self) -> list:
-        """
-        Returns an array of the objective targets.
-        """
-        return [obj.target for obj in self.objectives]
-
-    @property
-    def weights(self) -> np.array:
-        """
-        Returns an array of the objective weights.
-        """
-        return np.array([obj.weight for obj in self.objectives])
-
-    @property
-    def is_fitness(self) -> np.array:
-        """
-        Returns an array of the objective weights.
-        """
-        return np.array([obj.target in ["min", "max"] for obj in self.objectives])
-
-    @property
-    def signed_weights(self) -> np.array:
-        """
-        Returns a signed array of the objective weights.
-        """
-        return np.array([(1 if obj.target == "max" else -1) * obj.weight for obj in self.objectives])
 
     def add(self, objective):
         _validate_objs([*self.objectives, objective])
