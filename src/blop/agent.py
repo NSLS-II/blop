@@ -345,9 +345,9 @@ class Agent:
                 t0 = ttime.monotonic()
 
                 cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
-                n_before_tell = obj.n
+                n_before_tell = obj.n_valid
                 self._construct_model(obj)
-                n_after_tell = obj.n
+                n_after_tell = obj.n_valid
 
                 if train is None:
                     train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
@@ -408,8 +408,8 @@ class Agent:
         for i in range(iterations):
             if self.verbose:
                 print(f"running iteration {i + 1} / {iterations}")
-            for single_acq_func in np.atleast_1d(acq_func):
-                res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample, route=route, **acq_func_kwargs)
+            for single_acqf in np.atleast_1d(acqf):
+                res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
                 new_table = yield from self.acquire(res["points"])
                 new_table.loc[:, "acqf"] = res["acqf_name"]
 
@@ -596,24 +596,24 @@ class Agent:
         return float(self.scalarized_fitnesses(weights=weights, constrained=True).max())
 
     @property
-    def pareto_front_mask(self):
-        """
-        A mask for all data points that is true when the point is on the Pareto front.
-        A point is on the Pareto front if it is Pareto dominant
-        A point is Pareto dominant if there is no other point that is better at every objective
-        Points that violate any constraint are excluded.
-        """
-        y = self.train_targets()[:, self.objectives.type == "fitness"]
-        in_pareto_front = ~(y.unsqueeze(1) > y.unsqueeze(0)).all(axis=-1).any(axis=0)
-        all_constraints_satisfied = self.evaluated_constraints.all(axis=-1)
-        return in_pareto_front & all_constraints_satisfied
+    def pareto_mask(self):
+        # a point is on the Pareto front if it is Pareto dominant
+        # a point is Pareto dominant if it is there is no other point that is better at every objective
+        Y = self.train_targets(active=True, kind="fitness")
+
+        # nuke the bad points
+        Y[~self.evaluated_constraints.all(axis=-1)] = -np.inf
+        if Y.shape[-1] < 2:
+            raise ValueError("Computing the Pareto front requires at least 2 fitness objectives.")
+        in_pareto_front = ~(Y.unsqueeze(1) > Y.unsqueeze(0)).all(axis=-1).any(axis=0)
+        return in_pareto_front & self.evaluated_constraints.all(axis=-1)
 
     @property
     def pareto_front(self):
         """
         A subset of the data table containing only points on the Pareto front.
         """
-        return self.table.loc[self.pareto_front_mask.numpy()]
+        return self.table.loc[self.pareto_mask.numpy()]
 
     @property
     def min_ref_point(self):
