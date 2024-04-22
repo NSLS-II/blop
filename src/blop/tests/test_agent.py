@@ -4,10 +4,13 @@ import pytest  # noqa F401
 def test_agent(agent_2d_1f, RE):
     RE(agent_2d_1f.learn("qr", n=4))
 
-    agent_2d_1f.dofs
-    agent_2d_1f.objectives
-    agent_2d_1f.best
-    agent_2d_1f.best_inputs
+    best = agent_2d_1f.best
+
+    assert [dof.name in best for dof in agent_2d_1f.dofs]
+    assert [obj.name in best for obj in agent_2d_1f.objectives]
+
+    print(agent_2d_1f.dofs)
+    print(agent_2d_1f.objectives)
 
 
 def test_forget(agent_2d_1f, RE):
