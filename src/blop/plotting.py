@@ -537,7 +537,7 @@ def inspect_beam(agent, index, border=None):
 
 
 def _plot_pareto_front(agent, obj_indices=(0, 1)):
-    f_objs = agent.objectives[agent.objectives.kind == "fitness"]
+    f_objs = agent.objectives.subset(kind="fitness")
     (i, j) = obj_indices
 
     if len(f_objs) < 2:
@@ -545,7 +545,7 @@ def _plot_pareto_front(agent, obj_indices=(0, 1)):
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 6))
 
-    y = agent.train_targets()[:, agent.objectives.kind == "fitness"]
+    y = agent.train_targets(kind="fitness")
 
     pareto_mask = agent.pareto_mask
     constraint = agent.evaluated_constraints.all(axis=-1)

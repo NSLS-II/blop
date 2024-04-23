@@ -51,13 +51,11 @@ def agent_1d_1f(db):
     A one dimensional agent.
     """
 
-    def digestion(db, uid):
-        products = db[uid].table()
+    def digestion(df):
+        for index, entry in df.iterrows():
+            df.loc[index, "f1"] = functions.himmelblau(entry.x1, 3)
 
-        for index, entry in products.iterrows():
-            products.loc[index, "f1"] = functions.himmelblau(entry.x1, 3)
-
-        return products
+        return df
 
     dofs = DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))
     objectives = Objective(description="f1", name="f1", target="min")
@@ -68,6 +66,8 @@ def agent_1d_1f(db):
         digestion=digestion,
         db=db,
     )
+
+    agent.dofs.add(DOF(name="dummy", search_domain=(0, 1), read_only=False))
 
     return agent
 
@@ -94,6 +94,8 @@ def agent_2d_1f(db):
         tolerate_acquisition_errors=False,
     )
 
+    agent.dofs.add(DOF(name="dummy", search_domain=(0, 1), read_only=False))
+
     return agent
 
 
@@ -103,14 +105,12 @@ def agent_2d_2f(db):
     An agent minimizing two Himmelblau's functions
     """
 
-    def digestion(db, uid):
-        products = db[uid].table()
+    def digestion(df):
+        for index, entry in df.iterrows():
+            df.loc[index, "f1"] = functions.himmelblau(entry.x1, entry.x2)
+            df.loc[index, "f2"] = functions.himmelblau(entry.x2, entry.x1)
 
-        for index, entry in products.iterrows():
-            products.loc[index, "f1"] = functions.himmelblau(entry.x1, entry.x2)
-            products.loc[index, "f2"] = functions.himmelblau(entry.x2, entry.x1)
-
-        return products
+        return df
 
     dofs = [
         DOF(name="x1", search_domain=(-5.0, 5.0)),
@@ -128,6 +128,8 @@ def agent_2d_2f(db):
         tolerate_acquisition_errors=False,
     )
 
+    agent.dofs.add(DOF(name="dummy", search_domain=(0, 1), read_only=False))
+
     return agent
 
 
@@ -137,20 +139,18 @@ def agent_2d_2f_2c(db):
     Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_for_optimization
     """
 
-    def digestion(db, uid):
-        products = db[uid].table()
+    def digestion(df):
+        for index, entry in df.iterrows():
+            df.loc[index, "f1"] = (entry.x1 - 2) ** 2 + (entry.x2 - 1) + 2
+            df.loc[index, "f2"] = 9 * entry.x1 - (entry.x2 - 1) + 2
+            df.loc[index, "c1"] = entry.x1**2 + entry.x2**2
+            df.loc[index, "c2"] = entry.x1 - 3 * entry.x2 + 10
 
-        for index, entry in products.iterrows():
-            products.loc[index, "f1"] = (entry.x1 - 2) ** 2 + (entry.x2 - 1) + 2
-            products.loc[index, "f2"] = 9 * entry.x1 - (entry.x2 - 1) + 2
-            products.loc[index, "c1"] = entry.x1**2 + entry.x2**2
-            products.loc[index, "c2"] = entry.x1 - 3 * entry.x2 + 10
-
-        return products
+        return df
 
     dofs = [
-        DOF(description="The first DOF", name="x1", search_domain=(-20, 20)),
-        DOF(description="The second DOF", name="x2", search_domain=(-20, 20)),
+        DOF(description="The first DOF", name="x1", search_domain=(-20, 20), travel_expense=1.0),
+        DOF(description="The second DOF", name="x2", search_domain=(-20, 20), travel_expense=2.0),
     ]
 
     objectives = [
@@ -168,6 +168,8 @@ def agent_2d_2f_2c(db):
         verbose=True,
         tolerate_acquisition_errors=False,
     )
+
+    agent.dofs.add(DOF(name="dummy", search_domain=(0, 1), read_only=False))
 
     return agent
 
@@ -198,6 +200,8 @@ def agent_with_read_only_dofs(db):
         verbose=True,
         tolerate_acquisition_errors=False,
     )
+
+    agent.dofs.add(DOF(name="dummy", search_domain=(0, 1), read_only=False))
 
     return agent
 

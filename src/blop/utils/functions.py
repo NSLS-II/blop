@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import torch
 
 
@@ -60,18 +61,17 @@ def binh_korn(x1, x2):
     return np.where(c, f1, np.nan), np.where(c, f2, np.nan)
 
 
-def binh_korn_digestion(db, uid):
+def binh_korn_digestion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback.
     """
-    products = db[uid].table()
 
-    for index, entry in products.iterrows():
+    for index, entry in df.iterrows():
         f1, f2 = binh_korn(entry.x1, entry.x2)
-        products.loc[index, "f1"] = f1
-        products.loc[index, "f2"] = f2
+        df.loc[index, "f1"] = f1
+        df.loc[index, "f2"] = f2
 
-    return products
+    return df
 
 
 def skewed_himmelblau(x1, x2):
@@ -184,42 +184,38 @@ def kb_tradeoff_4d(x1, x2, x3, x4):
     return x_width, y_width, flux
 
 
-def constrained_himmelblau_digestion(db, uid):
+def constrained_himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback.
     """
-    products = db[uid].table()
 
-    for index, entry in products.iterrows():
-        products.loc[index, "himmelblau"] = constrained_himmelblau(entry.x1, entry.x2)
+    for index, entry in df.iterrows():
+        df.loc[index, "himmelblau"] = constrained_himmelblau(entry.x1, entry.x2)
 
-    return products
+    return df
 
 
-def himmelblau_digestion(db, uid):
+def himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback.
     """
-    products = db[uid].table()
 
-    for index, entry in products.iterrows():
-        products.loc[index, "himmelblau"] = himmelblau(entry.x1, entry.x2)
+    for index, entry in df.iterrows():
+        df.loc[index, "himmelblau"] = himmelblau(entry.x1, entry.x2)
 
-    return products
+    return df
 
 
-def mock_kbs_digestion(db, uid):
+def mock_kbs_digestion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Digests a beam waist and height into the feedback.
     """
 
-    products = db[uid].table()
-
-    for index, entry in products.iterrows():
+    for index, entry in df.iterrows():
         sigma_x = gaussian_beam_waist(entry.x1, entry.x2)
         sigma_y = gaussian_beam_waist(entry.x3, entry.x4)
 
-        products.loc[index, "x_width"] = 2 * sigma_x
-        products.loc[index, "y_width"] = 2 * sigma_y
+        df.loc[index, "x_width"] = 2 * sigma_x
+        df.loc[index, "y_width"] = 2 * sigma_y
 
-    return products
+    return df
