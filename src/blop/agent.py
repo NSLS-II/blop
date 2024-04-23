@@ -69,6 +69,7 @@ class Agent:
         dets: Sequence[Signal] = [],
         acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
+        digestion_kwargs: dict = {},
         verbose: bool = False,
         tolerate_acquisition_errors=False,
         sample_center_on_init=False,
@@ -89,7 +90,9 @@ class Agent:
         acquisition_plan : optional
             A plan that samples the beamline for some given inputs.
         digestion :
-            A function to digest the output of the acquisition, taking arguments (db, uid).
+            A function to digest the output of the acquisition, taking a DataFrame as an argument.
+        digestion_kwargs :
+            Some kwargs for the digestion function.
         db : optional
             A databroker instance.
         verbose : bool
@@ -130,6 +133,7 @@ class Agent:
         self.dets = dets
         self.acquisition_plan = acquistion_plan
         self.digestion = digestion
+        self.digestion_kwargs = digestion_kwargs
 
         self.verbose = verbose
 
@@ -159,9 +163,16 @@ class Agent:
     def __getattr__(self, attr):
         acqf_config = acquisition.parse_acqf_identifier(attr, strict=False)
         if acqf_config is not None:
-            acqf, _ = _construct_acqf(acqf_name=acqf_config["name"])
+            acqf, _ = _construct_acqf(agent=self, acqf_name=acqf_config["name"])
             return acqf
         raise AttributeError(f"No attribute named '{attr}'.")
+
+    def refresh(self):
+        self._construct_all_models()
+        self._train_all_models()
+
+    def redigest(self):
+        self.table = self.digestion(self.table, **self.digestion_kwargs)
 
     def sample(self, n: int = DEFAULT_MAX_SAMPLES, method: str = "quasi-random") -> torch.Tensor:
         """
@@ -272,7 +283,9 @@ class Agent:
         duration = 1e3 * (ttime.monotonic() - start_time)
 
         if route and n > 1:
-            routing_index = utils.route(self.dofs.subset(active=True, read_only=False).readback, points)
+            current_points = np.array([dof.readback for dof in active_dofs if not dof.read_only])
+            travel_expenses = np.array([dof.travel_expense for dof in active_dofs if not dof.read_only])
+            routing_index = utils.route(current_points, points, dim_weights=travel_expenses)
             points = points[routing_index]
 
         if upsample > 1:
@@ -479,8 +492,7 @@ class Agent:
                 [*self.dets, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-
-            products = self.digestion(self.db, uid)
+            products = self.digestion(self.db[uid].table(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -549,7 +561,7 @@ class Agent:
 
     def posterior(self, x):
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
-        return self.model.posterior(torch.tensor(x))
+        return self.model.posterior(self.dofs.transform(torch.tensor(x)))
 
     @property
     def fitness_model(self):
