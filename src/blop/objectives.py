@@ -13,34 +13,59 @@ DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
     "description": "object",
+    # "kind": "str",
     "type": "str",
     "target": "object",
-    "active": "bool",
+    "transform": "str",
+    "domain": "str",
     "trust_domain": "object",
-    "active": "bool",
-    "weight": "bool",
+    "weight": "float",
     "units": "object",
-    "log": "bool",
-    "min_noise": "float",
-    "max_noise": "float",
+    "noise_bounds": "object",
     "noise": "float",
-    "n": "int",
+    "n_valid": "int",
     "latent_groups": "object",
+    "active": "bool",
 }
 
-ALLOWED_OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
+SUPPORTED_OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
+TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0, 1.0)}
 
 
 class DuplicateNameError(ValueError):
     ...
 
 
-def _validate_objectives(objectives):
-    names = [obj.name for obj in objectives]
+def _validate_objs(objs):
+    names = [obj.name for obj in objs]
     unique_names, counts = np.unique(names, return_counts=True)
     duplicate_names = unique_names[counts > 1]
     if len(duplicate_names) > 0:
         raise DuplicateNameError(f"Duplicate name(s) in supplied objectives: {duplicate_names}")
+
+
+domains = {"log"}
+
+
+def _validate_obj_transform(transform):
+    if transform is None:
+        return (-np.inf, np.inf)
+
+    if transform not in TRANSFORM_DOMAINS:
+        raise ValueError(f"'transform' must be a callable with one argument, or one of {TRANSFORM_DOMAINS}")
+
+
+def _validate_continuous_domains(trust_domain, domain):
+    """
+    A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
+
+    Check that all the domains are kosher by enforcing that:
+    search_domain \\subseteq trust_domain \\subseteq domain
+    """
+
+    if (trust_domain is not None) and (domain is not None):
+        if (trust_domain[0] < domain[0]) or (trust_domain[1] > domain[1]):
+            raise ValueError(f"The trust domain {trust_domain} is outside the transform domain {domain}.")
 
 
 @dataclass
@@ -77,9 +102,9 @@ class Objective:
 
     name: str
     description: str = ""
-    type: str = None
+    type: str = "continuous"
     target: Union[Tuple[float, float], float, str] = "max"
-    log: bool = False
+    transform: str = None
     weight: float = 1.0
     active: bool = True
     trust_domain: Tuple[float, float] or None = None
@@ -89,52 +114,107 @@ class Objective:
     latent_groups: List[Tuple[str, ...]] = field(default_factory=list)
 
     def __post_init__(self):
+        if self.transform is not None:
+            _validate_obj_transform(self.transform)
+
         if isinstance(self.target, str):
+            # eventually we will be able to target other strings, as outputs of a discrete objective
             if self.target not in ["min", "max"]:
                 raise ValueError("'target' must be either 'min', 'max', a number, or a tuple of numbers.")
 
-        if isinstance(self.target, float):
-            if self.log and not self.target > 0:
-                return ValueError("'target' must strictly positive if log=True.")
+        self.use_as_constraint = True if isinstance(self.target, tuple) else False
 
-        self.type = "fitness" if self.target in ["min", "max"] else "constraint"
+    @property
+    def kind(self):
+        return "fitness" if self.target in ["min", "max"] else "constraint"
+
+    @property
+    def domain(self):
+        """
+        The total domain of the objective.
+        """
+        if self.transform is None:
+            if self.type == "continuous":
+                return (-np.inf, np.inf)
+        return TRANSFORM_DOMAINS[self.transform]
+
+    def constrain(self, y):
+        """
+        The total domain of the objective.
+        """
+        if self.kind != "constraint":
+            raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
+        return (y > self.target[0]) & (y < self.target[1])
 
     @property
     def _trust_domain(self):
         if self.trust_domain is None:
-            return (0, np.inf) if self.log else (-np.inf, np.inf)
+            return self.domain
         return self.trust_domain
 
+    def _transform(self, y):
+        if not isinstance(y, torch.Tensor):
+            y = torch.tensor(y, dtype=torch.double)
+
+        y = torch.where((y > self.domain[0]) & (y < self.domain[1]), y, np.nan)
+
+        if self.transform == "log":
+            y = y.log()
+        if self.transform == "logit":
+            y = (y / (1 - y)).log()
+        if self.transform == "arctanh":
+            y = torch.arctanh(y)
+
+        if self.target == "min":
+            y = -y
+
+        return y
+
+    def _untransform(self, y):
+        if not isinstance(y, torch.Tensor):
+            y = torch.tensor(y, dtype=torch.double)
+
+        if self.target == "min":
+            y = -y
+
+        if self.transform == "log":
+            y = y.exp()
+        if self.transform == "logit":
+            y = 1 / (1 + torch.exp(-y))
+        if self.transform == "arctanh":
+            y = torch.tanh(y)
+
+        return y
+
     @property
-    def label(self) -> str:
-        return f"{'log ' if self.log else ''}{self.description}"
+    def label_with_units(self) -> str:
+        return f"{self.description}{f' [{self.units}]' if self.units else ''}"
+
+    @property
+    def noise_bounds(self) -> tuple:
+        return (self.min_noise, self.max_noise)
 
     @property
     def summary(self) -> pd.Series:
         series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
-            if attr == "trust_domain":
-                if value is None:
-                    value = (0, np.inf) if self.log else (-np.inf, np.inf)
-            series[attr] = value
+
+            if attr in ["search_domain", "trust_domain"]:
+                if self.type == "continuous":
+                    if value is not None:
+                        value = f"({value[0]:.02e}, {value[1]:.02e})"
+
+            if attr in ["noise_bounds"]:
+                if value is not None:
+                    value = f"({value[0]:.01e}, {value[1]:.01e})"
+
+            series[attr] = value if value is not None else ""
         return series
 
     @property
-    def trust_lower_bound(self):
-        if self.trust_domain is None:
-            return 0 if self.log else -np.inf
-        return float(self.trust_domain[0])
-
-    @property
-    def trust_upper_bound(self):
-        if self.trust_domain is None:
-            return np.inf
-        return float(self.trust_domain[1])
-
-    @property
     def noise(self) -> float:
-        return self.model.likelihood.noise.item() if hasattr(self, "model") else None
+        return self.model.likelihood.noise.item() if hasattr(self, "model") else np.nan
 
     @property
     def snr(self) -> float:
@@ -142,7 +222,7 @@ class Objective:
 
     @property
     def n(self) -> int:
-        return self.model.train_targets.shape[0] if hasattr(self, "model") else 0
+        return int((~self.model.train_targets.isnan()).sum()) if hasattr(self, "model") else 0
 
     def targeting_constraint(self, x: torch.Tensor) -> torch.Tensor:
         if not isinstance(self.target, tuple):
@@ -153,55 +233,63 @@ class Objective:
         m = p.mean
         s = p.variance.sqrt()
 
-        return 0.5 * (approximate_erf((b - m) / (np.sqrt(2) * s)) - approximate_erf((a - m) / (np.sqrt(2) * s)))[..., -1]
+        sish = s + 0.1 * m.std()  # for numerical stability
 
-    def fitness_forward(self, y):
-        f = y
-        if self.log:
-            f = np.log(f)
-        if self.target == "min":
-            f = -f
-        return f
+        return (
+            0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
+        )
 
-    def fitness_inverse(self, f):
-        y = f
-        if self.target == "min":
-            y = -y
-        if self.log:
-            y = np.exp(y)
-        return y
+    # def fitness_forward(self, y):
+    #     f = y
+    #     if self.log:
+    #         f = np.log(f)
+    #     if self.target == "min":
+    #         f = -f
+    #     return f
 
-    @property
-    def is_fitness(self):
-        return self.target in ["min", "max"]
+    # def fitness_inverse(self, f):
+    #     y = f
+    #     if self.target == "min":
+    #         y = -y
+    #     if self.log:
+    #         y = np.exp(y)
+    #     return y
 
-    def value_prediction(self, X):
-        p = self.model.posterior(X)
+    # @property
+    # def is_fitness(self):
+    #     return self.target in ["min", "max"]
 
-        if self.is_fitness:
-            return self.fitness_inverse(p.mean)
+    # def value_prediction(self, X):
+    #     p = self.model.posterior(X)
 
-        if isinstance(self.target, tuple):
-            return p.mean
+    #     if self.is_fitness:
+    #         return self.fitness_inverse(p.mean)
 
-    def fitness_prediction(self, X):
-        p = self.model.posterior(X)
+    #     if isinstance(self.target, tuple):
+    #         return p.mean
 
-        if self.is_fitness:
-            return self.fitness_inverse(p.mean)
+    # def fitness_prediction(self, X):
+    #     p = self.model.posterior(X)
 
-        if isinstance(self.target, tuple):
-            return self.targeting_constraint(X).log().clamp(min=-16)
+    #     if self.is_fitness:
+    #         return self.fitness_inverse(p.mean)
+
+    #     if isinstance(self.target, tuple):
+    #         return self.targeting_constraint(X).log().clamp(min=-16)
 
 
 class ObjectiveList(Sequence):
     def __init__(self, objectives: list = []):
-        _validate_objectives(objectives)
+        _validate_objs(objectives)
         self.objectives = objectives
+
+    @property
+    def names(self):
+        return [obj.name for obj in self.objectives]
 
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
-        if attr in OBJ_FIELD_TYPES.keys():
+        if attr in [*OBJ_FIELD_TYPES.keys(), "kind"]:
             return np.array([getattr(obj, attr) for obj in self.objectives])
         if attr in self.names:
             return self.__getitem__(attr)
@@ -236,66 +324,86 @@ class ObjectiveList(Sequence):
         for attr, dtype in OBJ_FIELD_TYPES.items():
             table[attr] = table[attr].astype(dtype)
 
-        return table.T
+        return table
 
     def __repr__(self):
         return self.summary.__repr__()
 
     def _repr_html_(self):
-        return self.summary._repr_html_()
+        return self.summary.T._repr_html_()
 
-    @property
-    def descriptions(self) -> list:
-        """
-        Returns an array of the objective names.
-        """
-        return [obj.description for obj in self.objectives]
+    # @property
+    # def descriptions(self) -> list:
+    #     """
+    #     Returns an array of the objective names.
+    #     """
+    #     return [obj.description for obj in self.objectives]
 
-    @property
-    def names(self) -> list:
-        """
-        Returns an array of the objective names.
-        """
-        return [obj.name for obj in self.objectives]
+    # @property
+    # def names(self) -> list:
+    #     """
+    #     Returns an array of the objective names.
+    #     """
+    #     return [obj.name for obj in self.objectives]
 
-    @property
-    def targets(self) -> list:
-        """
-        Returns an array of the objective targets.
-        """
-        return [obj.target for obj in self.objectives]
+    # @property
+    # def targets(self) -> list:
+    #     """
+    #     Returns an array of the objective targets.
+    #     """
+    #     return [obj.target for obj in self.objectives]
 
-    @property
-    def weights(self) -> np.array:
-        """
-        Returns an array of the objective weights.
-        """
-        return np.array([obj.weight for obj in self.objectives])
+    # @property
+    # def weights(self) -> np.array:
+    #     """
+    #     Returns an array of the objective weights.
+    #     """
+    #     return np.array([obj.weight for obj in self.objectives])
 
-    @property
-    def is_fitness(self) -> np.array:
-        """
-        Returns an array of the objective weights.
-        """
-        return np.array([obj.target in ["min", "max"] for obj in self.objectives])
-
-    @property
-    def signed_weights(self) -> np.array:
-        """
-        Returns a signed array of the objective weights.
-        """
-        return np.array([(1 if obj.target == "max" else -1) * obj.weight for obj in self.objectives])
+    # @property
+    # def signed_weights(self) -> np.array:
+    #     """
+    #     Returns a signed array of the objective weights.
+    #     """
+    #     return np.array([(1 if obj.target == "max" else -1) * obj.weight for obj in self.objectives])
 
     def add(self, objective):
-        _validate_objectives([*self.objectives, objective])
+        _validate_objs([*self.objectives, objective])
         self.objectives.append(objective)
 
     @staticmethod
-    def _test_obj(obj, active=None):
+    def _test_obj(obj, active=None, kind=None):
         if active is not None:
             if obj.active != active:
                 return False
+        if kind is not None:
+            if obj.kind != kind:
+                return False
         return True
 
-    def subset(self, active=None):
-        return ObjectiveList([obj for obj in self.objectives if self._test_obj(obj, active=active)])
+    def subset(self, active=None, kind=None):
+        return ObjectiveList([obj for obj in self.objectives if self._test_obj(obj, active=active, kind=kind)])
+
+    def transform(self, Y):
+        """
+        Transform the experiment space to the model space.
+        """
+        if Y.shape[-1] != len(self):
+            raise ValueError(f"Cannot transform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
+
+        if not isinstance(Y, torch.Tensor):
+            Y = torch.tensor(Y, dtype=torch.double)
+
+        return torch.cat([obj._transform(Y[..., i]).unsqueeze(-1) for i, obj in enumerate(self.objectives)], dim=-1)
+
+    def untransform(self, Y):
+        """
+        Transform the model space to the experiment space.
+        """
+        if Y.shape[-1] != len(self):
+            raise ValueError(f"Cannot untransform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
+
+        if not isinstance(Y, torch.Tensor):
+            Y = torch.tensor(Y, dtype=torch.double)
+
+        return torch.cat([obj._untransform(Y[..., i]).unsqueeze(-1) for i, obj in enumerate(self.objectives)], dim=-1)

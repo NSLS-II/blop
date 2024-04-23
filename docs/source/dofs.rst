@@ -1,6 +1,9 @@
 Degrees of freedom (DOFs)
 +++++++++++++++++++++++++
 
+Continuous degrees of freedom
+-----------------------------
+
 A degree of freedom is a variable that affects our optimization objective. We can define a simple DOF as
 
 .. code-block:: python

@@ -22,7 +22,7 @@ import torch
 from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
-from botorch.models.transforms.input import AffineInputTransform, ChainedInputTransform, Log10, Normalize
+from botorch.models.transforms.input import Normalize
 from databroker import Broker
 from ophyd import Signal
 
@@ -198,7 +198,7 @@ class Agent:
         else:
             raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
 
-        return self._sample_input_transform.untransform(X)
+        return self.dofs.subset(active=True).untransform(X)
 
     def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1, **acq_func_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -246,8 +246,8 @@ class Agent:
                 identifier=acq_func_identifier, return_metadata=True, **acq_func_kwargs
             )
 
-            NUM_RESTARTS = 8
-            RAW_SAMPLES = 256
+            NUM_RESTARTS = 16
+            RAW_SAMPLES = 1024
 
             candidates, acqf_obj = botorch.optim.optimize_acqf(
                 acq_function=acq_func,
@@ -258,8 +258,11 @@ class Agent:
                 raw_samples=RAW_SAMPLES,  # used for intialization heuristic
             )
 
-            # this includes both RO and non-RO DOFs
-            candidates = candidates.numpy()
+            # this includes both RO and non-RO DOFs.
+            # and is in the transformed model space
+            candidates = self.dofs.subset(active=True).untransform(candidates).numpy()
+
+        p = self.posterior(candidates) if hasattr(self, "model") else None
 
         acq_points = candidates[..., ~self.active_dofs.read_only]
         read_only_values = candidates[..., self.active_dofs.read_only]
@@ -274,8 +277,6 @@ class Agent:
             idx = np.arange(len(acq_points))
             upsampled_idx = np.linspace(0, len(idx) - 1, upsample * len(idx) - 1)
             acq_points = sp.interpolate.interp1d(idx, acq_points, axis=0)(upsampled_idx)
-
-        p = self.posterior(candidates) if hasattr(self, "model") else None
 
         res = {
             "points": acq_points,
@@ -367,6 +368,7 @@ class Agent:
         append: bool = True,
         hypers: str = None,
         route: bool = True,
+        **acq_func_kwargs,
     ):
         """This returns a Bluesky plan which iterates the learning algorithm, looping over ask -> acquire -> tell.
 
@@ -400,9 +402,10 @@ class Agent:
             new_table.loc[:, "acq_func"] = "sample_center_on_init"
 
         for i in range(iterations):
-            print(f"running iteration {i + 1} / {iterations}")
+            if self.verbose:
+                print(f"running iteration {i + 1} / {iterations}")
             for single_acq_func in np.atleast_1d(acq_func):
-                res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample, route=route)
+                res = self.ask(n=n, acq_func_identifier=single_acq_func, upsample=upsample, route=route, **acq_func_kwargs)
                 new_table = yield from self.acquire(res["points"])
                 new_table.loc[:, "acq_func"] = res["acq_func"]
 
@@ -548,56 +551,45 @@ class Agent:
     @property
     def fitness_model(self):
         return (
-            ModelListGP(*[obj.model for obj in self.active_objs if obj.type == "fitness"])
+            ModelListGP(*[obj.model for obj in self.objectives.subset(active=True, kind="fitness")])
             if len(self.active_objs) > 1
             else self.active_objs[0].model
         )
 
     @property
-    def fitness_weights(self):
-        return torch.tensor([obj.weight for obj in self.objectives if obj.type == "fitness"], dtype=torch.double)
-
-    @property
-    def fitness_scalarization(self):
-        return ScalarizedPosteriorTransform(weights=self.fitness_weights)
-
-    @property
-    def evaluated_fitnesses(self):
-        return self.train_targets()[:, self.objectives.type == "fitness"]
-
-    @property
-    def scalarized_fitnesses(self):
-        return self.fitness_scalarization.evaluate(self.evaluated_fitnesses)
-
-    @property
     def evaluated_constraints(self):
-        if sum(self.objectives.type == "constraint"):
-            y = self.train_targets()
-            return torch.cat(
-                [
-                    ((y[:, i] >= obj.target[0]) & (y[:, i] <= obj.target[1])).unsqueeze(0)
-                    for i, obj in enumerate(self.objectives)
-                    if obj.type == "constraint"
-                ],
-                dim=0,
-            ).T
+        constraint_objectives = self.objectives.subset(kind="constraint")
+        if len(constraint_objectives):
+            return torch.cat([obj.constrain(self.raw_targets(obj.name)) for obj in constraint_objectives], dim=-1)
         else:
             return torch.ones(size=(len(self.table), 0), dtype=torch.bool)
 
-    @property
-    def argmax_best_f(self):
-        f = self.scalarized_fitnesses
-        c = self.evaluated_constraints.all(axis=-1)
-        mask = (~f.isnan()) & c
+    def fitness_scalarization(self, weights="default"):
+        fitness_objectives = self.objectives.subset(active=True, kind="fitness")
+        if weights == "default":
+            weights = torch.tensor([obj.weight for obj in fitness_objectives], dtype=torch.double)
+        elif weights == "equal":
+            weights = torch.ones(len(fitness_objectives), dtype=torch.double)
+        elif weights == "random":
+            weights = torch.rand(len(fitness_objectives), dtype=torch.double)
+            weights *= len(fitness_objectives) / weights.sum()
+        elif not isinstance(weights, torch.Tensor):
+            raise ValueError(f"'weights' must be a Tensor or one of ['default', 'equal', 'random'], and not {weights}.")
+        return ScalarizedPosteriorTransform(weights=weights)
 
-        if not mask.sum():
-            raise ValueError("There are no valid points that satisfy the constraints!")
+    def scalarized_fitnesses(self, weights="default", constrained=True):
+        f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, kind="fitness"))
+        if constrained:
+            c = self.evaluated_constraints.all(axis=-1)
+            if not c.sum():
+                raise ValueError("There are no valid points that satisfy the constraints!")
+        return torch.where(c, f, -np.inf)
 
-        return torch.where(mask)[0][f[mask].argmax()]
+    def argmax_best_f(self, weights="default"):
+        return int(self.scalarized_fitnesses(weights=weights, constrained=True).argmax())
 
-    @property
-    def best_f(self):
-        return self.scalarized_fitnesses[self.argmax_best_f]
+    def best_f(self, weights="default"):
+        return float(self.scalarized_fitnesses(weights=weights, constrained=True).max())
 
     @property
     def pareto_front_mask(self):
@@ -626,8 +618,7 @@ class Agent:
 
     @property
     def random_ref_point(self):
-        pareto_front_index = torch.where(self.pareto_front_mask)[0]
-        return self.evaluated_fitnesses[np.random.choice(pareto_front_index)]
+        return self.train_targets(active=True, kind="fitness")[self.argmax_best_f(weights="random")]
 
     @property
     def all_objectives_valid(self):
@@ -745,20 +736,12 @@ class Agent:
 
     @property
     def _sample_domain(self):
-        return torch.tensor(self.active_dofs.search_domain, dtype=torch.double).T
-
-    @property
-    def _sample_input_transform(self):
-        tf1 = Log10(indices=list(np.where(self.active_dofs.log)[0]))
-
-        transformed_sample_domain = tf1.transform(self._sample_domain)
-
-        offset = transformed_sample_domain.min(dim=0).values
-        coefficient = (transformed_sample_domain.max(dim=0).values - offset).clamp(min=1e-16)
-
-        tf2 = AffineInputTransform(d=len(offset), coefficient=coefficient, offset=offset)
-
-        return ChainedInputTransform(tf1=tf1, tf2=tf2)
+        """
+        Returns a (2, n_active_dof) array of lower and upper bounds for dofs.
+        Read-only DOFs are set to exactly their last known value.
+        Discrete DOFs are relaxed to some continuous domain.
+        """
+        return self.dofs.subset(active=True).transform(self.dofs.subset(active=True).search_domain.T)
 
     @property
     def _model_input_transform(self):
@@ -775,10 +758,7 @@ class Agent:
         Read-only: constrain to the readback value
         """
 
-        tf1 = Log10(indices=list(np.where(self.active_dofs.log)[0]))
-        tf2 = Normalize(d=len(self.active_dofs))
-
-        return ChainedInputTransform(tf1=tf1, tf2=tf2)
+        return Normalize(d=len(self.active_dofs))
 
     def save_data(self, path="./data.h5"):
         """
@@ -822,11 +802,13 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
+        x = self.dofs.subset(active=True).transform(x)
+
         p = torch.ones(x.shape[:-1])
         for obj in self.active_objs:
             # if the targeting constraint is non-trivial
-            if obj.type == "constraint":
-                p *= obj.targeting_constraint(x)
+            # if obj.kind == "constraint":
+            #     p *= obj.targeting_constraint(x)
             # if the validity constaint is non-trivial
             if obj.validity_conjugate_model is not None:
                 p *= obj.validity_constraint(x)
@@ -891,47 +873,61 @@ class Agent:
 
         print("\n\n".join(entries))
 
+    def raw_inputs(self, index=None, **subset_kwargs):
+        """
+        Get the raw, untransformed inputs for a DOF (or for a subset).
+        """
+        if index is None:
+            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
+        return torch.tensor(self.table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
+
     def train_inputs(self, index=None, **subset_kwargs):
         """A two-dimensional tensor of all DOF values."""
 
         if index is None:
-            return torch.cat([self.train_inputs(dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
+            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
 
         dof = self.dofs[index]
-        inputs = self.table.loc[:, dof.name].values.copy()
+        raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
 
         # check that inputs values are inside acceptable values
-        valid = (inputs >= dof._trust_domain[0]) & (inputs <= dof._trust_domain[1])
-        inputs = np.where(valid, inputs, np.nan)
+        valid = (raw_inputs >= dof._trust_domain[0]) & (raw_inputs <= dof._trust_domain[1])
+        raw_inputs = torch.where(valid, raw_inputs, np.nan)
 
-        return torch.tensor(inputs, dtype=torch.double).unsqueeze(-1)
+        return dof._transform(raw_inputs)
+
+    def raw_targets(self, index=None, **subset_kwargs):
+        """
+        Get the raw, untransformed inputs for an objective (or for a subset).
+        """
+        if index is None:
+            return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives.subset(**subset_kwargs)], dim=-1)
+        return torch.tensor(self.table.loc[:, self.objectives[index].name].values, dtype=torch.double).unsqueeze(-1)
 
     def train_targets(self, index=None, **subset_kwargs):
         """Returns the values associated with an objective name."""
 
         if index is None:
-            return torch.cat([self.train_targets(obj.name) for obj in self.objectives], dim=-1)
+            return torch.cat([self.train_targets(obj.name) for obj in self.objectives.subset(**subset_kwargs)], dim=-1)
 
         obj = self.objectives[index]
-        values = self.table.loc[:, obj.name].values.copy()
+        raw_targets = self.raw_targets(index=index, **subset_kwargs)
 
         # check that targets values are inside acceptable values
-        valid = (values >= obj._trust_domain[0]) & (values <= obj._trust_domain[1])
-        values = np.where(valid, values, np.nan)
+        valid = (raw_targets >= obj._trust_domain[0]) & (raw_targets <= obj._trust_domain[1])
+        raw_targets = torch.where(valid, raw_targets, np.nan)
 
-        targets = obj.fitness_forward(values)
-
-        return torch.tensor(targets, dtype=torch.double).unsqueeze(-1)
+        return obj._transform(raw_targets)
 
     @property
     def best(self):
         """Returns all data for the best point."""
-        return self.table.loc[self.argmax_best_f.item()]
+        return self.table.loc[self.argmax_best_f()]
 
     @property
     def best_inputs(self):
         """Returns the value of each DOF at the best point."""
-        return self.table.loc[self.argmax_scalarized_objective, self.dofs.names].to_dict()
+        return self.table.loc[self.argmax_best_f(), self.dofs.names].to_dict()
 
     def go_to(self, **positions):
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as
