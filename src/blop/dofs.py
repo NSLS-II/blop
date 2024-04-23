@@ -53,10 +53,11 @@ def _validate_continuous_dof_domains(search_domain, trust_domain, domain, read_o
     search_domain \\subseteq trust_domain \\subseteq domain
     """
     if not read_only:
+        if len(search_domain) != 2:
+            raise ValueError(f"Bad search domain {search_domain}. The search domain must have length 2.")
         try:
             search_domain = tuple((float(search_domain[0]), float(search_domain[1])))
-            assert len(search_domain) == 2
-        except:  # noqa
+        except TypeError:
             raise ValueError("If type='continuous', then 'search_domain' must be a tuple of two numbers.")
 
         if search_domain[0] >= search_domain[1]:
@@ -72,7 +73,7 @@ def _validate_continuous_dof_domains(search_domain, trust_domain, domain, read_o
 
     if (trust_domain is not None) and (domain is not None):
         if (trust_domain[0] < domain[0]) or (trust_domain[1] > domain[1]):
-            raise ValueError(f"The trust domain {trust_domain} must be a subset of the trust domain {domain}.")
+            raise ValueError(f"The trust domain {trust_domain} must be a subset of the domain {domain}.")
 
 
 def _validate_discrete_dof_domains(search_domain, trust_domain):
@@ -374,21 +375,20 @@ class DOFList(Sequence):
         """
         Transform X to the transformed unit hypercube.
         """
-
-        if X.shape[-1] != len(self.subset(active=True)):
-            raise ValueError()
+        if X.shape[-1] != len(self):
+            raise ValueError(f"Cannot transform points with shape {X.shape} using DOFs with dimension {len(self)}.")
 
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X, dtype=torch.double)
 
-        return torch.cat([dof._transform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(self.subset(active=True))], dim=-1)
+        return torch.cat([dof._transform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(self.dofs)], dim=-1)
 
     def untransform(self, X):
         """
         Transform the transformed unit hypercube to the search domain.
         """
-        if X.shape[-1] != len(self.subset(active=True)):
-            raise ValueError()
+        if X.shape[-1] != len(self):
+            raise ValueError(f"Cannot untransform points with shape {X.shape} using DOFs with dimension {len(self)}.")
 
         if not isinstance(X, torch.Tensor):
             X = torch.tensor(X, dtype=torch.double)

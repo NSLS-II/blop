@@ -198,7 +198,7 @@ class Agent:
         else:
             raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
 
-        return self.dofs.untransform(X)
+        return self.dofs.subset(active=True).untransform(X)
 
     def ask(self, acq_func_identifier="qei", n=1, route=True, sequential=True, upsample=1, **acq_func_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -260,7 +260,7 @@ class Agent:
 
             # this includes both RO and non-RO DOFs.
             # and is in the transformed model space
-            candidates = self.dofs.untransform(candidates).numpy()
+            candidates = self.dofs.subset(active=True).untransform(candidates).numpy()
 
         p = self.posterior(candidates) if hasattr(self, "model") else None
 
@@ -586,10 +586,10 @@ class Agent:
         return torch.where(c, f, -np.inf)
 
     def argmax_best_f(self, weights="default"):
-        return self.scalarized_fitnesses(weights=weights, constrained=True).argmax()
+        return int(self.scalarized_fitnesses(weights=weights, constrained=True).argmax())
 
     def best_f(self, weights="default"):
-        return self.scalarized_fitnesses(weights=weights, constrained=True).max()
+        return float(self.scalarized_fitnesses(weights=weights, constrained=True).max())
 
     @property
     def pareto_front_mask(self):
@@ -741,7 +741,7 @@ class Agent:
         Read-only DOFs are set to exactly their last known value.
         Discrete DOFs are relaxed to some continuous domain.
         """
-        return self.dofs.transform(self.dofs.subset(active=True).search_domain.T)
+        return self.dofs.subset(active=True).transform(self.dofs.subset(active=True).search_domain.T)
 
     @property
     def _model_input_transform(self):
@@ -802,7 +802,7 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
-        x = self.dofs.transform(x)
+        x = self.dofs.subset(active=True).transform(x)
 
         p = torch.ones(x.shape[:-1])
         for obj in self.active_objs:
@@ -922,12 +922,12 @@ class Agent:
     @property
     def best(self):
         """Returns all data for the best point."""
-        return self.table.loc[int(self.argmax_best_f())]
+        return self.table.loc[self.argmax_best_f()]
 
     @property
     def best_inputs(self):
         """Returns the value of each DOF at the best point."""
-        return self.table.loc[int(self.argmax_best_f()), self.dofs.names].to_dict()
+        return self.table.loc[self.argmax_best_f(), self.dofs.names].to_dict()
 
     def go_to(self, **positions):
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as

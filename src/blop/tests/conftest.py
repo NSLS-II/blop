@@ -107,7 +107,7 @@ def mo_agent(db):
 @pytest.fixture(scope="function")
 def constrained_agent(db):
     """
-    https://en.wikipedia.org/wiki/Test_functions_for_optimization
+    Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_for_optimization
     """
 
     def digestion(db, uid):

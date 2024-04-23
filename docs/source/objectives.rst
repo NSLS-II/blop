@@ -21,7 +21,7 @@ We can construct an objective to maximize some output with
 
     objective = Objective(name="some_output", target="max") # or "min"
 
-Given some data, the ``Objective`` object will try to model the quantity ``y1`` and find the corresponding inputs that maximize it.
+Given some data, the ``Objective`` object will try to model the quantity ``some_output`` and find the corresponding inputs that maximize it.
 We can also apply a transform to the value to make it more Gaussian when we fit to it.
 This is especially useful when the quantity tends to be non-Gaussian, like with a beam flux.
 
@@ -29,9 +29,9 @@ This is especially useful when the quantity tends to be non-Gaussian, like with 
 
     from blop import Objective
 
-    objective = Objective(name="some_output", target="max", transform="log")
+    objective_with_log_transform = Objective(name="some_output", target="max", transform="log")
 
-    objective = Objective(name="some_output", target="max", transform="arctanh")
+    objective_with_arctanh_transform = Objective(name="some_output", target="max", transform="arctanh")
 
 
 .. code-block:: python
@@ -62,13 +62,13 @@ This is useful in optimization problems like
 .. code-block:: python
 
     # ensure the color is approximately green
-    objective = Objective(name="peak_wavelength", target=(520, 530), units="nm")
+    color_bjective = Objective(name="peak_wavelength", target=(520, 530), units="nm")
 
     # ensure the beam is smaller than 10 microns
-    objective = Objective(name="beam_width", target=(-np.inf, 10), units="um", transform="log")
+    width_objective = Objective(name="beam_width", target=(-np.inf, 10), units="um", transform="log")
 
     # ensure our flux is at least some value
-    objective = Objective(name="beam_flux", target=(1.0, np.inf), transform="log")
+    flux_objective = Objective(name="beam_flux", target=(1.0, np.inf), transform="log")
 
 
 

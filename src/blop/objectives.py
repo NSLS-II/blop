@@ -389,7 +389,7 @@ class ObjectiveList(Sequence):
         Transform the experiment space to the model space.
         """
         if Y.shape[-1] != len(self):
-            raise ValueError()
+            raise ValueError(f"Cannot transform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
 
         if not isinstance(Y, torch.Tensor):
             Y = torch.tensor(Y, dtype=torch.double)
@@ -401,7 +401,7 @@ class ObjectiveList(Sequence):
         Transform the model space to the experiment space.
         """
         if Y.shape[-1] != len(self):
-            raise ValueError()
+            raise ValueError(f"Cannot untransform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
 
         if not isinstance(Y, torch.Tensor):
             Y = torch.tensor(Y, dtype=torch.double)
