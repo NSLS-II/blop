@@ -14,6 +14,10 @@ def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
 
+def inverse_sigmoid(x):
+    return np.log(x / (1 - x))
+
+
 def booth(x1, x2):
     """
     The Booth function (https://en.wikipedia.org/wiki/Test_functions_for_optimization)
