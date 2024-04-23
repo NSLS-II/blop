@@ -13,7 +13,6 @@ DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
     "description": "object",
-    # "kind": "str",
     "type": "str",
     "target": "object",
     "transform": "str",
@@ -292,8 +291,10 @@ class ObjectiveList(Sequence):
 
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
-        if attr in [*OBJ_FIELD_TYPES.keys(), "kind"]:
-            return np.array([getattr(obj, attr) for obj in self.objectives])
+        if all([hasattr(obj, attr) for obj in self.objectives]):
+            if OBJ_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
+                return np.array([getattr(obj, attr) for obj in self.objectives])
+            return [getattr(obj, attr) for obj in self.objectives]
         if attr in self.names:
             return self.__getitem__(attr)
 
@@ -330,10 +331,10 @@ class ObjectiveList(Sequence):
         return table
 
     def __repr__(self):
-        return self.summary.__repr__()
+        return self.summary.T.__repr__()
 
     def _repr_html_(self):
-        return self.summary._repr_html_()
+        return self.summary.T._repr_html_()
 
     def add(self, objective):
         _validate_objs([*self.objectives, objective])

@@ -13,6 +13,8 @@ def test_monte_carlo_pareto_acqfs(agent_2d_2f, RE, acqf):
     agent = agent_2d_2f
     RE(agent.learn("qr", n=16))
     RE(agent.learn(acqf, n=2))
+    agent.dofs[0].deactivate()
+    RE(agent.learn(acqf, n=2))
 
 
 @pytest.mark.test_func
@@ -26,4 +28,6 @@ def test_constrained_pareto(agent_2d_2f_2c, RE):
 def test_constrained_monte_carlo_pareto_acqfs(agent_2d_2f_2c, RE, acqf):
     agent = agent_2d_2f_2c
     RE(agent.learn("qr", n=16))
+    RE(agent.learn(acqf, n=2))
+    agent.dofs[0].deactivate()
     RE(agent.learn(acqf, n=2))

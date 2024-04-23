@@ -1,22 +1,26 @@
 import os
 
-import yaml
 import pandas as pd
-from botorch.utils.transforms import normalize
+import yaml
 
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
 from .monte_carlo import *  # noqa F401
+
+# from botorch.utils.transforms import normalize
+
 
 here, this_filename = os.path.split(__file__)
 
 with open(f"{here}/config.yml", "r") as f:
     config = yaml.safe_load(f)
 
+
 def all_acqfs(columns=["identifier", "type", "multitask_only", "description"]):
     acqfs = pd.DataFrame(config).T[columns]
     acqfs.index.name = "name"
     return acqfs.sort_values(["type", "name"])
+
 
 def parse_acqf_identifier(identifier, strict=True):
     for acqf_name in config.keys():
@@ -25,6 +29,7 @@ def parse_acqf_identifier(identifier, strict=True):
     if strict:
         raise ValueError(f"'{identifier}' is not a valid acquisition function identifier.")
     return None
+
 
 def _construct_acqf(agent, acqf_name, **acqf_kwargs):
     """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
@@ -38,7 +43,6 @@ def _construct_acqf(agent, acqf_name, **acqf_kwargs):
 
     # there is probably a better way to structure this
     if acqf_name == "expected_improvement":
-
         acqf_kwargs["best_f"] = agent.best_f(weights="default")
 
         acqf = analytic.ConstrainedLogExpectedImprovement(
@@ -49,7 +53,6 @@ def _construct_acqf(agent, acqf_name, **acqf_kwargs):
         )
 
     elif acqf_name == "monte_carlo_expected_improvement":
-
         acqf_kwargs["best_f"] = agent.best_f(weights="default")
 
         acqf = monte_carlo.qConstrainedExpectedImprovement(
@@ -60,7 +63,6 @@ def _construct_acqf(agent, acqf_name, **acqf_kwargs):
         )
 
     elif acqf_name == "probability_of_improvement":
-
         acqf_kwargs["best_f"] = agent.best_f(weights="default")
 
         acqf = analytic.ConstrainedLogProbabilityOfImprovement(
@@ -86,15 +88,15 @@ def _construct_acqf(agent, acqf_name, **acqf_kwargs):
         )
 
     elif acqf_name == "monte_carlo_noisy_expected_hypervolume_improvement":
-
         acqf_kwargs["ref_point"] = acqf_kwargs.get("ref_point", agent.random_ref_point)
 
         acqf = monte_carlo.qConstrainedNoisyExpectedHypervolumeImprovement(
             constraint=agent.constraint,
             model=agent.fitness_model,
-            X_baseline=agent.input_normalization.forward(agent.train_inputs()),
+            # X_baseline=agent.input_normalization.forward(agent.train_inputs())[],
+            X_baseline=agent.dofs.transform(agent.train_inputs(active=True)),
             prune_baseline=True,
-            **acqf_kwargs
+            **acqf_kwargs,
         )
 
     elif acqf_name == "upper_confidence_bound":

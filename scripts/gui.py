@@ -72,8 +72,8 @@ with ui.pyplot(figsize=(10, 4), dpi=160) as obj_plt:
     err_cbar = obj_plt.fig.colorbar(mappable=im3, ax=[ax3], location="bottom", aspect=16)
 
     for ax in [ax1, ax2, ax3]:
-        ax.set_xlabel(agent.dofs[0].label)
-        ax.set_ylabel(agent.dofs[1].label)
+        ax.set_xlabel(agent.dofs[0].label_with_units)
+        ax.set_ylabel(agent.dofs[1].label_with_units)
 
 
 acqf_configs = {
@@ -103,8 +103,8 @@ with ui.pyplot(figsize=(10, 3), dpi=160) as acq_plt:
         acqf_plt_objs[acqf]["hist"] = ax.scatter([], [])
         acqf_plt_objs[acqf]["best"] = ax.scatter([], [])
 
-        ax.set_xlabel(agent.dofs[0].label)
-        ax.set_ylabel(agent.dofs[1].label)
+        ax.set_xlabel(agent.dofs[0].label_with_units)
+        ax.set_ylabel(agent.dofs[1].label_with_units)
 
 
 acqf_button_options = {index: config["name"] for index, config in acqf_configs.items()}
@@ -135,11 +135,12 @@ def learn():
     with obj_plt:
         obj = agent.objectives[0]
 
-        x_samples = agent.train_inputs().detach().numpy()
-        y_samples = agent.train_targets(obj.name).detach().numpy()[..., 0]
+        x_samples = agent.raw_inputs().detach().numpy()
+        y_samples = agent.raw_targets(obj.name).detach().numpy()[..., 0]
 
         x = agent.sample(method="grid", n=20000)  # (n, n, 1, d)
-        p = obj.model.posterior(x)
+        model_x = agent.dofs.transform(x)
+        p = obj.model.posterior(model_x)
 
         m = p.mean.squeeze(-1, -2).detach().numpy()
         e = p.variance.sqrt().squeeze(-1, -2).detach().numpy()
@@ -164,12 +165,13 @@ def learn():
 
     with acq_plt:
         x = agent.sample(method="grid", n=20000)  # (n, n, 1, d)
+        model_x = agent.dofs.transform(x)
         x_samples = agent.train_inputs().detach().numpy()
 
         for acqf in acqf_plt_objs.keys():
             ax = acqf_plt_objs[acqf]["ax"]
 
-            acqf_obj = getattr(agent, acqf)(x).detach().numpy()
+            acqf_obj = getattr(agent, acqf)(model_x).detach().numpy()
 
             acqf_norm = mpl.colors.Normalize(vmin=np.nanmin(acqf_obj), vmax=np.nanmax(acqf_obj))
             acqf_plt_objs[acqf]["im"].set_data(acqf_obj.T[::-1])
