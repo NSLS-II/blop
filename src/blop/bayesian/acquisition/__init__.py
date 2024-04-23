@@ -94,7 +94,7 @@ def _construct_acqf(agent, acqf_name, **acqf_kwargs):
             constraint=agent.constraint,
             model=agent.fitness_model,
             # X_baseline=agent.input_normalization.forward(agent.train_inputs())[],
-            X_baseline=agent.dofs.transform(agent.train_inputs(active=True)),
+            X_baseline=agent.dofs(active=True).transform(agent.train_inputs(active=True)),
             prune_baseline=True,
             **acqf_kwargs,
         )

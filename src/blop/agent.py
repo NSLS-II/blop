@@ -186,7 +186,7 @@ class Agent:
             How to sample the points. Must be one of 'quasi-random', 'random', or 'grid'.
         """
 
-        active_dofs = self.dofs.subset(active=True)
+        active_dofs = self.dofs(active=True)
 
         if method == "quasi-random":
             X = utils.normalized_sobol_sampler(n, d=len(active_dofs))
@@ -204,7 +204,7 @@ class Agent:
         else:
             raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
 
-        return self.dofs.subset(active=True).untransform(X)
+        return self.dofs(active=True).untransform(X)
 
     def ask(self, acqf="qei", n=1, route=True, sequential=True, upsample=1, **acqf_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -228,8 +228,8 @@ class Agent:
 
         start_time = ttime.monotonic()
 
-        active_dofs = self.dofs.subset(active=True)
-        active_objs = self.objectives.subset(active=True)
+        active_dofs = self.dofs(active=True)
+        active_objs = self.objectives(active=True)
 
         # these are the fake acquisiton functions that we don't need to construct
         if acqf_config["name"] in ["quasi-random", "random", "grid"]:
@@ -271,11 +271,11 @@ class Agent:
 
             # this includes both RO and non-RO DOFs.
             # and is in the transformed model space
-            candidates = self.dofs.subset(active=True).untransform(candidates).numpy()
+            candidates = self.dofs(active=True).untransform(candidates).numpy()
 
         p = self.posterior(candidates) if hasattr(self, "model") else None
 
-        active_dofs = self.dofs.subset(active=True)
+        active_dofs = self.dofs(active=True)
 
         points = candidates[..., ~active_dofs.read_only]
         read_only_values = candidates[..., active_dofs.read_only]
@@ -354,7 +354,7 @@ class Agent:
         self.table.index = np.arange(len(self.table))
 
         if update_models:
-            for obj in self.objectives.subset(active=True):
+            for obj in self.objectives(active=True):
                 t0 = ttime.monotonic()
 
                 cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
@@ -414,7 +414,7 @@ class Agent:
         """
 
         if self.sample_center_on_init and not self.initialized:
-            center_inputs = np.atleast_2d(self.dofs.subset(active=True, read_only=False).search_domain.mean(axis=1))
+            center_inputs = np.atleast_2d(self.dofs(active=True, read_only=False).search_domain.mean(axis=1))
             new_table = yield from self.acquire(center_inputs)
             new_table.loc[:, "acqf"] = "sample_center_on_init"
 
@@ -448,7 +448,7 @@ class Agent:
         self.viewer = napari.Viewer()
 
         if item in ["mean", "error"]:
-            for obj in self.objectives.subset(active=True):
+            for obj in self.objectives(active=True):
                 p = obj.model.posterior(test_grid)
 
                 if item == "mean":
@@ -485,7 +485,7 @@ class Agent:
             raise ValueError("Cannot run acquistion without databroker instance!")
 
         try:
-            acquisition_devices = self.dofs.subset(active=True, read_only=False).devices
+            acquisition_devices = self.dofs(active=True, read_only=False).devices
             uid = yield from self.acquisition_plan(
                 acquisition_devices,
                 acquisition_inputs.astype(float),
@@ -501,8 +501,8 @@ class Agent:
             if not self.tolerate_acquisition_errors:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
-            products = pd.DataFrame(acquisition_inputs, columns=self.dofs.subset(active=True, read_only=False).names)
-            for obj in self.objectives.subset(active=True):
+            products = pd.DataFrame(acquisition_inputs, columns=self.dofs(active=True, read_only=False).names)
+            for obj in self.objectives(active=True):
                 products.loc[:, obj.name] = np.nan
 
         if not len(acquisition_inputs) == len(products):
@@ -521,7 +521,7 @@ class Agent:
         """Reset the agent."""
         self.table = pd.DataFrame()
 
-        for obj in self.objectives.subset(active=True):
+        for obj in self.objectives(active=True):
             if hasattr(obj, "model"):
                 del obj.model
 
@@ -556,16 +556,16 @@ class Agent:
     @property
     def model(self):
         """A model encompassing all the fitnesses and constraints."""
-        active_objs = self.objectives.subset(active=True)
+        active_objs = self.objectives(active=True)
         return ModelListGP(*[obj.model for obj in active_objs]) if len(active_objs) > 1 else active_objs[0].model
 
     def posterior(self, x):
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
-        return self.model.posterior(self.dofs.transform(torch.tensor(x)))
+        return self.model.posterior(self.dofs(active=True).transform(torch.tensor(x)))
 
     @property
     def fitness_model(self):
-        active_fitness_models = self.objectives.subset(active=True, kind="fitness")
+        active_fitness_models = self.objectives(active=True, kind="fitness")
         if len(active_fitness_models) == 0:
             raise ValueError("Having no fitness objectives is unhandled.")
         if len(active_fitness_models) == 1:
@@ -574,14 +574,14 @@ class Agent:
 
     @property
     def evaluated_constraints(self):
-        constraint_objectives = self.objectives.subset(kind="constraint")
+        constraint_objectives = self.objectives(kind="constraint")
         if len(constraint_objectives):
             return torch.cat([obj.constrain(self.raw_targets(obj.name)) for obj in constraint_objectives], dim=-1)
         else:
             return torch.ones(size=(len(self.table), 0), dtype=torch.bool)
 
     def fitness_scalarization(self, weights="default"):
-        fitness_objectives = self.objectives.subset(active=True, kind="fitness")
+        fitness_objectives = self.objectives(active=True, kind="fitness")
         if weights == "default":
             weights = torch.tensor([obj.weight for obj in fitness_objectives], dtype=torch.double)
         elif weights == "equal":
@@ -682,7 +682,7 @@ class Agent:
             outcome_transform=outcome_transform,
         )
 
-        obj.model_dofs = set(self.dofs.subset(active=True).names)  # if these change, retrain the model on self.ask()
+        obj.model_dofs = set(self.dofs(active=True).names)  # if these change, retrain the model on self.ask()
 
         if trusted.all():
             obj.validity_conjugate_model = None
@@ -707,13 +707,13 @@ class Agent:
 
     def _construct_all_models(self):
         """Construct a model for each objective."""
-        for obj in self.objectives.subset(active=True):
+        for obj in self.objectives(active=True):
             self._construct_model(obj)
 
     def _train_all_models(self, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
         t0 = ttime.monotonic()
-        for obj in self.objectives.subset(active=True):
+        for obj in self.objectives(active=True):
             self._train_model(obj.model)
             if obj.validity_conjugate_model is not None:
                 self._train_model(obj.validity_conjugate_model)
@@ -744,7 +744,7 @@ class Agent:
         obj = self.objectives[obj_index]
 
         latent_group_index = {}
-        for dof in self.dofs.subset(active=True):
+        for dof in self.dofs(active=True):
             latent_group_index[dof.name] = dof.name
             for group_index, latent_group in enumerate(obj.latent_groups):
                 if dof.name in latent_group:
@@ -754,13 +754,13 @@ class Agent:
         return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
 
     @property
-    def _sample_domain(self):
+    def sample_domain(self):
         """
         Returns a (2, n_active_dof) array of lower and upper bounds for dofs.
         Read-only DOFs are set to exactly their last known value.
         Discrete DOFs are relaxed to some continuous domain.
         """
-        return self.dofs.subset(active=True).transform(self.dofs.subset(active=True).search_domain.T)
+        return self.dofs(active=True).transform(self.dofs(active=True).search_domain.T)
 
     @property
     def input_normalization(self):
@@ -816,15 +816,15 @@ class Agent:
             raise ValueError("Must supply either 'last' or 'index'.")
 
     def _set_hypers(self, hypers):
-        for obj in self.objectives.subset(active=True):
+        for obj in self.objectives(active=True):
             obj.model.load_state_dict(hypers[obj.name])
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
-        x = self.dofs.subset(active=True).transform(x)
+        x = self.dofs(active=True).transform(x)
 
         p = torch.ones(x.shape[:-1])
-        for obj in self.objectives.subset(active=True):
+        for obj in self.objectives(active=True):
             # if the targeting constraint is non-trivial
             # if obj.kind == "constraint":
             #     p *= obj.targeting_constraint(x)
@@ -892,14 +892,14 @@ class Agent:
         Get the raw, untransformed inputs for a DOF (or for a subset).
         """
         if index is None:
-            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
+            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
         return torch.tensor(self.table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
 
     def train_inputs(self, index=None, **subset_kwargs):
         """A two-dimensional tensor of all DOF values."""
 
         if index is None:
-            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs.subset(**subset_kwargs)], dim=-1)
+            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
 
         dof = self.dofs[index]
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
@@ -915,14 +915,14 @@ class Agent:
         Get the raw, untransformed inputs for an objective (or for a subset).
         """
         if index is None:
-            return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives.subset(**subset_kwargs)], dim=-1)
+            return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
         return torch.tensor(self.table.loc[:, self.objectives[index].name].values, dtype=torch.double).unsqueeze(-1)
 
     def train_targets(self, index=None, **subset_kwargs):
         """Returns the values associated with an objective name."""
 
         if index is None:
-            return torch.cat([self.train_targets(obj.name) for obj in self.objectives.subset(**subset_kwargs)], dim=-1)
+            return torch.cat([self.train_targets(obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
 
         obj = self.objectives[index]
         raw_targets = self.raw_targets(index=index, **subset_kwargs)
@@ -973,10 +973,10 @@ class Agent:
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
 
-        if len(self.dofs.subset(active=True, read_only=False)) == 1:
-            if len(self.objectives.subset(active=True, kind="fitness")) > 0:
+        if len(self.dofs(active=True, read_only=False)) == 1:
+            if len(self.objectives(active=True, kind="fitness")) > 0:
                 plotting._plot_fitness_objs_one_dof(self, **kwargs)
-            if len(self.objectives.subset(active=True, kind="constraint")) > 0:
+            if len(self.objectives(active=True, kind="constraint")) > 0:
                 plotting._plot_constraint_objs_one_dof(self, **kwargs)
         else:
             plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)
@@ -991,7 +991,7 @@ class Agent:
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
-        if len(self.dofs.subset(active=True, read_only=False)) == 1:
+        if len(self.dofs(active=True, read_only=False)) == 1:
             plotting._plot_acqf_one_dof(self, acqfs=np.atleast_1d(acqf), **kwargs)
 
         else:
@@ -1005,7 +1005,7 @@ class Agent:
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
-        if len(self.dofs.subset(active=True, read_only=False)) == 1:
+        if len(self.dofs(active=True, read_only=False)) == 1:
             plotting._plot_valid_one_dof(self, **kwargs)
 
         else:
@@ -1017,7 +1017,7 @@ class Agent:
 
     @property
     def latent_transforms(self):
-        return {obj.name: obj.model.covar_module.latent_transform for obj in self.objectives.subset(active=True)}
+        return {obj.name: obj.model.covar_module.latent_transform for obj in self.objectives(active=True)}
 
     def plot_pareto_front(self, **kwargs):
         """Plot the improvement of the agent over time."""

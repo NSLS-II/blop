@@ -14,7 +14,7 @@ MAX_TEST_INPUTS = 2**11
 
 
 def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
-    fitness_objs = agent.objectives.subset(kind="fitness")
+    fitness_objs = agent.objectives(kind="fitness")
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(fitness_objs),
@@ -26,11 +26,11 @@ def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
 
     agent.obj_axes = np.atleast_1d(agent.obj_axes)
 
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
-    test_model_inputs = agent.dofs.transform(test_inputs)
+    test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(fitness_objs):
         obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
@@ -62,7 +62,7 @@ def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
 
 
 def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
-    constraint_objs = agent.objectives.subset(kind="constraint")
+    constraint_objs = agent.objectives(kind="constraint")
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(constraint_objs),
@@ -74,11 +74,11 @@ def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
 
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
 
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
-    test_model_inputs = agent.dofs.transform(test_inputs)
+    test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(constraint_objs):
         val_ax = agent.obj_axes[obj_index, 0]
@@ -129,7 +129,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     Axes represents which active, non-read-only axes to plot with
     """
 
-    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+    plottable_dofs = agent.dofs(active=True, read_only=False)
 
     if gridded is None:
         gridded = len(plottable_dofs) == 2
@@ -155,7 +155,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    model_inputs = agent.dofs.subset(active=True).transform(test_inputs)
+    model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(agent.objectives):
         targets = agent.train_targets(obj.name).squeeze(-1).numpy()
@@ -324,7 +324,7 @@ def _plot_acqf_one_dof(agent, acqfs, lw=1e0, **kwargs):
     )
 
     agent.acq_axes = np.atleast_1d(agent.acq_axes)
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
 
     test_inputs = agent.sample(method="grid")
 
@@ -355,7 +355,7 @@ def _plot_acqf_many_dofs(
         constrained_layout=True,
     )
 
-    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+    plottable_dofs = agent.dofs(active=True, read_only=False)
 
     if gridded is None:
         gridded = len(plottable_dofs) == 2
@@ -412,7 +412,7 @@ def _plot_acqf_many_dofs(
 def _plot_valid_one_dof(agent, size=16, lw=1e0):
     agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * len(agent.objectives)), constrained_layout=True)
 
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
@@ -426,7 +426,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
 def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
     agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4), constrained_layout=True)
 
-    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+    plottable_dofs = agent.dofs(active=True, read_only=False)
 
     if gridded is None:
         gridded = len(plottable_dofs) == 2
@@ -537,7 +537,7 @@ def inspect_beam(agent, index, border=None):
 
 
 def _plot_pareto_front(agent, obj_indices=(0, 1)):
-    f_objs = agent.objectives.subset(kind="fitness")
+    f_objs = agent.objectives(kind="fitness")
     (i, j) = obj_indices
 
     if len(f_objs) < 2:
