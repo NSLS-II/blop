@@ -12,6 +12,7 @@ DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
+    "name": "str",
     "description": "object",
     "type": "str",
     "target": "object",
@@ -33,14 +34,6 @@ TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0
 
 class DuplicateNameError(ValueError):
     ...
-
-
-def _validate_objs(objs):
-    names = [obj.name for obj in objs]
-    unique_names, counts = np.unique(names, return_counts=True)
-    duplicate_names = unique_names[counts > 1]
-    if len(duplicate_names) > 0:
-        raise DuplicateNameError(f"Duplicate name(s) in supplied objectives: {duplicate_names}")
 
 
 domains = {"log"}
@@ -238,22 +231,6 @@ class Objective:
             0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
         )
 
-    # def fitness_forward(self, y):
-    #     f = y
-    #     if self.log:
-    #         f = np.log(f)
-    #     if self.target == "min":
-    #         f = -f
-    #     return f
-
-    def fitness_inverse(self, f):
-        y = f
-        if self.target == "min":
-            y = -y
-        if self.log:
-            y = np.exp(y)
-        return y
-
     @property
     def is_fitness(self):
         return self.target in ["min", "max"]
@@ -279,7 +256,6 @@ class Objective:
 
 class ObjectiveList(Sequence):
     def __init__(self, objectives: list = []):
-        _validate_objs(objectives)
         self.objectives = objectives
 
     def __call__(self, *args, **kwargs):
@@ -319,11 +295,11 @@ class ObjectiveList(Sequence):
 
     @property
     def summary(self) -> pd.DataFrame:
-        table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=self.names)
+        table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=np.arange(len(self)))
 
-        for obj in self.objectives:
+        for index, obj in enumerate(self.objectives):
             for attr, value in obj.summary.items():
-                table.at[obj.name, attr] = value
+                table.at[index, attr] = value
 
         for attr, dtype in OBJ_FIELD_TYPES.items():
             table[attr] = table[attr].astype(dtype)
@@ -337,7 +313,6 @@ class ObjectiveList(Sequence):
         return self.summary.T._repr_html_()
 
     def add(self, objective):
-        _validate_objs([*self.objectives, objective])
         self.objectives.append(objective)
 
     @staticmethod
