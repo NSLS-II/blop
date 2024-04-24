@@ -273,7 +273,7 @@ class Agent:
             # and is in the transformed model space
             candidates = self.dofs(active=True).untransform(candidates).numpy()
 
-        p = self.posterior(candidates) if hasattr(self, "model") else None
+        # p = self.posterior(candidates) if hasattr(self, "model") else None
 
         active_dofs = self.dofs(active=True)
 
@@ -304,7 +304,7 @@ class Agent:
             "sequential": sequential,
             "upsample": upsample,
             "read_only_values": read_only_values,
-            "posterior": p,
+            # "posterior": p,
         }
 
         return res
@@ -426,9 +426,11 @@ class Agent:
                 new_table = yield from self.acquire(res["points"])
                 new_table.loc[:, "acqf"] = res["acqf_name"]
 
-                x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
-                y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
-                metadata = new_table.to_dict(orient="list")
+                x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
+                y = {key: new_table.loc[:, key].tolist() for key in self.objectives.names}
+                metadata = {
+                    key: new_table.loc[:, key].tolist() for key in new_table.columns if (key not in x) and (key not in y)
+                }
                 self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
 
     def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = 2**16):
@@ -510,12 +512,10 @@ class Agent:
 
         return products
 
-    def load_data(self, data_file, append=True, train=True):
+    def load_data(self, data_file, append=True):
         new_table = pd.read_hdf(data_file, key="table")
-        x = {key: new_table.pop(key).tolist() for key in self.dofs.names}
-        y = {key: new_table.pop(key).tolist() for key in self.objectives.names}
-        metadata = new_table.to_dict(orient="list")
-        self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
+        self.table = pd.concat([self.table, new_table]) if append else new_table
+        self.refresh()
 
     def reset(self):
         """Reset the agent."""
@@ -557,7 +557,9 @@ class Agent:
     def model(self):
         """A model encompassing all the fitnesses and constraints."""
         active_objs = self.objectives(active=True)
-        return ModelListGP(*[obj.model for obj in active_objs]) if len(active_objs) > 1 else active_objs[0].model
+        if all(hasattr(obj, "model") for obj in active_objs):
+            return ModelListGP(*[obj.model for obj in active_objs]) if len(active_objs) > 1 else active_objs[0].model
+        raise ValueError("Not all active objectives have models.")
 
     def posterior(self, x):
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
@@ -567,7 +569,7 @@ class Agent:
     def fitness_model(self):
         active_fitness_models = self.objectives(active=True, kind="fitness")
         if len(active_fitness_models) == 0:
-            raise ValueError("Having no fitness objectives is unhandled.")
+            return GenericDeterministicModel(f=lambda x: torch.ones(x.shape[:-1]).unsqueeze(-1))
         if len(active_fitness_models) == 1:
             return active_fitness_models[0].model
         return ModelListGP(*[obj.model for obj in active_fitness_models])
@@ -594,12 +596,21 @@ class Agent:
         return ScalarizedPosteriorTransform(weights=weights)
 
     def scalarized_fitnesses(self, weights="default", constrained=True):
-        f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, kind="fitness"))
+        """
+        Return the scalar fitness for each sample, scalarized by the weighting scheme.
+
+        If constrained=True, the points that satisfy the most constraints are automatically better than the others.
+        """
+        fitness_objs = self.objectives(kind="fitness")
+        if len(fitness_objs) >= 1:
+            f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, kind="fitness"))
+        else:
+            f = torch.zeros(len(self.table), dtype=torch.double)
         if constrained:
-            c = self.evaluated_constraints.all(axis=-1)
-            if not c.sum():
-                raise ValueError("There are no valid points that satisfy the constraints!")
-        return torch.where(c, f, -np.inf)
+            # how many constraints are satisfied?
+            c = self.evaluated_constraints.sum(axis=-1)
+            f = torch.where(c < c.max(), -np.inf, f)
+        return f
 
     def argmax_best_f(self, weights="default"):
         return int(self.scalarized_fitnesses(weights=weights, constrained=True).argmax())

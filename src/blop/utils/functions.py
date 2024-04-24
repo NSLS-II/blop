@@ -184,24 +184,47 @@ def kb_tradeoff_4d(x1, x2, x3, x4):
     return x_width, y_width, flux
 
 
+def himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Digests Himmelblau's function into the feedback.
+    """
+    for index, entry in df.iterrows():
+        if not hasattr(entry, "x1"):
+            df.loc[index, "x1"] = x1 = 0
+        else:
+            x1 = entry.x1
+        if not hasattr(entry, "x2"):
+            df.loc[index, "x2"] = x2 = 0
+        else:
+            x2 = entry.x2
+        df.loc[index, "himmelblau"] = himmelblau(x1=x1, x2=x2)
+        df.loc[index, "himmelblau_transpose"] = himmelblau(x1=x2, x2=x1)
+
+    return df
+
+
 def constrained_himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback.
     """
 
-    for index, entry in df.iterrows():
-        df.loc[index, "himmelblau"] = constrained_himmelblau(entry.x1, entry.x2)
+    df = himmelblau_digestion(df)
+    df.loc[:, "himmelblau"] = np.where(df.x1.values**2 + df.x1.values**2 < 36, df.himmelblau.values, np.nan)
 
     return df
 
 
-def himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Digests Himmelblau's function into the feedback.
-    """
+"""
+Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_for_optimization
+"""
 
+
+def chankong_and_haimes_digestion(df):
     for index, entry in df.iterrows():
-        df.loc[index, "himmelblau"] = himmelblau(entry.x1, entry.x2)
+        df.loc[index, "f1"] = (entry.x1 - 2) ** 2 + (entry.x2 - 1) + 2
+        df.loc[index, "f2"] = 9 * entry.x1 - (entry.x2 - 1) + 2
+        df.loc[index, "c1"] = entry.x1**2 + entry.x2**2
+        df.loc[index, "c2"] = entry.x1 - 3 * entry.x2 + 10
 
     return df
 
