@@ -204,7 +204,7 @@ class Agent:
         else:
             raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
 
-        return self.dofs(active=True).untransform(X)
+        return self.dofs(active=True).untransform(X).double()
 
     def ask(self, acqf="qei", n=1, route=True, sequential=True, upsample=1, **acqf_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -257,8 +257,8 @@ class Agent:
             # we may pick up some more kwargs
             acqf, acqf_kwargs = _construct_acqf(self, acqf_name=acqf_config["name"], **acqf_kwargs)
 
-            NUM_RESTARTS = 16
-            RAW_SAMPLES = 1024
+            NUM_RESTARTS = 8
+            RAW_SAMPLES = 256
 
             candidates, acqf_obj = botorch.optim.optimize_acqf(
                 acq_function=acqf,
@@ -267,6 +267,7 @@ class Agent:
                 sequential=sequential,
                 num_restarts=NUM_RESTARTS,
                 raw_samples=RAW_SAMPLES,  # used for intialization heuristic
+                fixed_features={i: dof._transform(dof.readback) for i, dof in enumerate(active_dofs) if dof.read_only},
             )
 
             # this includes both RO and non-RO DOFs.
@@ -604,8 +605,9 @@ class Agent:
         fitness_objs = self.objectives(kind="fitness")
         if len(fitness_objs) >= 1:
             f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, kind="fitness"))
+            f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
-            f = torch.zeros(len(self.table), dtype=torch.double)
+            f = torch.zeros(len(self.table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
         if constrained:
             # how many constraints are satisfied?
             c = self.evaluated_constraints.sum(axis=-1)

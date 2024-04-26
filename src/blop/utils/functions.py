@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import torch
 
 
@@ -59,19 +58,6 @@ def binh_korn(x1, x2):
     c = g1 & g2
 
     return np.where(c, f1, np.nan), np.where(c, f2, np.nan)
-
-
-def binh_korn_digestion(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Digests Himmelblau's function into the feedback.
-    """
-
-    for index, entry in df.iterrows():
-        f1, f2 = binh_korn(entry.x1, entry.x2)
-        df.loc[index, "f1"] = f1
-        df.loc[index, "f2"] = f2
-
-    return df
 
 
 def skewed_himmelblau(x1, x2):
@@ -182,63 +168,3 @@ def kb_tradeoff_4d(x1, x2, x3, x4):
     flux = np.exp(-0.5 * np.where(d < 5, np.where(d > -5, 0, d + 5), d - 5) ** 2)
 
     return x_width, y_width, flux
-
-
-def himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Digests Himmelblau's function into the feedback.
-    """
-    for index, entry in df.iterrows():
-        if not hasattr(entry, "x1"):
-            df.loc[index, "x1"] = x1 = 0
-        else:
-            x1 = entry.x1
-        if not hasattr(entry, "x2"):
-            df.loc[index, "x2"] = x2 = 0
-        else:
-            x2 = entry.x2
-        df.loc[index, "himmelblau"] = himmelblau(x1=x1, x2=x2)
-        df.loc[index, "himmelblau_transpose"] = himmelblau(x1=x2, x2=x1)
-
-    return df
-
-
-def constrained_himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Digests Himmelblau's function into the feedback.
-    """
-
-    df = himmelblau_digestion(df)
-    df.loc[:, "himmelblau"] = np.where(df.x1.values**2 + df.x1.values**2 < 36, df.himmelblau.values, np.nan)
-
-    return df
-
-
-"""
-Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_for_optimization
-"""
-
-
-def chankong_and_haimes_digestion(df):
-    for index, entry in df.iterrows():
-        df.loc[index, "f1"] = (entry.x1 - 2) ** 2 + (entry.x2 - 1) + 2
-        df.loc[index, "f2"] = 9 * entry.x1 - (entry.x2 - 1) + 2
-        df.loc[index, "c1"] = entry.x1**2 + entry.x2**2
-        df.loc[index, "c2"] = entry.x1 - 3 * entry.x2 + 10
-
-    return df
-
-
-def mock_kbs_digestion(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Digests a beam waist and height into the feedback.
-    """
-
-    for index, entry in df.iterrows():
-        sigma_x = gaussian_beam_waist(entry.x1, entry.x2)
-        sigma_y = gaussian_beam_waist(entry.x3, entry.x4)
-
-        df.loc[index, "x_width"] = 2 * sigma_x
-        df.loc[index, "y_width"] = 2 * sigma_y
-
-    return df

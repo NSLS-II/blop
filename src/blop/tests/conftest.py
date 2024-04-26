@@ -9,8 +9,8 @@ from bluesky.run_engine import RunEngine
 from databroker import Broker
 
 from blop import DOF, Agent, Objective
+from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
-from blop.utils import functions
 
 
 @pytest.fixture(scope="function")
@@ -60,21 +60,21 @@ all_agents = [*single_task_agents, *pareto_agents]
 
 def get_agent(param):
     """
-    Generate a bunch of different agents
+    Generate a bunch of different agents.
     """
 
     if param == "1d_1f":
         return Agent(
             dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
             objectives=Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
-            digestion=functions.himmelblau_digestion,
+            digestion=sketchy_himmelblau_digestion,
         )
 
     elif param == "1d_1c":
         return Agent(
             dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
             objectives=Objective(description="Himmelblau’s function", name="himmelblau", target=(95, 105)),
-            digestion=functions.himmelblau_digestion,
+            digestion=sketchy_himmelblau_digestion,
         )
 
     elif param == "2d_1f":
@@ -84,7 +84,7 @@ def get_agent(param):
                 DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
             ],
             objectives=Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
-            digestion=functions.himmelblau_digestion,
+            digestion=sketchy_himmelblau_digestion,
         )
 
     elif param == "2d_1f_1c":
@@ -97,7 +97,7 @@ def get_agent(param):
                 Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
                 Objective(description="Himmelblau’s function", name="himmelblau", target=(95, 105)),
             ],
-            digestion=functions.himmelblau_digestion,
+            digestion=sketchy_himmelblau_digestion,
         )
 
     elif param == "2d_2f_2c":
@@ -112,7 +112,7 @@ def get_agent(param):
                 Objective(description="c1", name="c1", target=(-np.inf, 225)),
                 Objective(description="c2", name="c2", target=(-np.inf, 0)),
             ],
-            digestion=functions.chankong_and_haimes_digestion,
+            digestion=chankong_and_haimes_digestion,
         )
 
     elif param == "3d_2r_2f_1c":
@@ -129,7 +129,7 @@ def get_agent(param):
                 Objective(name="himmelblau_transpose", target="min"),
                 Objective(description="Himmelblau’s function", name="himmelblau", target=(95, 105)),
             ],
-            digestion=functions.himmelblau_digestion,
+            digestion=sketchy_himmelblau_digestion,
         )
 
     else:
