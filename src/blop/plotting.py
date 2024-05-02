@@ -327,6 +327,7 @@ def _plot_acqf_one_dof(agent, acqfs, lw=1e0, **kwargs):
     x_dof = agent.dofs(active=True)[0]
 
     test_inputs = agent.sample(method="grid")
+    model_inputs = agent.dofs.transform(test_inputs)
 
     for iacqf, acqf_identifier in enumerate(acqfs):
         color = DEFAULT_COLOR_LIST[iacqf]
@@ -334,7 +335,7 @@ def _plot_acqf_one_dof(agent, acqfs, lw=1e0, **kwargs):
         acqf_config = parse_acqf_identifier(acqf_identifier)
         acqf, _ = _construct_acqf(agent, acqf_config["name"])
 
-        test_acqf_value = acqf(test_inputs).detach().numpy()
+        test_acqf_value = acqf(model_inputs).detach().numpy()
 
         agent.acq_axes[iacqf].plot(test_inputs.squeeze(-2), test_acqf_value, lw=lw, color=color)
 
@@ -366,6 +367,7 @@ def _plot_acqf_many_dofs(
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.sample(n=1024, method="grid") if gridded else agent.sample(n=1024)
+    model_inputs = agent.dofs.transform(test_inputs)
     *test_dim, input_dim = test_inputs.shape
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
@@ -374,7 +376,7 @@ def _plot_acqf_many_dofs(
         acqf_config = parse_acqf_identifier(acqf_identifier)
         acqf, _ = _construct_acqf(agent, acqf_config["name"])
 
-        test_acqf_value = acqf(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
+        test_acqf_value = acqf(model_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
 
         if gridded:
             agent.acq_axes[iacqf].set_title(acqf_config["name"])
@@ -416,7 +418,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
-    constraint = agent.constraint(test_inputs)[..., 0]
+    constraint = agent.constraint(agent.dofs.transform(test_inputs))[..., 0]
 
     agent.valid_ax.scatter(x_values, agent.all_objectives_valid, s=size)
     agent.valid_ax.plot(test_inputs.squeeze(-2), constraint, lw=lw)
@@ -438,7 +440,7 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    constraint = agent.constraint(test_inputs)[..., 0].squeeze().numpy()
+    constraint = agent.constraint(agent.dofs.transform(test_inputs))[..., 0].squeeze().numpy()
 
     if gridded:
         _ = agent.valid_axes[1].pcolormesh(

@@ -297,9 +297,9 @@ class Agent:
             points = sp.interpolate.interp1d(idx, points, axis=0)(upsampled_idx)
 
         res = {
-            "points": points,
+            "points": {dof.name: list(points[..., i]) for i, dof in enumerate(active_dofs(read_only=False))},
             "acqf_name": acqf_config["name"],
-            "acqf_obj": np.atleast_1d(acqf_obj.numpy()),
+            "acqf_obj": list(np.atleast_1d(acqf_obj.numpy())),
             "acqf_kwargs": acqf_kwargs,
             "duration_ms": duration,
             "sequential": sequential,
@@ -475,7 +475,7 @@ class Agent:
 
         self.viewer.dims.axis_labels = self.dofs.names
 
-    def acquire(self, acquisition_inputs):
+    def acquire(self, points):
         """Acquire and digest according to the self's acquisition and digestion plans.
 
         Parameters
@@ -487,11 +487,17 @@ class Agent:
         if self.db is None:
             raise ValueError("Cannot run acquistion without databroker instance!")
 
+        acquisition_dofs = self.dofs(active=True, read_only=False)
+        for dof in acquisition_dofs:
+            if dof.name not in points:
+                raise ValueError(f"Cannot acquire points; missing values for {dof.name}.")
+
+        n = len(points[dof.name])
+
         try:
-            acquisition_devices = self.dofs(active=True, read_only=False).devices
             uid = yield from self.acquisition_plan(
-                acquisition_devices,
-                acquisition_inputs.astype(float),
+                acquisition_dofs,
+                points,
                 [*self.dets, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
@@ -504,11 +510,11 @@ class Agent:
             if not self.tolerate_acquisition_errors:
                 raise error
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
-            products = pd.DataFrame(acquisition_inputs, columns=self.dofs(active=True, read_only=False).names)
+            products = pd.DataFrame(points)
             for obj in self.objectives(active=True):
                 products.loc[:, obj.name] = np.nan
 
-        if not len(acquisition_inputs) == len(products):
+        if len(products) != n:
             raise ValueError("The table returned by the digestion function must be the same length as the sampled inputs!")
 
         return products
