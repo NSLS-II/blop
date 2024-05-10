@@ -60,20 +60,6 @@ def binh_korn(x1, x2):
     return np.where(c, f1, np.nan), np.where(c, f2, np.nan)
 
 
-def binh_korn_digestion(db, uid):
-    """
-    Digests Himmelblau's function into the feedback.
-    """
-    products = db[uid].table()
-
-    for index, entry in products.iterrows():
-        f1, f2 = binh_korn(entry.x1, entry.x2)
-        products.loc[index, "f1"] = f1
-        products.loc[index, "f2"] = f2
-
-    return products
-
-
 def skewed_himmelblau(x1, x2):
     """
     Himmelblau's function, with skewed coordinates
@@ -182,44 +168,3 @@ def kb_tradeoff_4d(x1, x2, x3, x4):
     flux = np.exp(-0.5 * np.where(d < 5, np.where(d > -5, 0, d + 5), d - 5) ** 2)
 
     return x_width, y_width, flux
-
-
-def constrained_himmelblau_digestion(db, uid):
-    """
-    Digests Himmelblau's function into the feedback.
-    """
-    products = db[uid].table()
-
-    for index, entry in products.iterrows():
-        products.loc[index, "himmelblau"] = constrained_himmelblau(entry.x1, entry.x2)
-
-    return products
-
-
-def himmelblau_digestion(db, uid):
-    """
-    Digests Himmelblau's function into the feedback.
-    """
-    products = db[uid].table()
-
-    for index, entry in products.iterrows():
-        products.loc[index, "himmelblau"] = himmelblau(entry.x1, entry.x2)
-
-    return products
-
-
-def mock_kbs_digestion(db, uid):
-    """
-    Digests a beam waist and height into the feedback.
-    """
-
-    products = db[uid].table()
-
-    for index, entry in products.iterrows():
-        sigma_x = gaussian_beam_waist(entry.x1, entry.x2)
-        sigma_y = gaussian_beam_waist(entry.x3, entry.x4)
-
-        products.loc[index, "x_width"] = 2 * sigma_x
-        products.loc[index, "y_width"] = 2 * sigma_y
-
-    return products

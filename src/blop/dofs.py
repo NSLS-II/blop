@@ -15,14 +15,14 @@ DOF_FIELD_TYPES = {
     "description": "str",
     "readback": "object",
     "type": "str",
+    "units": "str",
+    "tags": "object",
     "transform": "str",
     "search_domain": "object",
     "trust_domain": "object",
     "domain": "object",
     "active": "bool",
     "read_only": "bool",
-    "units": "str",
-    "tags": "object",
 }
 
 DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
@@ -126,14 +126,15 @@ class DOF:
     name: str = None
     description: str = ""
     type: str = None
+    transform: str = None
     search_domain: Union[Tuple[float, float], Sequence] = None
     trust_domain: Union[Tuple[float, float], Sequence] = None
     units: str = None
-    read_only: bool = False
     active: bool = True
-    transform: str = None
+    read_only: bool = False
     tags: list = field(default_factory=list)
     device: Signal = None
+    travel_expense: float = 1
 
     def __repr__(self):
         nodef_f_vals = ((f.name, attrgetter(f.name)(self)) for f in fields(self))
@@ -339,10 +340,23 @@ class DOFList(Sequence):
         _validate_dofs(dofs)
         self.dofs = dofs
 
+    @property
+    def names(self) -> list:
+        return [dof.name for dof in self.dofs]
+
+    @property
+    def devices(self) -> list:
+        return [dof.device for dof in self.dofs]
+
+    def __call__(self, *args, **kwargs):
+        return self.subset(*args, **kwargs)
+
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
-        if attr in DOF_FIELD_TYPES.keys():
-            return np.array([getattr(dof, attr) for dof in self.dofs])
+        if all([hasattr(dof, attr) for dof in self.dofs]):
+            if DOF_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
+                return np.array([getattr(dof, attr) for dof in self.dofs])
+            return [getattr(dof, attr) for dof in self.dofs]
         if attr in self.names:
             return self.__getitem__(attr)
 
@@ -416,14 +430,6 @@ class DOFList(Sequence):
             table[attr] = table[attr].astype(dtype)
 
         return table
-
-    @property
-    def names(self) -> list:
-        return [dof.name for dof in self.dofs]
-
-    @property
-    def devices(self) -> list:
-        return [dof.device for dof in self.dofs]
 
     @property
     def search_domain(self) -> np.array:

@@ -12,8 +12,8 @@ DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
+    "name": "str",
     "description": "object",
-    # "kind": "str",
     "type": "str",
     "target": "object",
     "transform": "str",
@@ -34,14 +34,6 @@ TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0
 
 class DuplicateNameError(ValueError):
     ...
-
-
-def _validate_objs(objs):
-    names = [obj.name for obj in objs]
-    unique_names, counts = np.unique(names, return_counts=True)
-    duplicate_names = unique_names[counts > 1]
-    if len(duplicate_names) > 0:
-        raise DuplicateNameError(f"Duplicate name(s) in supplied objectives: {duplicate_names}")
 
 
 domains = {"log"}
@@ -221,7 +213,7 @@ class Objective:
         return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if hasattr(self, "model") else None
 
     @property
-    def n(self) -> int:
+    def n_valid(self) -> int:
         return int((~self.model.train_targets.isnan()).sum()) if hasattr(self, "model") else 0
 
     def targeting_constraint(self, x: torch.Tensor) -> torch.Tensor:
@@ -239,49 +231,35 @@ class Objective:
             0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
         )
 
-    # def fitness_forward(self, y):
-    #     f = y
-    #     if self.log:
-    #         f = np.log(f)
-    #     if self.target == "min":
-    #         f = -f
-    #     return f
+    @property
+    def is_fitness(self):
+        return self.target in ["min", "max"]
 
-    # def fitness_inverse(self, f):
-    #     y = f
-    #     if self.target == "min":
-    #         y = -y
-    #     if self.log:
-    #         y = np.exp(y)
-    #     return y
+    def value_prediction(self, X):
+        p = self.model.posterior(X)
 
-    # @property
-    # def is_fitness(self):
-    #     return self.target in ["min", "max"]
+        if self.is_fitness:
+            return self.fitness_inverse(p.mean)
 
-    # def value_prediction(self, X):
-    #     p = self.model.posterior(X)
+        if isinstance(self.target, tuple):
+            return p.mean
 
-    #     if self.is_fitness:
-    #         return self.fitness_inverse(p.mean)
+    def fitness_prediction(self, X):
+        p = self.model.posterior(X)
 
-    #     if isinstance(self.target, tuple):
-    #         return p.mean
+        if self.is_fitness:
+            return self.fitness_inverse(p.mean)
 
-    # def fitness_prediction(self, X):
-    #     p = self.model.posterior(X)
-
-    #     if self.is_fitness:
-    #         return self.fitness_inverse(p.mean)
-
-    #     if isinstance(self.target, tuple):
-    #         return self.targeting_constraint(X).log().clamp(min=-16)
+        if isinstance(self.target, tuple):
+            return self.targeting_constraint(X).log().clamp(min=-16)
 
 
 class ObjectiveList(Sequence):
     def __init__(self, objectives: list = []):
-        _validate_objs(objectives)
         self.objectives = objectives
+
+    def __call__(self, *args, **kwargs):
+        return self.subset(*args, **kwargs)
 
     @property
     def names(self):
@@ -289,8 +267,10 @@ class ObjectiveList(Sequence):
 
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
-        if attr in [*OBJ_FIELD_TYPES.keys(), "kind"]:
-            return np.array([getattr(obj, attr) for obj in self.objectives])
+        if all([hasattr(obj, attr) for obj in self.objectives]):
+            if OBJ_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
+                return np.array([getattr(obj, attr) for obj in self.objectives])
+            return [getattr(obj, attr) for obj in self.objectives]
         if attr in self.names:
             return self.__getitem__(attr)
 
@@ -315,11 +295,11 @@ class ObjectiveList(Sequence):
 
     @property
     def summary(self) -> pd.DataFrame:
-        table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=self.names)
+        table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=np.arange(len(self)))
 
-        for obj in self.objectives:
+        for index, obj in enumerate(self.objectives):
             for attr, value in obj.summary.items():
-                table.at[obj.name, attr] = value
+                table.at[index, attr] = value
 
         for attr, dtype in OBJ_FIELD_TYPES.items():
             table[attr] = table[attr].astype(dtype)
@@ -327,48 +307,12 @@ class ObjectiveList(Sequence):
         return table
 
     def __repr__(self):
-        return self.summary.__repr__()
+        return self.summary.T.__repr__()
 
     def _repr_html_(self):
         return self.summary.T._repr_html_()
 
-    # @property
-    # def descriptions(self) -> list:
-    #     """
-    #     Returns an array of the objective names.
-    #     """
-    #     return [obj.description for obj in self.objectives]
-
-    # @property
-    # def names(self) -> list:
-    #     """
-    #     Returns an array of the objective names.
-    #     """
-    #     return [obj.name for obj in self.objectives]
-
-    # @property
-    # def targets(self) -> list:
-    #     """
-    #     Returns an array of the objective targets.
-    #     """
-    #     return [obj.target for obj in self.objectives]
-
-    # @property
-    # def weights(self) -> np.array:
-    #     """
-    #     Returns an array of the objective weights.
-    #     """
-    #     return np.array([obj.weight for obj in self.objectives])
-
-    # @property
-    # def signed_weights(self) -> np.array:
-    #     """
-    #     Returns a signed array of the objective weights.
-    #     """
-    #     return np.array([(1 if obj.target == "max" else -1) * obj.weight for obj in self.objectives])
-
     def add(self, objective):
-        _validate_objs([*self.objectives, objective])
         self.objectives.append(objective)
 
     @staticmethod

@@ -165,8 +165,10 @@ class LatentKernel(gpytorch.kernels.Kernel):
         # adapted from the Matern kernel
         mean = x1.reshape(-1, x1.size(-1)).mean(0)[(None,) * (x1.dim() - 1)]
 
-        trans_x1 = torch.matmul(self.latent_transform.unsqueeze(1), (x1 - mean).unsqueeze(-1)).squeeze(-1)
-        trans_x2 = torch.matmul(self.latent_transform.unsqueeze(1), (x2 - mean).unsqueeze(-1)).squeeze(-1)
+        transform = self.latent_transform.unsqueeze(1)
+
+        trans_x1 = torch.matmul(transform, (x1 - mean).unsqueeze(-1)).squeeze(-1)
+        trans_x2 = torch.matmul(transform, (x2 - mean).unsqueeze(-1)).squeeze(-1)
 
         distance = self.covar_dist(trans_x1, trans_x2, diag=diag, **params)
 
