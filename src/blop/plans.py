@@ -1,6 +1,5 @@
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
-import numpy as np
 
 
 def list_scan_with_delay(*args, delay=0, **kwargs):
@@ -19,11 +18,21 @@ def list_scan_with_delay(*args, delay=0, **kwargs):
 
 
 def default_acquisition_plan(dofs, inputs, dets, **kwargs):
+    """
+    Parameters
+    ----------
+    x : list of DOFs or DOFList
+        A list of DOFs
+    inputs: dict
+        A dict of a list of inputs per dof, keyed by dof.name
+    dets: list
+        A list of detectors to trigger
+    """
     delay = kwargs.get("delay", 0)
     args = []
-    for dof, points in zip(dofs, np.atleast_2d(inputs).T):
-        args.append(dof)
-        args.append(list(points))
+    for dof in dofs:
+        args.append(dof.device)
+        args.append(inputs[dof.name])
 
     uid = yield from list_scan_with_delay(dets, *args, delay=delay)
     return uid

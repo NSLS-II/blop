@@ -48,7 +48,7 @@ def mprod(*M):
     return res
 
 
-def route(start_point, points):
+def route(start_point, points, dim_weights=1):
     """
     Returns the indices of the most efficient way to visit `points`, starting from `start_point`.
     """
@@ -60,9 +60,9 @@ def route(start_point, points):
     if dim_mask.sum() == 0:
         return np.arange(len(points))
 
-    normalized_points = (total_points - total_points.min(axis=0))[:, dim_mask] / points_scale[dim_mask]
+    scaled_points = (total_points - total_points.min(axis=0)) * (dim_weights / np.where(points_scale > 0, points_scale, 1))
 
-    delay_matrix = np.sqrt(np.square(normalized_points[:, None, :] - normalized_points[None, :, :]).sum(axis=-1))
+    delay_matrix = np.sqrt(np.square(scaled_points[:, None, :] - scaled_points[None, :, :]).sum(axis=-1))
     delay_matrix = (1e4 * delay_matrix).astype(int)  # it likes integers idk
 
     manager = pywrapcp.RoutingIndexManager(len(total_points), 1, 0)  # number of depots, number of salesmen, starting index

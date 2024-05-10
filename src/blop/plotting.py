@@ -3,7 +3,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from matplotlib.patches import Patch
 
-from .bayesian import acquisition
+from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
 
 DEFAULT_COLOR_LIST = ["dodgerblue", "tomato", "mediumseagreen", "goldenrod"]
 # Note: the values near 1 are hard to see on a white background. Turbo goes from red to blue and isn't white in the middle.
@@ -14,7 +14,7 @@ MAX_TEST_INPUTS = 2**11
 
 
 def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
-    fitness_objs = agent.objectives.subset(kind="fitness")
+    fitness_objs = agent.objectives(kind="fitness")
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(fitness_objs),
@@ -26,11 +26,11 @@ def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
 
     agent.obj_axes = np.atleast_1d(agent.obj_axes)
 
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
-    test_model_inputs = agent.dofs.transform(test_inputs)
+    test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(fitness_objs):
         obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
@@ -62,7 +62,7 @@ def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
 
 
 def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
-    constraint_objs = agent.objectives.subset(kind="constraint")
+    constraint_objs = agent.objectives(kind="constraint")
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(constraint_objs),
@@ -74,11 +74,11 @@ def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
 
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
 
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
-    test_model_inputs = agent.dofs.transform(test_inputs)
+    test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(constraint_objs):
         val_ax = agent.obj_axes[obj_index, 0]
@@ -129,7 +129,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     Axes represents which active, non-read-only axes to plot with
     """
 
-    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+    plottable_dofs = agent.dofs(active=True, read_only=False)
 
     if gridded is None:
         gridded = len(plottable_dofs) == 2
@@ -155,7 +155,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    model_inputs = agent.dofs.subset(active=True).transform(test_inputs)
+    model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(agent.objectives):
         targets = agent.train_targets(obj.name).squeeze(-1).numpy()
@@ -314,46 +314,49 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
             ax.set_yscale("log")
 
 
-def _plot_acqf_one_dof(agent, acq_funcs, lw=1e0, **kwargs):
+def _plot_acqf_one_dof(agent, acqfs, lw=1e0, **kwargs):
     agent.acq_fig, agent.acq_axes = plt.subplots(
         1,
-        len(acq_funcs),
-        figsize=(4 * len(acq_funcs), 4),
+        len(acqfs),
+        figsize=(4 * len(acqfs), 4),
         sharex=True,
         constrained_layout=True,
     )
 
     agent.acq_axes = np.atleast_1d(agent.acq_axes)
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
 
     test_inputs = agent.sample(method="grid")
+    model_inputs = agent.dofs.transform(test_inputs)
 
-    for iacq_func, acq_func_identifier in enumerate(acq_funcs):
-        color = DEFAULT_COLOR_LIST[iacq_func]
+    for iacqf, acqf_identifier in enumerate(acqfs):
+        color = DEFAULT_COLOR_LIST[iacqf]
 
-        acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
-        test_acqf = acq_func(test_inputs).detach().numpy()
+        acqf_config = parse_acqf_identifier(acqf_identifier)
+        acqf, _ = _construct_acqf(agent, acqf_config["name"])
 
-        agent.acq_axes[iacq_func].plot(test_inputs.squeeze(-2), test_acqf, lw=lw, color=color)
+        test_acqf_value = acqf(model_inputs).detach().numpy()
 
-        agent.acq_axes[iacq_func].set_xlim(*x_dof.search_domain)
-        agent.acq_axes[iacq_func].set_xlabel(x_dof.label_with_units)
-        agent.acq_axes[iacq_func].set_ylabel(acq_func_meta["name"])
+        agent.acq_axes[iacqf].plot(test_inputs.squeeze(-2), test_acqf_value, lw=lw, color=color)
+
+        agent.acq_axes[iacqf].set_xlim(*x_dof.search_domain)
+        agent.acq_axes[iacqf].set_xlabel(x_dof.label_with_units)
+        agent.acq_axes[iacqf].set_ylabel(acqf_config["name"])
 
 
 def _plot_acqf_many_dofs(
-    agent, acq_funcs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
+    agent, acqfs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
 ):
     agent.acq_fig, agent.acq_axes = plt.subplots(
         1,
-        len(acq_funcs),
-        figsize=(4 * len(acq_funcs), 4),
+        len(acqfs),
+        figsize=(4 * len(acqfs), 4),
         sharex=True,
         sharey=True,
         constrained_layout=True,
     )
 
-    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+    plottable_dofs = agent.dofs(active=True, read_only=False)
 
     if gridded is None:
         gridded = len(plottable_dofs) == 2
@@ -364,36 +367,38 @@ def _plot_acqf_many_dofs(
 
     # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.sample(n=1024, method="grid") if gridded else agent.sample(n=1024)
+    model_inputs = agent.dofs.transform(test_inputs)
     *test_dim, input_dim = test_inputs.shape
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    for iacq_func, acq_func_identifier in enumerate(acq_funcs):
-        acq_func, acq_func_meta = acquisition.get_acquisition_function(agent, acq_func_identifier)
+    for iacqf, acqf_identifier in enumerate(acqfs):
+        acqf_config = parse_acqf_identifier(acqf_identifier)
+        acqf, _ = _construct_acqf(agent, acqf_config["name"])
 
-        test_acqf = acq_func(test_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
+        test_acqf_value = acqf(model_inputs.reshape(-1, 1, input_dim)).detach().reshape(test_dim).squeeze().numpy()
 
         if gridded:
-            agent.acq_axes[iacq_func].set_title(acq_func_meta["name"])
-            obj_ax = agent.acq_axes[iacq_func].pcolormesh(
+            agent.acq_axes[iacqf].set_title(acqf_config["name"])
+            obj_ax = agent.acq_axes[iacqf].pcolormesh(
                 test_x,
                 test_y,
-                test_acqf,
+                test_acqf_value,
                 shading=shading,
                 cmap=cmap,
             )
 
-            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
+            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
         else:
-            agent.acq_axes[iacq_func].set_title(acq_func_meta["name"])
-            obj_ax = agent.acq_axes[iacq_func].scatter(
+            agent.acq_axes[iacqf].set_title(acqf_config["name"])
+            obj_ax = agent.acq_axes[iacqf].scatter(
                 test_x,
                 test_y,
-                c=test_acqf,
+                c=test_acqf_value,
             )
 
-            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacq_func], location="bottom", aspect=32, shrink=0.8)
+            agent.acq_fig.colorbar(obj_ax, ax=agent.acq_axes[iacqf], location="bottom", aspect=32, shrink=0.8)
 
     for ax in agent.acq_axes.ravel():
         ax.set_xlabel(x_dof.label_with_units)
@@ -409,11 +414,11 @@ def _plot_acqf_many_dofs(
 def _plot_valid_one_dof(agent, size=16, lw=1e0):
     agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * len(agent.objectives)), constrained_layout=True)
 
-    x_dof = agent.dofs.subset(active=True)[0]
+    x_dof = agent.dofs(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
-    constraint = agent.constraint(test_inputs)[..., 0]
+    constraint = agent.constraint(agent.dofs.transform(test_inputs))[..., 0]
 
     agent.valid_ax.scatter(x_values, agent.all_objectives_valid, s=size)
     agent.valid_ax.plot(test_inputs.squeeze(-2), constraint, lw=lw)
@@ -423,7 +428,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
 def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
     agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4), constrained_layout=True)
 
-    plottable_dofs = agent.dofs.subset(active=True, read_only=False)
+    plottable_dofs = agent.dofs(active=True, read_only=False)
 
     if gridded is None:
         gridded = len(plottable_dofs) == 2
@@ -435,7 +440,7 @@ def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_CO
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    constraint = agent.constraint(test_inputs)[..., 0].squeeze().numpy()
+    constraint = agent.constraint(agent.dofs.transform(test_inputs))[..., 0].squeeze().numpy()
 
     if gridded:
         _ = agent.valid_axes[1].pcolormesh(
@@ -484,11 +489,9 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
     )
     hist_axes = np.atleast_1d(hist_axes)
 
-    unique_strategies, acq_func_index, acq_func_inverse = np.unique(
-        agent.table.acq_func, return_index=True, return_inverse=True
-    )
+    unique_strategies, acqf_index, acqf_inverse = np.unique(agent.table.acqf, return_index=True, return_inverse=True)
 
-    sample_colors = np.array(DEFAULT_COLOR_LIST)[acq_func_inverse]
+    sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
 
     if show_all_objs:
         for obj_index, obj in enumerate(agent.objectives):
@@ -510,8 +513,8 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
     hist_axes[-1].set_xlabel(x_key)
 
     handles = []
-    for i_acq_func, acq_func in enumerate(unique_strategies):
-        handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acq_func], label=acq_func))
+    for i_acqf, acqf in enumerate(unique_strategies):
+        handles.append(Patch(color=DEFAULT_COLOR_LIST[i_acqf], label=acqf))
     legend = hist_axes[0].legend(handles=handles, fontsize=8)
     legend.set_title("acquisition function")
 
@@ -536,7 +539,7 @@ def inspect_beam(agent, index, border=None):
 
 
 def _plot_pareto_front(agent, obj_indices=(0, 1)):
-    f_objs = agent.objectives[agent.objectives.kind == "fitness"]
+    f_objs = agent.objectives(kind="fitness")
     (i, j) = obj_indices
 
     if len(f_objs) < 2:
@@ -544,14 +547,14 @@ def _plot_pareto_front(agent, obj_indices=(0, 1)):
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 6))
 
-    y = agent.train_targets()[:, agent.objectives.kind == "fitness"]
+    y = agent.train_targets(kind="fitness")
 
-    pareto_front_mask = agent.pareto_front_mask
+    pareto_mask = agent.pareto_mask
     constraint = agent.evaluated_constraints.all(axis=-1)
 
-    ax.scatter(*y[(~pareto_front_mask) & constraint].T[[i, j]], c="k")
+    ax.scatter(*y[(~pareto_mask) & constraint].T[[i, j]], c="k")
     ax.scatter(*y[~constraint].T[[i, j]], c="r", marker="x", label="invalid")
-    ax.scatter(*y[pareto_front_mask].T[[i, j]], c="b", label="Pareto front")
+    ax.scatter(*y[pareto_mask].T[[i, j]], c="b", label="Pareto front")
 
     ax.set_xlabel(f"{f_objs[i].name} fitness")
     ax.set_ylabel(f"{f_objs[j].name} fitness")

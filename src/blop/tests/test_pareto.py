@@ -1,25 +1,21 @@
 import pytest
 
-
-@pytest.mark.test_func
-def test_pareto(mo_agent, RE):
-    RE(mo_agent.learn("qr", n=16))
-    mo_agent.plot_pareto_front()
+from .conftest import pareto_agents
 
 
-@pytest.mark.parametrize("acq_func", ["qnehvi"])
-def test_monte_carlo_pareto_acq_funcs(mo_agent, RE, acq_func):
-    RE(mo_agent.learn("qr", n=16))
-    RE(mo_agent.learn(acq_func, n=2))
+@pytest.mark.parametrize("agent", pareto_agents, indirect=True)
+def test_pareto(agent, RE, db):
+    agent.db = db
+    RE(agent.learn("qr", n=16))
+    agent.plot_pareto_front()
 
 
-@pytest.mark.test_func
-def test_constrained_pareto(constrained_agent, RE):
-    RE(constrained_agent.learn("qr", n=16))
-    constrained_agent.plot_pareto_front()
-
-
-@pytest.mark.parametrize("acq_func", ["qnehvi"])
-def test_constrained_monte_carlo_pareto_acq_funcs(constrained_agent, RE, acq_func):
-    RE(constrained_agent.learn("qr", n=16))
-    RE(constrained_agent.learn(acq_func, n=2))
+@pytest.mark.parametrize("acqf", ["qnehvi"])
+@pytest.mark.parametrize("agent", pareto_agents, indirect=True)
+def test_monte_carlo_pareto_acqfs(agent, RE, db, acqf):
+    agent.db = db
+    RE(agent.learn("qr", n=4))
+    RE(agent.learn(acqf, n=2))
+    agent.dofs[0].deactivate()
+    RE(agent.learn(acqf, n=2))
+    getattr(agent, acqf)
