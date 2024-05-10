@@ -317,7 +317,7 @@ class DOF:
                         value = f"[{value[0]:.02e}, {value[1]:.02e}]"
                     else:
                         value = f"({value[0]:.02e}, {value[1]:.02e})"
-            series[attr] = value if value else ""
+            series[attr] = value if value is not None else ""
         return series
 
     @property
