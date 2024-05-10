@@ -242,7 +242,7 @@ class Agent:
             # check that all the objectives have models
             if not all(hasattr(obj, "model") for obj in active_objs):
                 raise RuntimeError(
-                    f"Can't construct non-trivial acquisition function '{acqf}'" f" (the agent is not initialized!)"
+                    f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
                 )
 
             # if the model for any active objective mismatches the active dofs, reconstrut and train it
@@ -628,8 +628,10 @@ class Agent:
 
     @property
     def pareto_mask(self):
-        # a point is on the Pareto front if it is Pareto dominant
-        # a point is Pareto dominant if it is there is no other point that is better at every objective
+        """
+        Returns a mask of all points that satisfy all constraints and are Pareto efficient.
+        A point is Pareto efficient if it is there is no other point that is better at every objective.
+        """
         Y = self.train_targets(active=True, kind="fitness")
 
         # nuke the bad points

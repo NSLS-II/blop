@@ -19,9 +19,14 @@ def list_scan_with_delay(*args, delay=0, **kwargs):
 
 def default_acquisition_plan(dofs, inputs, dets, **kwargs):
     """
-    "dofs" is a list of dofs.
-    "inputs" is a dict of a list of inputs per dof, keyed by dof.name
-    "dets" is a list of detectors to trigger
+    Parameters
+    ----------
+    x : list of DOFs or DOFList
+        A list of DOFs
+    inputs: dict
+        A dict of a list of inputs per dof, keyed by dof.name
+    dets: list
+        A list of detectors to trigger
     """
     delay = kwargs.get("delay", 0)
     args = []
