@@ -10,7 +10,7 @@ def test_agent(agent, RE, db):
     """
 
     agent.db = db
-    RE(agent.learn("qr", n=4))
+    RE(agent.learn("qr", n=16))
 
     best = agent.best
     assert [dof.name in best for dof in agent.dofs]
