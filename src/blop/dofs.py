@@ -13,16 +13,16 @@ from ophyd import Signal, SignalRO
 
 DOF_FIELD_TYPES = {
     "description": "str",
+    "units": "str",
     "readback": "object",
     "type": "str",
-    "units": "str",
+    "active": "bool",
+    "read_only": "bool",
     "tags": "object",
     "transform": "str",
     "search_domain": "object",
     "trust_domain": "object",
     "domain": "object",
-    "active": "bool",
-    "read_only": "bool",
 }
 
 DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
