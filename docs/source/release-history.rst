@@ -2,6 +2,11 @@
 Release History
 ===============
 
+v0.7.0 (2024-05-13)
+-------------------
+- Added functionality for Pareto optimization.
+- Support for discrete degrees of freedom.
+
 v0.6.0 (2024-02-01)
 -------------------
 - More sophisticated targeting capabilities for different objectives.
