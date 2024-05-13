@@ -15,6 +15,7 @@ OBJ_FIELD_TYPES = {
     "name": "str",
     "description": "object",
     "type": "str",
+    "kind": "str",
     "target": "object",
     "transform": "str",
     "domain": "str",

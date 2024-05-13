@@ -27,7 +27,6 @@ dependencies = [
     "scipy",
     "tables",
     "torch",
-    "zict<3.0.0",
 ]
 
 classifiers = [
