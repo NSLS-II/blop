@@ -15,6 +15,7 @@ maintainers = [
 requires-python = ">=3.9"
 
 dependencies = [
+    "area-detector-handlers",
     "bluesky",
     "botorch",
     "databroker",

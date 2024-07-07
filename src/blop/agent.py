@@ -842,7 +842,7 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
-        x = self.dofs(active=True).transform(x)
+        # x = self.dofs(active=True).transform(x)
 
         p = torch.ones(x.shape[:-1])
         for obj in self.objectives(active=True):
