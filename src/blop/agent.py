@@ -126,12 +126,11 @@ class Agent:
 
         self.dofs = DOFList(list(np.atleast_1d(dofs)))
         self.objectives = ObjectiveList(list(np.atleast_1d(objectives)))
+        self.detectors = list(np.atleast_1d(detectors))
 
         _validate_dofs_and_objs(self.dofs, self.objectives)
 
         self.db = db
-
-        self.detectors = detectors
         self.acquisition_plan = acquistion_plan
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs

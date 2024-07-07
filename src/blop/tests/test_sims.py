@@ -24,7 +24,7 @@ def test_kb_simulation(RE, db):
     agent = Agent(
         dofs=dofs,
         objectives=objectives,
-        dets=[beamline.det],
+        detectors=beamline.det,
         verbose=True,
         db=db,
         tolerate_acquisition_errors=False,
