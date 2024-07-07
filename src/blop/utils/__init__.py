@@ -4,6 +4,8 @@ import scipy as sp
 import torch
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
+from . import functions  # noqa
+
 
 def get_beam_stats(image, threshold=0.5):
     ny, nx = image.shape
@@ -90,7 +92,7 @@ def route(start_point, points, dim_weights=1):
     """
 
     total_points = np.r_[np.atleast_2d(start_point), points]
-    points_scale = total_points.ptp(axis=0)
+    points_scale = np.ptp(total_points, axis=0)
     dim_mask = points_scale > 0
 
     if dim_mask.sum() == 0:

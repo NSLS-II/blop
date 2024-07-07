@@ -33,7 +33,7 @@ def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
     test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(fitness_objs):
-        obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
+        obj_values = agent.train_targets()(obj.name).numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
@@ -84,7 +84,7 @@ def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
         val_ax = agent.obj_axes[obj_index, 0]
         con_ax = agent.obj_axes[obj_index, 1]
 
-        obj_values = agent.train_targets(obj.name).squeeze(-1).numpy()
+        obj_values = agent.train_targets()[obj.name].numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
@@ -158,7 +158,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(agent.objectives):
-        targets = agent.train_targets(obj.name).squeeze(-1).numpy()
+        targets = agent.train_targets()[obj.name].numpy()
 
         values = obj._untransform(targets)
 
@@ -547,7 +547,7 @@ def _plot_pareto_front(agent, obj_indices=(0, 1)):
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 6))
 
-    y = agent.train_targets(kind="fitness")
+    y = agent.train_targets(kind="fitness", concatenate=True)
 
     pareto_mask = agent.pareto_mask
     constraint = agent.evaluated_constraints.all(axis=-1)

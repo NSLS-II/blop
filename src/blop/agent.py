@@ -66,13 +66,14 @@ class Agent:
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
         db: Broker = None,
-        dets: Sequence[Signal] = [],
+        detectors: Sequence[Signal] = [],
         acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
         digestion_kwargs: dict = {},
         verbose: bool = False,
-        tolerate_acquisition_errors=False,
-        sample_center_on_init=False,
+        enforce_all_objectives_valid: bool = True,
+        tolerate_acquisition_errors: bool = False,
+        sample_center_on_init: bool = False,
         trigger_delay: float = 0,
         train_every: int = 1,
     ):
@@ -85,7 +86,7 @@ class Agent:
             The degrees of freedom that the agent can control, which determine the output of the model.
         objectives : iterable of Objective objects
             The objectives which the agent will try to optimize.
-        dets : iterable of ophyd objects
+        detectors : iterable of ophyd objects
             Detectors to trigger during acquisition.
         acquisition_plan : optional
             A plan that samples the beamline for some given inputs.
@@ -130,7 +131,7 @@ class Agent:
 
         self.db = db
 
-        self.dets = dets
+        self.detectors = detectors
         self.acquisition_plan = acquistion_plan
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs
@@ -138,6 +139,8 @@ class Agent:
         self.verbose = verbose
 
         self.tolerate_acquisition_errors = tolerate_acquisition_errors
+
+        self.enforce_all_objectives_valid = enforce_all_objectives_valid
 
         self.train_every = train_every
         self.trigger_delay = trigger_delay
@@ -498,7 +501,7 @@ class Agent:
             uid = yield from self.acquisition_plan(
                 acquisition_dofs,
                 points,
-                [*self.dets, *self.dofs.devices],
+                [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
             products = self.digestion(self.db[uid].table(), **self.digestion_kwargs)
@@ -584,8 +587,9 @@ class Agent:
     @property
     def evaluated_constraints(self):
         constraint_objectives = self.objectives(kind="constraint")
+        raw_targets_dict = self.raw_targets()
         if len(constraint_objectives):
-            return torch.cat([obj.constrain(self.raw_targets(obj.name)) for obj in constraint_objectives], dim=-1)
+            return torch.cat([obj.constrain(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1)
         else:
             return torch.ones(size=(len(self.table), 0), dtype=torch.bool)
 
@@ -610,7 +614,9 @@ class Agent:
         """
         fitness_objs = self.objectives(kind="fitness")
         if len(fitness_objs) >= 1:
-            f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, kind="fitness"))
+            f = self.fitness_scalarization(weights=weights).evaluate(
+                self.train_targets(active=True, kind="fitness", concatenate=True)
+            )
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
             f = torch.zeros(len(self.table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
@@ -632,7 +638,7 @@ class Agent:
         Returns a mask of all points that satisfy all constraints and are Pareto efficient.
         A point is Pareto efficient if it is there is no other point that is better at every objective.
         """
-        Y = self.train_targets(active=True, kind="fitness")
+        Y = self.train_targets(active=True, kind="fitness", concatenate=True)
 
         # nuke the bad points
         Y[~self.evaluated_constraints.all(axis=-1)] = -np.inf
@@ -650,12 +656,12 @@ class Agent:
 
     @property
     def min_ref_point(self):
-        y = self.train_targets()[:, self.objectives.type == "fitness"]
+        y = self.train_targets(concatenate=True)[:, self.objectives.type == "fitness"]
         return y[y.argmax(axis=0)].min(axis=0).values
 
     @property
     def random_ref_point(self):
-        return self.train_targets(active=True, kind="fitness")[self.argmax_best_f(weights="random")]
+        return self.train_targets(active=True, kind="fitness", concatenate=True)[self.argmax_best_f(weights="random")]
 
     @property
     def all_objectives_valid(self):
@@ -687,7 +693,7 @@ class Agent:
         outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
 
         train_inputs = self.train_inputs(active=True)
-        train_targets = self.train_targets(obj.name)
+        train_targets = self.train_targets()[obj.name].unsqueeze(-1)
 
         inputs_are_trusted = ~torch.isnan(train_inputs).any(axis=1)
         targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
@@ -935,24 +941,42 @@ class Agent:
         """
         Get the raw, untransformed inputs for an objective (or for a subset).
         """
-        if index is None:
-            return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
-        return torch.tensor(self.table.loc[:, self.objectives[index].name].values, dtype=torch.double).unsqueeze(-1)
+        values = {}
 
-    def train_targets(self, index=None, **subset_kwargs):
+        for obj in self.objectives(**subset_kwargs):
+            # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
+            values[obj.name] = torch.tensor(self.table.loc[:, obj.name].values, dtype=torch.double)
+
+        return values
+
+    def train_targets(self, concatenate=False, **subset_kwargs):
         """Returns the values associated with an objective name."""
 
-        if index is None:
-            return torch.cat([self.train_targets(obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
+        targets_dict = {}
+        raw_targets_dict = self.raw_targets(**subset_kwargs)
 
-        obj = self.objectives[index]
-        raw_targets = self.raw_targets(index=index, **subset_kwargs)
+        for obj in self.objectives(**subset_kwargs):
+            y = raw_targets_dict[obj.name]
 
-        # check that targets values are inside acceptable values
-        valid = (raw_targets >= obj._trust_domain[0]) & (raw_targets <= obj._trust_domain[1])
-        raw_targets = torch.where(valid, raw_targets, np.nan)
+            # check that targets values are inside acceptable values
+            valid = (y >= obj._trust_domain[0]) & (y <= obj._trust_domain[1])
+            y = torch.where(valid, y, np.nan)
 
-        return obj._transform(raw_targets)
+            targets_dict[obj.name] = obj._transform(y)
+
+        if self.enforce_all_objectives_valid:
+            all_valid_mask = True
+
+            for name, values in targets_dict.items():
+                all_valid_mask &= ~values.isnan()
+
+            for name in targets_dict.keys():
+                targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
+
+        if concatenate:
+            return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
+
+        return targets_dict
 
     @property
     def best(self):
