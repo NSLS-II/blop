@@ -12,6 +12,8 @@ from bluesky.run_engine import RunEngine
 from databroker import Broker
 from ophyd.utils import make_dir_tree
 
+from blop.sim import HDF5Handler
+
 DEFAULT_DB_TYPE = "local"
 DEFAULT_ROOT_DIR = "/tmp/sirepo-bluesky-data"
 DEFAULT_ENV_TYPE = "stepper"
@@ -24,6 +26,7 @@ def re_env(db_type=DEFAULT_DB_TYPE, root_dir=DEFAULT_ROOT_DIR):
     RE.subscribe(bec)
 
     db = Broker.named(db_type)
+    db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
     try:
         databroker.assets.utils.install_sentinels(db.reg.config, version=1)
     except Exception:

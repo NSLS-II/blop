@@ -1,1 +1,1 @@
-from .beamline import Beamline, Detector  # noqa
+from .beamline import Beamline, Detector, HDF5Handler  # noqa

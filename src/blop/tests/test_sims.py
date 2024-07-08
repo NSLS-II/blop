@@ -1,6 +1,7 @@
 import numpy as np
 
 from blop import DOF, Agent, Objective
+from blop.digestion import beam_stats_digestion
 from blop.sim import Beamline
 
 
@@ -16,20 +17,23 @@ def test_kb_simulation(RE, db):
     ]
 
     objectives = [
-        Objective(name="bl_det_sum", target="max", transform="log", trust_domain=(1, np.inf)),
-        Objective(name="bl_det_wid_x", target="min", transform="log"),  # , latent_groups=[("x1", "x2")]),
-        Objective(name="bl_det_wid_y", target="min", transform="log"),  # , latent_groups=[("x1", "x2")])]
+        Objective(name="bl_det_sum", target="max", transform="log", trust_domain=(200, np.inf)),
+        Objective(name="bl_det_wid_x", target="min", transform="log", latent_groups=[("bl_kbh_dsh", "bl_kbh_ush")]),
+        Objective(name="bl_det_wid_y", target="min", transform="log", latent_groups=[("bl_kbv_dsv", "bl_kbv_usv")]),
     ]
 
     agent = Agent(
         dofs=dofs,
         objectives=objectives,
-        detectors=beamline.det,
+        detectors=[beamline.det],
+        digestion=beam_stats_digestion,
+        digestion_kwargs={"image_key": "bl_det_image"},
         verbose=True,
         db=db,
         tolerate_acquisition_errors=False,
+        enforce_all_objectives_valid=True,
         train_every=3,
     )
 
-    RE(agent.learn("qr", n=32))
+    RE(agent.learn("qr", n=16))
     RE(agent.learn("qei", n=4, iterations=4))

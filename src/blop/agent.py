@@ -145,12 +145,16 @@ class Agent:
         self.trigger_delay = trigger_delay
         self.sample_center_on_init = sample_center_on_init
 
-        self.table = pd.DataFrame()
+        self._table = pd.DataFrame()
 
         self.initialized = False
         self.a_priori_hypers = None
 
         self.n_last_trained = 0
+
+    @property
+    def table(self):
+        return self._table
 
     def unpack_run(self):
         return
@@ -174,7 +178,7 @@ class Agent:
         self._train_all_models()
 
     def redigest(self):
-        self.table = self.digestion(self.table, **self.digestion_kwargs)
+        self._table = self.digestion(self._table, **self.digestion_kwargs)
 
     def sample(self, n: int = DEFAULT_MAX_SAMPLES, method: str = "quasi-random") -> torch.Tensor:
         """
@@ -353,8 +357,8 @@ class Agent:
             raise ValueError("All supplies values must be the same length!")
 
         new_table = pd.DataFrame(data)
-        self.table = pd.concat([self.table, new_table]) if append else new_table
-        self.table.index = np.arange(len(self.table))
+        self._table = pd.concat([self._table, new_table]) if append else new_table
+        self._table.index = np.arange(len(self._table))
 
         if update_models:
             for obj in self.objectives(active=True):
@@ -503,7 +507,7 @@ class Agent:
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            products = self.digestion(self.db[uid].table(), **self.digestion_kwargs)
+            products = self.digestion(self.db[uid].table(fill=True), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -523,12 +527,12 @@ class Agent:
 
     def load_data(self, data_file, append=True):
         new_table = pd.read_hdf(data_file, key="table")
-        self.table = pd.concat([self.table, new_table]) if append else new_table
+        self._table = pd.concat([self._table, new_table]) if append else new_table
         self.refresh()
 
     def reset(self):
         """Reset the agent."""
-        self.table = pd.DataFrame()
+        self._table = pd.DataFrame()
 
         for obj in self.objectives(active=True):
             if hasattr(obj, "model"):
@@ -590,7 +594,7 @@ class Agent:
         if len(constraint_objectives):
             return torch.cat([obj.constrain(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1)
         else:
-            return torch.ones(size=(len(self.table), 0), dtype=torch.bool)
+            return torch.ones(size=(len(self._table), 0), dtype=torch.bool)
 
     def fitness_scalarization(self, weights="default"):
         fitness_objectives = self.objectives(active=True, kind="fitness")
@@ -618,7 +622,7 @@ class Agent:
             )
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
-            f = torch.zeros(len(self.table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
+            f = torch.zeros(len(self._table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
         if constrained:
             # how many constraints are satisfied?
             c = self.evaluated_constraints.sum(axis=-1)
@@ -651,7 +655,7 @@ class Agent:
         """
         A subset of the data table containing only points on the Pareto front.
         """
-        return self.table.loc[self.pareto_mask.numpy()]
+        return self._table.loc[self.pareto_mask.numpy()]
 
     @property
     def min_ref_point(self):
@@ -747,7 +751,7 @@ class Agent:
         if self.verbose:
             print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
-        self.n_last_trained = len(self.table)
+        self.n_last_trained = len(self._table)
 
     def _get_acquisition_function(self, identifier, return_metadata=False):
         """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
@@ -813,7 +817,7 @@ class Agent:
 
         save_dir, _ = os.path.split(path)
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-        self.table.to_hdf(path, key="table")
+        self._table.to_hdf(path, key="table")
 
     def forget(self, last=None, index=None, train=True):
         """
@@ -828,12 +832,12 @@ class Agent:
         """
 
         if last is not None:
-            if last > len(self.table):
-                raise ValueError(f"Cannot forget last {last} data points (only {len(self.table)} samples have been taken).")
-            self.forget(index=self.table.index.values[-last:], train=train)
+            if last > len(self._table):
+                raise ValueError(f"Cannot forget last {last} data points (only {len(self._table)} samples have been taken).")
+            self.forget(index=self._table.index.values[-last:], train=train)
 
         elif index is not None:
-            self.table.drop(index=index, inplace=True)
+            self._table.drop(index=index, inplace=True)
             self._construct_all_models()
             if train:
                 self._train_all_models()
@@ -919,7 +923,7 @@ class Agent:
         """
         if index is None:
             return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-        return torch.tensor(self.table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
+        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
 
     def train_inputs(self, index=None, **subset_kwargs):
         """A two-dimensional tensor of all DOF values."""
@@ -944,7 +948,7 @@ class Agent:
 
         for obj in self.objectives(**subset_kwargs):
             # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
-            values[obj.name] = torch.tensor(self.table.loc[:, obj.name].values, dtype=torch.double)
+            values[obj.name] = torch.tensor(self._table.loc[:, obj.name].values, dtype=torch.double)
 
         return values
 
@@ -980,12 +984,12 @@ class Agent:
     @property
     def best(self):
         """Returns all data for the best point."""
-        return self.table.loc[self.argmax_best_f()]
+        return self._table.loc[self.argmax_best_f()]
 
     @property
     def best_inputs(self):
         """Returns the value of each DOF at the best point."""
-        return self.table.loc[self.argmax_best_f(), self.dofs.names].to_dict()
+        return self._table.loc[self.argmax_best_f(), self.dofs.names].to_dict()
 
     def go_to(self, **positions):
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as

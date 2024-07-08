@@ -6,7 +6,6 @@ from pathlib import Path
 import h5py
 import numpy as np
 import scipy as sp
-from area_detector_handlers.handlers import HandlerBase
 from event_model import compose_resource
 from ophyd import Component as Cpt
 from ophyd import Device, Signal
@@ -14,34 +13,7 @@ from ophyd.sim import NullStatus, new_uid
 from ophyd.utils import make_dir_tree
 
 from ..utils import get_beam_stats
-
-
-class HDF5Handler(HandlerBase):
-    specs = {"HDF5"}
-
-    def __init__(self, filename):
-        self._name = filename
-
-    def __call__(self, frame):
-        with h5py.File(self._name, "r") as f:
-            entry = f["/entry/image"]
-            return entry[frame]
-
-
-class ExternalFileReference(Signal):
-    """
-    A pure software Signal that describe()s an image in an external file.
-    """
-
-    def describe(self):
-        resource_document_data = super().describe()
-        resource_document_data[self.name].update(
-            dict(
-                external="FILESTORE:",
-                dtype="array",
-            )
-        )
-        return resource_document_data
+from .handlers import ExternalFileReference
 
 
 class Detector(Device):
@@ -151,8 +123,8 @@ class Detector(Device):
 
         x0 = self.parent.kbh_ush.get() - self.parent.kbh_dsh.get()
         y0 = self.parent.kbv_usv.get() - self.parent.kbv_dsv.get()
-        x_width = np.sqrt(0.5 + 5e-1 * (self.parent.kbh_ush.get() + self.parent.kbh_dsh.get() - 1) ** 2)
-        y_width = np.sqrt(0.25 + 5e-1 * (self.parent.kbv_usv.get() + self.parent.kbv_dsv.get() - 2) ** 2)
+        x_width = np.sqrt(0.2 + 5e-1 * (self.parent.kbh_ush.get() + self.parent.kbh_dsh.get() - 1) ** 2)
+        y_width = np.sqrt(0.1 + 5e-1 * (self.parent.kbv_usv.get() + self.parent.kbv_dsv.get() - 2) ** 2)
 
         beam = np.exp(-0.5 * (((X - x0) / x_width) ** 4 + ((Y - y0) / y_width) ** 4)) / (
             np.sqrt(2 * np.pi) * x_width * y_width
@@ -173,8 +145,8 @@ class Detector(Device):
 
             power_spectrum = 1 / (1e-2 + KX**2 + KY**2)
 
-            white_noise = 5e-3 * np.random.standard_normal(size=X.shape)
-            pink_noise = 5e-3 * np.real(np.fft.ifft2(power_spectrum * np.fft.fft2(np.random.standard_normal(size=X.shape))))
+            white_noise = 1e-3 * np.random.standard_normal(size=X.shape)
+            pink_noise = 1e-3 * np.real(np.fft.ifft2(power_spectrum * np.fft.fft2(np.random.standard_normal(size=X.shape))))
             # background = 5e-3 * (X - Y) / X.max()
 
             image += white_noise + pink_noise
