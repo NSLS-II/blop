@@ -1,8 +1,48 @@
+import botorch
 import gpytorch
 import torch
 from botorch.models.gp_regression import SingleTaskGP
 
 from . import kernels
+
+
+def train_model(model, hypers=None, **kwargs):
+    """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
+    if hypers is not None:
+        model.load_state_dict(hypers)
+    else:
+        botorch.fit.fit_gpytorch_mll(gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model), **kwargs)
+    model.trained = True
+
+
+def construct_single_task_model(X, y, skew_dims=None, min_noise=1e-6, max_noise=1e0):
+    """
+    Construct an untrained model for an objective.
+    """
+
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+        noise_constraint=gpytorch.constraints.Interval(
+            torch.tensor(min_noise),
+            torch.tensor(max_noise),
+        ),
+    )
+
+    input_transform = botorch.models.transforms.input.Normalize(d=X.shape[-1])
+    outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
+
+    if not X.isfinite().all():
+        raise ValueError("'X' must not contain points that are inf or NaN.")
+    if not y.isfinite().all():
+        raise ValueError("'y' must not contain points that are inf or NaN.")
+
+    return LatentGP(
+        train_inputs=X,
+        train_targets=y,
+        likelihood=likelihood,
+        skew_dims=skew_dims,
+        input_transform=input_transform,
+        outcome_transform=outcome_transform,
+    )
 
 
 class LatentGP(SingleTaskGP):
