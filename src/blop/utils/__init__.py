@@ -37,6 +37,10 @@ def get_beam_stats(image, threshold=0.5):
         "cen_y": (y_min + y_max) / 2,
         "wid_x": x_max - x_min,
         "wid_y": y_max - y_min,
+        "x_min": x_min,
+        "x_max": x_max,
+        "y_min": y_min,
+        "y_max": y_max,
         "bbox": [[x_min, x_max, x_max, x_min, x_min], [y_min, y_min, y_max, y_max, y_min]],
     }
 

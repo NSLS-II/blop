@@ -67,7 +67,7 @@ class Agent:
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
         db: Broker = None,
-        detectors: Sequence[Signal] = [],
+        detectors: Sequence[Signal] = None,
         acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
         digestion_kwargs: dict = {},
@@ -128,7 +128,7 @@ class Agent:
 
         self.dofs = DOFList(list(np.atleast_1d(dofs)))
         self.objectives = ObjectiveList(list(np.atleast_1d(objectives)))
-        self.detectors = list(np.atleast_1d(detectors))
+        self.detectors = list(np.atleast_1d(detectors or []))
 
         _validate_dofs_and_objs(self.dofs, self.objectives)
 
@@ -838,8 +838,6 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
-        # x = self.dofs(active=True).transform(x)
-
         p = torch.ones(x.shape[:-1])
         for obj in self.objectives(active=True):
             # if the targeting constraint is non-trivial

@@ -111,8 +111,7 @@ class Detector(Device):
     def collect_asset_docs(self):
         items = list(self._asset_docs_cache)
         self._asset_docs_cache.clear()
-        for item in items:
-            yield item
+        yield from items
 
     def generate_beam(self, noise: bool = True):
         nx, ny = self.image_shape.get()
