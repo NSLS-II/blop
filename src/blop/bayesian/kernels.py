@@ -27,7 +27,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
             if skew_dims:
                 self.skew_dims = [torch.arange(self.num_inputs)]
             else:
-                self.skew_dims = [torch.arange(0)]
+                self.skew_dims = [(i) for i in torch.arange(num_inputs)]
         elif hasattr(skew_dims, "__iter__"):
             self.skew_dims = [torch.tensor(np.atleast_1d(skew_group)) for skew_group in skew_dims]
         else:
