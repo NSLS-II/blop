@@ -1057,31 +1057,31 @@ class Agent:
     def plot_pareto_front(self, **kwargs):
         """Plot the improvement of the agent over time."""
         plotting._plot_pareto_front(self, **kwargs)
-    
+
     def prune(self, pruning_objs=[], thresholds=[]):
-        """Prune low-fidelity datapoints from model fitting """
-        #set the prune column to false 
-        self._table = self._table.assign(prune = [False for i in range(self._table.shape[0])])
-        #make sure there are models trained for all the objectives we are pruning over
-        if all(hasattr(obj, "model") for obj in pruning_objs):
-            pruning_models = ModelListGP(*[obj.model for obj in pruning_objs])
-        else: 
+        """Prune low-fidelity datapoints from model fitting"""
+        # set the prune column to false
+        self._table = self._table.assign(prune=[False for i in range(self._table.shape[0])])
+        # make sure there are models trained for all the objectives we are pruning over
+        if not all(hasattr(obj, "model") for obj in pruning_objs):
             raise ValueError("Not all pruning objectives have models.")
-        #make sure we have the same number of thresholds and objectives to prune over
-        if len(pruning_objs)!= len(thresholds):
+        # make sure we have the same number of thresholds and objectives to prune over
+        if len(pruning_objs) != len(thresholds):
             raise ValueError("Number of pruning objectives and thresholds should be the same")
         for i in range(len(pruning_objs)):
             obj = pruning_objs[i]
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(obj.model.likelihood, obj.model)
             mlls = mll(obj.model(self.train_inputs()), self.train_targets()[obj.name].unsqueeze(-1)).detach()
             mlls_wo_nans = [x for x in mlls if not np.isnan(x)]
-            #Q: SHOULD WE MAKE AN OPTION TO HAVE THIS BE >, IN CASE THEY ARE NOT NEGATED?
-            if len(mlls_wo_nans)>0:
-                self._table["prune"] = torch.logical_or(torch.tensor(self._table["prune"].values), mlls < thresholds[i] * np.quantile(mlls_wo_nans, q=0.25))
-        #return self._table["prune"]
-    
+            # Q: SHOULD WE MAKE AN OPTION TO HAVE THIS BE >, IN CASE THEY ARE NOT NEGATED?
+            if len(mlls_wo_nans) > 0:
+                self._table["prune"] = torch.logical_or(
+                    torch.tensor(self._table["prune"].values), mlls < thresholds[i] * np.quantile(mlls_wo_nans, q=0.25)
+                )
+        # return self._table["prune"]
+
     @property
     def pruned_mask(self):
         if self.exclude_pruned and "prune" in self._table.columns:
-            return self._table.prune.values.astype(bool)
-        return np.zeros(len(self._table)).astype(bool)
+            return torch.tensor(self._table.prune.values.astype(bool))
+        return torch.zeros(len(self._table)).astype(bool)
