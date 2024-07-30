@@ -11,6 +11,7 @@ from databroker import Broker
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
+from blop.sim import HDF5Handler
 
 
 @pytest.fixture(scope="function")
@@ -22,6 +23,8 @@ def db():
         databroker.assets.utils.install_sentinels(db.reg.config, version=1)
     except Exception:
         pass
+
+    db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
 
     return db
 

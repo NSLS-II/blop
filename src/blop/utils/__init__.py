@@ -4,6 +4,48 @@ import scipy as sp
 import torch
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
+from . import functions  # noqa
+
+
+def get_beam_stats(image, threshold=0.5):
+    ny, nx = image.shape
+
+    fim = image.copy()
+    fim -= np.median(fim, axis=0)
+    fim -= np.median(fim, axis=1)[:, None]
+
+    fim = sp.ndimage.median_filter(fim, size=3)
+    fim = sp.ndimage.gaussian_filter(fim, sigma=1)
+
+    m = fim > threshold * fim.max()
+    area = m.sum()
+
+    cs_x = np.cumsum(m.sum(axis=0)) / area
+    cs_y = np.cumsum(m.sum(axis=1)) / area
+
+    q_min, q_max = [0.15865, 0.84135]  # one sigma
+    q_min, q_max = [0.05, 0.95]  # 90%
+
+    x_min, x_max = np.interp([q_min, q_max], cs_x, np.arange(nx))
+    y_min, y_max = np.interp([q_min, q_max], cs_y, np.arange(ny))
+
+    stats = {
+        "max": fim.max(),
+        "sum": fim.sum(),
+        "area": area,
+        "cen_x": (x_min + x_max) / 2,
+        "cen_y": (y_min + y_max) / 2,
+        "wid_x": x_max - x_min,
+        "wid_y": y_max - y_min,
+        "x_min": x_min,
+        "x_max": x_max,
+        "y_min": y_min,
+        "y_max": y_max,
+        "bbox": [[x_min, x_max, x_max, x_min, x_min], [y_min, y_min, y_max, y_max, y_min]],
+    }
+
+    return stats
+
 
 def cummax(x):
     return [np.nanmax(x[: i + 1]) for i in range(len(np.atleast_1d(x)))]
@@ -54,7 +96,7 @@ def route(start_point, points, dim_weights=1):
     """
 
     total_points = np.r_[np.atleast_2d(start_point), points]
-    points_scale = total_points.ptp(axis=0)
+    points_scale = np.ptp(total_points, axis=0)
     dim_mask = points_scale > 0
 
     if dim_mask.sum() == 0:
@@ -102,130 +144,3 @@ def get_movement_time(x, v_max, a):
     return 2 * np.sqrt(np.abs(x) / a) * (np.abs(x) < v_max**2 / a) + (np.abs(x) / v_max + v_max / a) * (
         np.abs(x) > v_max**2 / a
     )
-
-
-def get_principal_component_bounds(image, beam_prop=0.5):
-    """
-    Returns the bounding box in pixel units of an image, along with a goodness of fit parameter.
-    This should go off without a hitch as long as beam_prop is less than 1.
-    """
-
-    if image.sum() == 0:
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-
-    # print(f'{extent = }')
-
-    u, s, v = np.linalg.svd(image - image.mean())
-    separability = np.square(s[0]) / np.square(s).sum()
-
-    # q refers to "quantile"
-    q_min, q_max = 0.5 * (1 - beam_prop), 0.5 * (1 + beam_prop)
-
-    # these represent the cumulative proportion of the beam, as captured by the SVD.
-    cs_beam_x = np.cumsum(v[0]) / np.sum(v[0])
-    cs_beam_y = np.cumsum(u[:, 0]) / np.sum(u[:, 0])
-    cs_beam_x[0], cs_beam_y[0] = 0, 0  # change this lol
-
-    # the first coordinate where the cumulative beam is greater than the minimum
-    i_q_min_x = np.where((cs_beam_x[1:] > q_min) & (cs_beam_x[:-1] < q_min))[0][0]
-    i_q_min_y = np.where((cs_beam_y[1:] > q_min) & (cs_beam_y[:-1] < q_min))[0][0]
-
-    # the last coordinate where the cumulative beam is less than the maximum
-    i_q_max_x = np.where((cs_beam_x[1:] > q_max) & (cs_beam_x[:-1] < q_max))[0][-1]
-    i_q_max_y = np.where((cs_beam_y[1:] > q_max) & (cs_beam_y[:-1] < q_max))[0][-1]
-
-    # interpolate, so that we can go finer than one pixel. this quartet is the "bounding box", from 0 to 1.
-    # (let's make this more efficient later)
-    x_min = np.interp(q_min, cs_beam_x[[i_q_min_x, i_q_min_x + 1]], [i_q_min_x, i_q_min_x + 1])
-    x_max = np.interp(q_max, cs_beam_x[[i_q_max_x, i_q_max_x + 1]], [i_q_max_x, i_q_max_x + 1])
-    y_min = np.interp(q_min, cs_beam_y[[i_q_min_y, i_q_min_y + 1]], [i_q_min_y, i_q_min_y + 1])
-    y_max = np.interp(q_max, cs_beam_y[[i_q_max_y, i_q_max_y + 1]], [i_q_max_y, i_q_max_y + 1])
-
-    return (
-        x_min,
-        x_max,
-        y_min,
-        y_max,
-        separability,
-    )
-
-
-def get_beam_bounding_box(image, thresh=0.5):
-    """
-    Returns the bounding box in pixel units of an image, along with a goodness of fit parameter.
-    This should go off without a hitch as long as beam_prop is less than 1.
-    """
-
-    n_y, n_x = image.shape
-
-    if image.sum() == 0:
-        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
-
-    # filter the image
-    zim = sp.ndimage.median_filter(image.astype(float), size=3)
-    zim -= np.median(zim, axis=0)
-    zim -= np.median(zim, axis=1)[:, None]
-
-    x_sum = zim.sum(axis=0)
-    y_sum = zim.sum(axis=1)
-
-    x_sum_min_val = thresh * x_sum.max()
-    y_sum_min_val = thresh * y_sum.max()
-
-    gtt_x = x_sum > x_sum_min_val
-    gtt_y = y_sum > y_sum_min_val
-
-    i_x_min_start = np.where(~gtt_x[:-1] & gtt_x[1:])[0][0]
-    i_x_max_start = np.where(gtt_x[:-1] & ~gtt_x[1:])[0][-1]
-    i_y_min_start = np.where(~gtt_y[:-1] & gtt_y[1:])[0][0]
-    i_y_max_start = np.where(gtt_y[:-1] & ~gtt_y[1:])[0][-1]
-
-    x_min = (
-        0
-        if gtt_x[0]
-        else np.interp(x_sum_min_val, x_sum[[i_x_min_start, i_x_min_start + 1]], [i_x_min_start, i_x_min_start + 1])
-    )
-    y_min = (
-        0
-        if gtt_y[0]
-        else np.interp(y_sum_min_val, y_sum[[i_y_min_start, i_y_min_start + 1]], [i_y_min_start, i_y_min_start + 1])
-    )
-    x_max = (
-        n_x - 2
-        if gtt_x[-1]
-        else np.interp(x_sum_min_val, x_sum[[i_x_max_start + 1, i_x_max_start]], [i_x_max_start + 1, i_x_max_start])
-    )
-    y_max = (
-        n_y - 2
-        if gtt_y[-1]
-        else np.interp(y_sum_min_val, y_sum[[i_y_max_start + 1, i_y_max_start]], [i_y_max_start + 1, i_y_max_start])
-    )
-
-    return (
-        x_min,
-        x_max,
-        y_min,
-        y_max,
-    )
-
-
-def best_image_feedback(image):
-    n_y, n_x = image.shape
-
-    fim = sp.ndimage.median_filter(image, size=3)
-
-    masked_image = fim * (fim - fim.mean() > 0.5 * fim.ptp())
-
-    x_weight = masked_image.sum(axis=0)
-    y_weight = masked_image.sum(axis=1)
-
-    x = np.arange(n_x)
-    y = np.arange(n_y)
-
-    x0 = np.sum(x_weight * x) / np.sum(x_weight)
-    y0 = np.sum(y_weight * y) / np.sum(y_weight)
-
-    xw = 2 * np.sqrt((np.sum(x_weight * x**2) / np.sum(x_weight) - x0**2))
-    yw = 2 * np.sqrt((np.sum(y_weight * y**2) / np.sum(y_weight) - y0**2))
-
-    return x0, xw, y0, yw

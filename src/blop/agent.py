@@ -29,6 +29,7 @@ from ophyd import Signal
 from . import plotting, utils
 from .bayesian import acquisition, models
 from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
+from .bayesian.models import construct_single_task_model, train_model
 
 # from .bayesian.transforms import TargetingPosteriorTransform
 from .digestion import default_digestion_function
@@ -66,13 +67,15 @@ class Agent:
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
         db: Broker = None,
-        dets: Sequence[Signal] = [],
+        detectors: Sequence[Signal] = None,
         acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
         digestion_kwargs: dict = {},
         verbose: bool = False,
-        tolerate_acquisition_errors=False,
-        sample_center_on_init=False,
+        enforce_all_objectives_valid: bool = True,
+        model_inactive_objectives: bool = False,
+        tolerate_acquisition_errors: bool = False,
+        sample_center_on_init: bool = False,
         trigger_delay: float = 0,
         train_every: int = 1,
     ):
@@ -85,7 +88,7 @@ class Agent:
             The degrees of freedom that the agent can control, which determine the output of the model.
         objectives : iterable of Objective objects
             The objectives which the agent will try to optimize.
-        dets : iterable of ophyd objects
+        detectors : iterable of ophyd objects
             Detectors to trigger during acquisition.
         acquisition_plan : optional
             A plan that samples the beamline for some given inputs.
@@ -125,30 +128,35 @@ class Agent:
 
         self.dofs = DOFList(list(np.atleast_1d(dofs)))
         self.objectives = ObjectiveList(list(np.atleast_1d(objectives)))
+        self.detectors = list(np.atleast_1d(detectors or []))
 
         _validate_dofs_and_objs(self.dofs, self.objectives)
 
         self.db = db
-
-        self.dets = dets
         self.acquisition_plan = acquistion_plan
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs
 
         self.verbose = verbose
 
+        self.model_inactive_objectives = model_inactive_objectives
         self.tolerate_acquisition_errors = tolerate_acquisition_errors
+        self.enforce_all_objectives_valid = enforce_all_objectives_valid
 
         self.train_every = train_every
         self.trigger_delay = trigger_delay
         self.sample_center_on_init = sample_center_on_init
 
-        self.table = pd.DataFrame()
+        self._table = pd.DataFrame()
 
         self.initialized = False
         self.a_priori_hypers = None
 
         self.n_last_trained = 0
+
+    @property
+    def table(self):
+        return self._table
 
     def unpack_run(self):
         return
@@ -172,7 +180,7 @@ class Agent:
         self._train_all_models()
 
     def redigest(self):
-        self.table = self.digestion(self.table, **self.digestion_kwargs)
+        self._table = self.digestion(self._table, **self.digestion_kwargs)
 
     def sample(self, n: int = DEFAULT_MAX_SAMPLES, method: str = "quasi-random") -> torch.Tensor:
         """
@@ -249,7 +257,7 @@ class Agent:
             for obj in active_objs:
                 if obj.model_dofs != set(active_dofs.names):
                     self._construct_model(obj)
-                    self._train_model(obj.model)
+                    train_model(obj.model)
 
             if acqf_config["type"] == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
@@ -351,11 +359,12 @@ class Agent:
             raise ValueError("All supplies values must be the same length!")
 
         new_table = pd.DataFrame(data)
-        self.table = pd.concat([self.table, new_table]) if append else new_table
-        self.table.index = np.arange(len(self.table))
+        self._table = pd.concat([self._table, new_table]) if append else new_table
+        self._table.index = np.arange(len(self._table))
 
         if update_models:
-            for obj in self.objectives(active=True):
+            objectives_to_model = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
+            for obj in objectives_to_model:
                 t0 = ttime.monotonic()
 
                 cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
@@ -369,12 +378,12 @@ class Agent:
                 if len(obj.model.train_targets) >= 4:
                     if train:
                         t0 = ttime.monotonic()
-                        self._train_model(obj.model)
+                        train_model(obj.model)
                         if self.verbose:
                             print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
 
                     else:
-                        self._train_model(obj.model, hypers=cached_hypers)
+                        train_model(obj.model, hypers=cached_hypers)
 
     def learn(
         self,
@@ -498,10 +507,10 @@ class Agent:
             uid = yield from self.acquisition_plan(
                 acquisition_dofs,
                 points,
-                [*self.dets, *self.dofs.devices],
+                [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            products = self.digestion(self.db[uid].table(), **self.digestion_kwargs)
+            products = self.digestion(self.db[uid].table(fill=True), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -521,12 +530,12 @@ class Agent:
 
     def load_data(self, data_file, append=True):
         new_table = pd.read_hdf(data_file, key="table")
-        self.table = pd.concat([self.table, new_table]) if append else new_table
+        self._table = pd.concat([self._table, new_table]) if append else new_table
         self.refresh()
 
     def reset(self):
         """Reset the agent."""
-        self.table = pd.DataFrame()
+        self._table = pd.DataFrame()
 
         for obj in self.objectives(active=True):
             if hasattr(obj, "model"):
@@ -584,10 +593,11 @@ class Agent:
     @property
     def evaluated_constraints(self):
         constraint_objectives = self.objectives(kind="constraint")
+        raw_targets_dict = self.raw_targets()
         if len(constraint_objectives):
-            return torch.cat([obj.constrain(self.raw_targets(obj.name)) for obj in constraint_objectives], dim=-1)
+            return torch.cat([obj.constrain(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1)
         else:
-            return torch.ones(size=(len(self.table), 0), dtype=torch.bool)
+            return torch.ones(size=(len(self._table), 0), dtype=torch.bool)
 
     def fitness_scalarization(self, weights="default"):
         fitness_objectives = self.objectives(active=True, kind="fitness")
@@ -610,10 +620,12 @@ class Agent:
         """
         fitness_objs = self.objectives(kind="fitness")
         if len(fitness_objs) >= 1:
-            f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, kind="fitness"))
+            f = self.fitness_scalarization(weights=weights).evaluate(
+                self.train_targets(active=True, kind="fitness", concatenate=True)
+            )
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
-            f = torch.zeros(len(self.table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
+            f = torch.zeros(len(self._table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
         if constrained:
             # how many constraints are satisfied?
             c = self.evaluated_constraints.sum(axis=-1)
@@ -632,7 +644,7 @@ class Agent:
         Returns a mask of all points that satisfy all constraints and are Pareto efficient.
         A point is Pareto efficient if it is there is no other point that is better at every objective.
         """
-        Y = self.train_targets(active=True, kind="fitness")
+        Y = self.train_targets(active=True, kind="fitness", concatenate=True)
 
         # nuke the bad points
         Y[~self.evaluated_constraints.all(axis=-1)] = -np.inf
@@ -646,29 +658,21 @@ class Agent:
         """
         A subset of the data table containing only points on the Pareto front.
         """
-        return self.table.loc[self.pareto_mask.numpy()]
+        return self._table.loc[self.pareto_mask.numpy()]
 
     @property
     def min_ref_point(self):
-        y = self.train_targets()[:, self.objectives.type == "fitness"]
+        y = self.train_targets(concatenate=True)[:, self.objectives.type == "fitness"]
         return y[y.argmax(axis=0)].min(axis=0).values
 
     @property
     def random_ref_point(self):
-        return self.train_targets(active=True, kind="fitness")[self.argmax_best_f(weights="random")]
+        return self.train_targets(active=True, kind="fitness", concatenate=True)[self.argmax_best_f(weights="random")]
 
     @property
     def all_objectives_valid(self):
         """A mask of whether all objectives are valid for each data point."""
         return ~torch.isnan(self.scalarized_fitnesses())
-
-    def _train_model(self, model, hypers=None, **kwargs):
-        """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
-        if hypers is not None:
-            model.load_state_dict(hypers)
-        else:
-            botorch.fit.fit_gpytorch_mll(gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model), **kwargs)
-        model.trained = True
 
     def _construct_model(self, obj, skew_dims=None):
         """
@@ -677,30 +681,20 @@ class Agent:
 
         skew_dims = skew_dims if skew_dims is not None else self._latent_dim_tuples(obj.name)
 
-        likelihood = gpytorch.likelihoods.GaussianLikelihood(
-            noise_constraint=gpytorch.constraints.Interval(
-                torch.tensor(obj.min_noise),
-                torch.tensor(obj.max_noise),
-            ),
-        )
-
-        outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
-
         train_inputs = self.train_inputs(active=True)
-        train_targets = self.train_targets(obj.name)
+        train_targets = self.train_targets()[obj.name].unsqueeze(-1)
 
         inputs_are_trusted = ~torch.isnan(train_inputs).any(axis=1)
         targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
 
         trusted = inputs_are_trusted & targets_are_trusted
 
-        obj.model = models.LatentGP(
-            train_inputs=train_inputs[trusted],
-            train_targets=train_targets[trusted],
-            likelihood=likelihood,
-            skew_dims=skew_dims,
-            input_transform=self.input_normalization,
-            outcome_transform=outcome_transform,
+        obj.model = construct_single_task_model(
+            X=train_inputs[trusted],
+            y=train_targets[trusted],
+            min_noise=obj.min_noise,
+            max_noise=obj.max_noise,
+            skew_dims=self._latent_dim_tuples()[obj.name],
         )
 
         obj.model_dofs = set(self.dofs(active=True).names)  # if these change, retrain the model on self.ask()
@@ -728,21 +722,23 @@ class Agent:
 
     def _construct_all_models(self):
         """Construct a model for each objective."""
-        for obj in self.objectives(active=True):
+        objectives_to_construct = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
+        for obj in objectives_to_construct:
             self._construct_model(obj)
 
     def _train_all_models(self, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
         t0 = ttime.monotonic()
-        for obj in self.objectives(active=True):
-            self._train_model(obj.model)
+        objectives_to_train = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
+        for obj in objectives_to_train:
+            train_model(obj.model)
             if obj.validity_conjugate_model is not None:
-                self._train_model(obj.validity_conjugate_model)
+                train_model(obj.validity_conjugate_model)
 
         if self.verbose:
             print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
-        self.n_last_trained = len(self.table)
+        self.n_last_trained = len(self._table)
 
     def _get_acquisition_function(self, identifier, return_metadata=False):
         """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
@@ -808,7 +804,7 @@ class Agent:
 
         save_dir, _ = os.path.split(path)
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-        self.table.to_hdf(path, key="table")
+        self._table.to_hdf(path, key="table")
 
     def forget(self, last=None, index=None, train=True):
         """
@@ -823,12 +819,12 @@ class Agent:
         """
 
         if last is not None:
-            if last > len(self.table):
-                raise ValueError(f"Cannot forget last {last} data points (only {len(self.table)} samples have been taken).")
-            self.forget(index=self.table.index.values[-last:], train=train)
+            if last > len(self._table):
+                raise ValueError(f"Cannot forget last {last} data points (only {len(self._table)} samples have been taken).")
+            self.forget(index=self._table.index.values[-last:], train=train)
 
         elif index is not None:
-            self.table.drop(index=index, inplace=True)
+            self._table.drop(index=index, inplace=True)
             self._construct_all_models()
             if train:
                 self._train_all_models()
@@ -842,8 +838,6 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
-        x = self.dofs(active=True).transform(x)
-
         p = torch.ones(x.shape[:-1])
         for obj in self.objectives(active=True):
             # if the targeting constraint is non-trivial
@@ -914,7 +908,7 @@ class Agent:
         """
         if index is None:
             return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-        return torch.tensor(self.table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
+        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
 
     def train_inputs(self, index=None, **subset_kwargs):
         """A two-dimensional tensor of all DOF values."""
@@ -935,34 +929,52 @@ class Agent:
         """
         Get the raw, untransformed inputs for an objective (or for a subset).
         """
-        if index is None:
-            return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
-        return torch.tensor(self.table.loc[:, self.objectives[index].name].values, dtype=torch.double).unsqueeze(-1)
+        values = {}
 
-    def train_targets(self, index=None, **subset_kwargs):
+        for obj in self.objectives(**subset_kwargs):
+            # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
+            values[obj.name] = torch.tensor(self._table.loc[:, obj.name].values, dtype=torch.double)
+
+        return values
+
+    def train_targets(self, concatenate=False, **subset_kwargs):
         """Returns the values associated with an objective name."""
 
-        if index is None:
-            return torch.cat([self.train_targets(obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
+        targets_dict = {}
+        raw_targets_dict = self.raw_targets(**subset_kwargs)
 
-        obj = self.objectives[index]
-        raw_targets = self.raw_targets(index=index, **subset_kwargs)
+        for obj in self.objectives(**subset_kwargs):
+            y = raw_targets_dict[obj.name]
 
-        # check that targets values are inside acceptable values
-        valid = (raw_targets >= obj._trust_domain[0]) & (raw_targets <= obj._trust_domain[1])
-        raw_targets = torch.where(valid, raw_targets, np.nan)
+            # check that targets values are inside acceptable values
+            valid = (y >= obj._trust_domain[0]) & (y <= obj._trust_domain[1])
+            y = torch.where(valid, y, np.nan)
 
-        return obj._transform(raw_targets)
+            targets_dict[obj.name] = obj._transform(y)
+
+        if self.enforce_all_objectives_valid:
+            all_valid_mask = True
+
+            for name, values in targets_dict.items():
+                all_valid_mask &= ~values.isnan()
+
+            for name in targets_dict.keys():
+                targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
+
+        if concatenate:
+            return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
+
+        return targets_dict
 
     @property
     def best(self):
         """Returns all data for the best point."""
-        return self.table.loc[self.argmax_best_f()]
+        return self._table.loc[self.argmax_best_f()]
 
     @property
     def best_inputs(self):
         """Returns the value of each DOF at the best point."""
-        return self.table.loc[self.argmax_best_f(), self.dofs.names].to_dict()
+        return self._table.loc[self.argmax_best_f(), self.dofs.names].to_dict()
 
     def go_to(self, **positions):
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as
