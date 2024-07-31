@@ -250,7 +250,7 @@ class Agent:
 
         else:
             # check that all the objectives have models
-            if not all(hasattr(obj, "model") for obj in active_objs):
+            if not all(hasattr(obj, "_model") for obj in active_objs):
                 raise RuntimeError(
                     f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
                 )
@@ -369,7 +369,7 @@ class Agent:
             for obj in objectives_to_model:
                 t0 = ttime.monotonic()
 
-                cached_hypers = obj.model.state_dict() if hasattr(obj, "model") else None
+                cached_hypers = obj.model.state_dict() if hasattr(obj, "_model") else None
                 n_before_tell = obj.n_valid
                 self._construct_model(obj)
                 n_after_tell = obj.n_valid
@@ -540,7 +540,7 @@ class Agent:
         self._table = pd.DataFrame()
 
         for obj in self.objectives(active=True):
-            if hasattr(obj, "model"):
+            if hasattr(obj, "_model"):
                 del obj._model
 
         self.n_last_trained = 0
@@ -575,7 +575,7 @@ class Agent:
     def model(self):
         """A model encompassing all the fitnesses and constraints."""
         active_objs = self.objectives(active=True)
-        if all(hasattr(obj, "model") for obj in active_objs):
+        if all(hasattr(obj, "_model") for obj in active_objs):
             return ModelListGP(*[obj.model for obj in active_objs]) if len(active_objs) > 1 else active_objs[0].model
         raise ValueError("Not all active objectives have models.")
 
@@ -691,7 +691,7 @@ class Agent:
 
         trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
 
-        obj.model = construct_single_task_model(
+        obj._model = construct_single_task_model(
             X=train_inputs[trusted],
             y=train_targets[trusted],
             min_noise=obj.min_noise,
