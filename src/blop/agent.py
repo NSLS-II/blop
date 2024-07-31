@@ -541,7 +541,7 @@ class Agent:
 
         for obj in self.objectives(active=True):
             if hasattr(obj, "model"):
-                del obj.model
+                del obj._model
 
         self.n_last_trained = 0
 
@@ -689,7 +689,7 @@ class Agent:
         inputs_are_trusted = ~torch.isnan(train_inputs).any(axis=1)
         targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
 
-        trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask
+        trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
 
         obj.model = construct_single_task_model(
             X=train_inputs[trusted],
@@ -733,7 +733,7 @@ class Agent:
         t0 = ttime.monotonic()
         objectives_to_train = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
         for obj in objectives_to_train:
-            train_model(obj.model)
+            train_model(obj._model)
             if obj.validity_conjugate_model is not None:
                 train_model(obj.validity_conjugate_model)
 
@@ -1072,16 +1072,18 @@ class Agent:
             obj = pruning_objs[i]
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(obj.model.likelihood, obj.model)
             mlls = mll(obj.model(self.train_inputs()), self.train_targets()[obj.name].unsqueeze(-1)).detach()
+            mlls -= mlls.max()
             mlls_wo_nans = [x for x in mlls if not np.isnan(x)]
             # Q: SHOULD WE MAKE AN OPTION TO HAVE THIS BE >, IN CASE THEY ARE NOT NEGATED?
             if len(mlls_wo_nans) > 0:
                 self._table["prune"] = torch.logical_or(
                     torch.tensor(self._table["prune"].values), mlls < thresholds[i] * np.quantile(mlls_wo_nans, q=0.25)
                 )
+        self.refresh()
         # return self._table["prune"]
 
-    @property
+    # @property
     def pruned_mask(self):
         if self.exclude_pruned and "prune" in self._table.columns:
             return torch.tensor(self._table.prune.values.astype(bool))
-        return torch.zeros(len(self._table)).astype(bool)
+        return torch.zeros(len(self._table)).bool()
