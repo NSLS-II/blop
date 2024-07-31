@@ -254,6 +254,10 @@ class Objective:
         if isinstance(self.target, tuple):
             return self.targeting_constraint(X).log().clamp(min=-16)
 
+    @property
+    def model(self):
+        return self._model.eval()
+
 
 class ObjectiveList(Sequence):
     def __init__(self, objectives: list = []):
