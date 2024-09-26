@@ -2,6 +2,11 @@
 Release History
 ===============
 
+v0.7.1 (2024-09-26)
+-------------------
+- Add simulated hardware.
+- Added a method to prune bad data.
+
 v0.7.0 (2024-05-13)
 -------------------
 - Added functionality for Pareto optimization.
