@@ -523,7 +523,7 @@ class Agent:
             logging.warning(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(points)
             for obj in self.objectives(active=True):
-                products.loc[:, obj.name] = np.nan
+                products.loc[:, obj.name] = torch.tensor(np.nan)
 
         if len(products) != n:
             raise ValueError("The table returned by the digestion function must be the same length as the sampled inputs!")
@@ -923,7 +923,7 @@ class Agent:
 
         # check that inputs values are inside acceptable values
         valid = (raw_inputs >= dof._trust_domain[0]) & (raw_inputs <= dof._trust_domain[1])
-        raw_inputs = torch.where(valid, raw_inputs, np.nan)
+        raw_inputs = torch.where(valid, raw_inputs, torch.tensor(np.nan))
 
         return dof._transform(raw_inputs)
 
@@ -950,7 +950,7 @@ class Agent:
 
             # check that targets values are inside acceptable values
             valid = (y >= obj._trust_domain[0]) & (y <= obj._trust_domain[1])
-            y = torch.where(valid, y, np.nan)
+            y = torch.where(valid, y, torch.tensor(np.nan))
 
             targets_dict[obj.name] = obj._transform(y)
 
@@ -961,7 +961,7 @@ class Agent:
                 all_valid_mask &= ~values.isnan()
 
             for name in targets_dict.keys():
-                targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
+                targets_dict[name] = targets_dict[name].where(all_valid_mask,  torch.tensor(np.nan))
 
         if concatenate:
             return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
