@@ -961,7 +961,7 @@ class Agent:
                 all_valid_mask &= ~values.isnan()
 
             for name in targets_dict.keys():
-                targets_dict[name] = targets_dict[name].where(all_valid_mask,  torch.tensor(np.nan))
+                targets_dict[name] = targets_dict[name].where(all_valid_mask, torch.tensor(np.nan))
 
         if concatenate:
             return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
