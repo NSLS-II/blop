@@ -17,8 +17,6 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
-
-# from botorch.utils.transforms import normalize
 from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
@@ -184,7 +182,7 @@ class Agent:
     def redigest(self):
         self._table = self.digestion(self._table, **self.digestion_kwargs)
 
-    def sample(self, n: int = DEFAULT_MAX_SAMPLES, method: str = "quasi-random") -> torch.Tensor:
+    def sample(self, n: int = DEFAULT_MAX_SAMPLES, normalize: bool = False, method: str = "quasi-random") -> torch.Tensor:
         """
         Returns a (..., 1, n_active_dofs) tensor of points sampled within the parameter space.
 
@@ -214,7 +212,7 @@ class Agent:
         else:
             raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
 
-        return self.dofs(active=True).untransform(X).double()
+        return X.double() if normalize else self.dofs(active=True).untransform(X).double()
 
     def ask(self, acqf="qei", n=1, route=True, sequential=True, upsample=1, **acqf_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -382,7 +380,7 @@ class Agent:
                         t0 = ttime.monotonic()
                         train_model(obj.model)
                         if self.verbose:
-                            print(f"trained model '{obj.name}' in {1e3*(ttime.monotonic() - t0):.00f} ms")
+                            print(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
 
                     else:
                         train_model(obj.model, hypers=cached_hypers)
@@ -585,31 +583,54 @@ class Agent:
 
     @property
     def fitness_model(self):
-        active_fitness_models = self.objectives(active=True, kind="fitness")
-        if len(active_fitness_models) == 0:
-            return GenericDeterministicModel(f=lambda x: torch.ones(x.shape[:-1]).unsqueeze(-1))
-        if len(active_fitness_models) == 1:
-            return active_fitness_models[0].model
-        return ModelListGP(*[obj.model for obj in active_fitness_models])
+        active_fitness_objectives = self.objectives(active=True, fitness=True)
+        if len(active_fitness_objectives) == 0:
+            # A dummy model that outputs noise, for when there are only constraints.
+            dummy_X = self.sample(n=256, normalize=True).squeeze(-2)
+            dummy_Y = torch.rand(size=(*dummy_X.shape[:-1], 1), dtype=torch.double)
+            return construct_single_task_model(X=dummy_X, y=dummy_Y, min_noise=1e2, max_noise=2e2)
+        if len(active_fitness_objectives) == 1:
+            return active_fitness_objectives[0].model
+        return ModelListGP(*[obj.model for obj in active_fitness_objectives])
+
+    # @property
+    # def pseudofitness_model(self):
+    #     """
+    #     In the case that we have all constraints, there is no fitness model. In that case,
+    #     we replace the fitness model with a
+    #     """
+    #     active_fitness_objectives = self.objectives(active=True, fitness=True)
+    #     if len(active_fitness_objectives) == 0:
+    #         # A dummy model that outputs all ones, for when there are only constraints.
+    #         dummy_X = self.sample(n=256, normalize=True).squeeze(-2)
+    #         dummy_Y = torch.ones(size=(*dummy_X.shape[:-1], 1), dtype=torch.double)
+    #         return construct_single_task_model(X=dummy_X, y=dummy_Y)
+    #     if len(active_fitness_objectives) == 1:
+    #         return active_fitness_objectives[0].model
+    #     return ModelListGP(*[obj.model for obj in active_fitness_objectives])
 
     @property
     def evaluated_constraints(self):
-        constraint_objectives = self.objectives(kind="constraint")
+        constraint_objectives = self.objectives(constraint=True)
         raw_targets_dict = self.raw_targets()
         if len(constraint_objectives):
-            return torch.cat([obj.constrain(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1)
+            return torch.cat(
+                [obj.constrain(raw_targets_dict[obj.name]).unsqueeze(-1) for obj in constraint_objectives], dim=-1
+            )
         else:
             return torch.ones(size=(len(self._table), 0), dtype=torch.bool)
 
     def fitness_scalarization(self, weights="default"):
-        fitness_objectives = self.objectives(active=True, kind="fitness")
+        active_fitness_objectives = self.objectives(active=True, fitness=True)
+        if len(active_fitness_objectives) == 0:
+            return ScalarizedPosteriorTransform(weights=torch.tensor([1.0], dtype=torch.double))
         if weights == "default":
-            weights = torch.tensor([obj.weight for obj in fitness_objectives], dtype=torch.double)
+            weights = torch.tensor([obj.weight for obj in active_fitness_objectives], dtype=torch.double)
         elif weights == "equal":
-            weights = torch.ones(len(fitness_objectives), dtype=torch.double)
+            weights = torch.ones(len(active_fitness_objectives), dtype=torch.double)
         elif weights == "random":
-            weights = torch.rand(len(fitness_objectives), dtype=torch.double)
-            weights *= len(fitness_objectives) / weights.sum()
+            weights = torch.rand(len(active_fitness_objectives), dtype=torch.double)
+            weights *= len(active_fitness_objectives) / weights.sum()
         elif not isinstance(weights, torch.Tensor):
             raise ValueError(f"'weights' must be a Tensor or one of ['default', 'equal', 'random'], and not {weights}.")
         return ScalarizedPosteriorTransform(weights=weights)
@@ -620,10 +641,10 @@ class Agent:
 
         If constrained=True, the points that satisfy the most constraints are automatically better than the others.
         """
-        fitness_objs = self.objectives(kind="fitness")
+        fitness_objs = self.objectives(fitness=True)
         if len(fitness_objs) >= 1:
             f = self.fitness_scalarization(weights=weights).evaluate(
-                self.train_targets(active=True, kind="fitness", concatenate=True)
+                self.train_targets(active=True, fitness=True, concatenate=True)
             )
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
@@ -646,7 +667,7 @@ class Agent:
         Returns a mask of all points that satisfy all constraints and are Pareto efficient.
         A point is Pareto efficient if it is there is no other point that is better at every objective.
         """
-        Y = self.train_targets(active=True, kind="fitness", concatenate=True)
+        Y = self.train_targets(active=True, fitness=True, concatenate=True)
 
         # nuke the bad points
         Y[~self.evaluated_constraints.all(axis=-1)] = -np.inf
@@ -669,7 +690,7 @@ class Agent:
 
     @property
     def random_ref_point(self):
-        return self.train_targets(active=True, kind="fitness", concatenate=True)[self.argmax_best_f(weights="random")]
+        return self.train_targets(active=True, fitness=True, concatenate=True)[self.argmax_best_f(weights="random")]
 
     @property
     def all_objectives_valid(self):
@@ -747,9 +768,7 @@ class Agent:
         found in `agent.all_acqfs`.
         """
 
-        acquisition._construct_acqf(self, identifier=identifier, return_metadata=return_metadata)
-
-        return
+        return acquisition._construct_acqf(self, identifier=identifier, return_metadata=return_metadata)
 
     def _latent_dim_tuples(self, obj_index=None):
         """
@@ -779,7 +798,7 @@ class Agent:
         Read-only DOFs are set to exactly their last known value.
         Discrete DOFs are relaxed to some continuous domain.
         """
-        return self.dofs(active=True).transform(self.dofs(active=True).search_domain.T)
+        return self.dofs(active=True).transform(self.dofs(active=True).search_domain.T).clone()
 
     @property
     def input_normalization(self):
@@ -842,9 +861,9 @@ class Agent:
     def constraint(self, x):
         p = torch.ones(x.shape[:-1])
         for obj in self.objectives(active=True):
-            # if the targeting constraint is non-trivial
-            # if obj.kind == "constraint":
-            #     p *= obj.targeting_constraint(x)
+            # if the constraint is non-trivial
+            if obj.constraint is not None:
+                p *= obj.constraint_probability(x)
             # if the validity constaint is non-trivial
             if obj.validity_conjugate_model is not None:
                 p *= obj.validity_constraint(x)
@@ -1009,9 +1028,9 @@ class Agent:
         """
 
         if len(self.dofs(active=True, read_only=False)) == 1:
-            if len(self.objectives(active=True, kind="fitness")) > 0:
+            if len(self.objectives(active=True, fitness=True)) > 0:
                 plotting._plot_fitness_objs_one_dof(self, **kwargs)
-            if len(self.objectives(active=True, kind="constraint")) > 0:
+            if len(self.objectives(active=True, constraint=True)) > 0:
                 plotting._plot_constraint_objs_one_dof(self, **kwargs)
         else:
             plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)

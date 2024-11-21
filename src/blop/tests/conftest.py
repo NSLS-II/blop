@@ -76,7 +76,7 @@ def get_agent(param):
     elif param == "1d_1c":
         return Agent(
             dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-            objectives=Objective(description="Himmelblau’s function", name="himmelblau", target=(95, 105)),
+            objectives=Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
             digestion=sketchy_himmelblau_digestion,
         )
 
@@ -90,6 +90,19 @@ def get_agent(param):
             digestion=sketchy_himmelblau_digestion,
         )
 
+    elif param == "2d_2c":
+        return Agent(
+            dofs=[
+                DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
+                DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
+            ],
+            objectives=[
+                Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
+                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
+            ],
+            digestion=sketchy_himmelblau_digestion,
+        )
+
     elif param == "2d_1f_1c":
         return Agent(
             dofs=[
@@ -98,7 +111,7 @@ def get_agent(param):
             ],
             objectives=[
                 Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
-                Objective(description="Himmelblau’s function", name="himmelblau", target=(95, 105)),
+                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
             ],
             digestion=sketchy_himmelblau_digestion,
         )
@@ -112,8 +125,8 @@ def get_agent(param):
             objectives=[
                 Objective(description="f1", name="f1", target="min"),
                 Objective(description="f2", name="f2", target="min"),
-                Objective(description="c1", name="c1", target=(-np.inf, 225)),
-                Objective(description="c2", name="c2", target=(-np.inf, 0)),
+                Objective(description="c1", name="c1", constraint=(-np.inf, 225)),
+                Objective(description="c2", name="c2", constraint=(-np.inf, 0)),
             ],
             digestion=chankong_and_haimes_digestion,
         )
@@ -130,7 +143,7 @@ def get_agent(param):
             objectives=[
                 Objective(name="himmelblau", target="min"),
                 Objective(name="himmelblau_transpose", target="min"),
-                Objective(description="Himmelblau’s function", name="himmelblau", target=(95, 105)),
+                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
             ],
             digestion=sketchy_himmelblau_digestion,
         )

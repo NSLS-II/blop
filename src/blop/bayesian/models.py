@@ -20,6 +20,8 @@ def construct_single_task_model(X, y, skew_dims=None, min_noise=1e-6, max_noise=
     Construct an untrained model for an objective.
     """
 
+    skew_dims = skew_dims if skew_dims is not None else [(i,) for i in range(X.shape[-1])]
+
     likelihood = gpytorch.likelihoods.GaussianLikelihood(
         noise_constraint=gpytorch.constraints.Interval(
             torch.tensor(min_noise),

@@ -1,6 +1,4 @@
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
-from typing import List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -12,21 +10,21 @@ DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
 
 OBJ_FIELD_TYPES = {
-    "name": "str",
-    "description": "object",
-    "type": "str",
-    "kind": "str",
-    "target": "object",
-    "transform": "str",
-    "domain": "str",
-    "trust_domain": "object",
-    "weight": "float",
-    "units": "object",
-    "noise_bounds": "object",
-    "noise": "float",
-    "n_valid": "int",
-    "latent_groups": "object",
-    "active": "bool",
+    "name": str,
+    "description": object,
+    "active": bool,
+    "type": str,
+    "units": object,
+    "target": object,
+    "constraint": object,
+    "transform": str,
+    "domain": str,
+    "trust_domain": object,
+    "weight": float,
+    "noise_bounds": object,
+    "noise": float,
+    "n_valid": int,
+    "latent_groups": object,
 }
 
 SUPPORTED_OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
@@ -34,16 +32,13 @@ TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0
 
 
 class DuplicateNameError(ValueError):
-    ...
+    pass
 
 
 domains = {"log"}
 
 
 def _validate_obj_transform(transform):
-    if transform is None:
-        return (-np.inf, np.inf)
-
     if transform not in TRANSFORM_DOMAINS:
         raise ValueError(f"'transform' must be a callable with one argument, or one of {TRANSFORM_DOMAINS}")
 
@@ -61,7 +56,6 @@ def _validate_continuous_domains(trust_domain, domain):
             raise ValueError(f"The trust domain {trust_domain} is outside the transform domain {domain}.")
 
 
-@dataclass
 class Objective:
     """An objective to be used by an agent.
 
@@ -93,33 +87,54 @@ class Objective:
         DOFs will be modeled independently.
     """
 
-    name: str
-    description: str = ""
-    type: str = "continuous"
-    target: Union[Tuple[float, float], float, str] = "max"
-    transform: str = None
-    weight: float = 1.0
-    active: bool = True
-    trust_domain: Tuple[float, float] or None = None
-    min_noise: float = DEFAULT_MIN_NOISE_LEVEL
-    max_noise: float = DEFAULT_MAX_NOISE_LEVEL
-    units: str = None
-    latent_groups: List[Tuple[str, ...]] = field(default_factory=list)
+    def __init__(
+        self,
+        name: str,
+        description: str = "",
+        type: str = "continuous",
+        target: float | str | None = None,
+        constraint: tuple[float, float] | set | None = None,
+        transform: str = None,
+        weight: float = 1.0,
+        active: bool = True,
+        trust_domain: tuple[float, float] | None = None,
+        min_noise: float = DEFAULT_MIN_NOISE_LEVEL,
+        max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
+        units: str = None,
+        latent_groups: list[tuple[str, ...]] = {},
+    ):
+        self.name = name
+        self.units = units
+        self.description = description
+        self.type = type
+        self.active = active
 
-    def __post_init__(self):
-        if self.transform is not None:
-            _validate_obj_transform(self.transform)
+        if (target is None) and (constraint is None):
+            raise ValueError("You must supply either a 'target' or a 'constraint'.")
+
+        self.target = target
+        self.constraint = constraint
+
+        if transform is not None:
+            _validate_obj_transform(transform)
+
+        self.transform = transform
+
+        if self.type == "continuous":
+            _validate_continuous_domains(trust_domain, self.domain)
+        else:
+            raise NotImplementedError()
+
+        self.trust_domain = trust_domain
+        self.weight = weight if target is not None else None
+        self.min_noise = min_noise
+        self.max_noise = max_noise
+        self.latent_groups = latent_groups
 
         if isinstance(self.target, str):
             # eventually we will be able to target other strings, as outputs of a discrete objective
             if self.target not in ["min", "max"]:
                 raise ValueError("'target' must be either 'min', 'max', a number, or a tuple of numbers.")
-
-        self.use_as_constraint = True if isinstance(self.target, tuple) else False
-
-    @property
-    def kind(self):
-        return "fitness" if self.target in ["min", "max"] else "constraint"
 
     @property
     def domain(self):
@@ -132,12 +147,12 @@ class Objective:
         return TRANSFORM_DOMAINS[self.transform]
 
     def constrain(self, y):
-        """
-        The total domain of the objective.
-        """
-        if self.kind != "constraint":
+        if self.constraint is None:
             raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
-        return (y > self.target[0]) & (y < self.target[1])
+        elif isinstance(self.constraint, tuple):
+            return (y > self.constraint[0]) & (y < self.constraint[1])
+        else:
+            return np.array([value in self.constraint for value in np.atleast_1d(y)])
 
     @property
     def _trust_domain(self):
@@ -189,7 +204,7 @@ class Objective:
 
     @property
     def summary(self) -> pd.Series:
-        series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype="object")
+        series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype=object)
         for attr in series.index:
             value = getattr(self, attr)
 
@@ -217,42 +232,34 @@ class Objective:
     def n_valid(self) -> int:
         return int((~self.model.train_targets.isnan()).sum()) if hasattr(self, "model") else 0
 
-    def targeting_constraint(self, x: torch.Tensor) -> torch.Tensor:
-        if not isinstance(self.target, tuple):
-            return None
+    def constraint_probability(self, x: torch.Tensor) -> torch.Tensor:
+        if self.constraint is None:
+            raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
 
-        a, b = self.target
+        a, b = self.constraint
         p = self.model.posterior(x)
         m = p.mean
         s = p.variance.sqrt()
 
         sish = s + 0.1 * m.std()  # for numerical stability
 
-        return (
+        p = (
             0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
-        )
+        )  # noqa
 
-    @property
-    def is_fitness(self):
-        return self.target in ["min", "max"]
+        return p.detach()
 
-    def value_prediction(self, X):
-        p = self.model.posterior(X)
-
-        if self.is_fitness:
-            return self.fitness_inverse(p.mean)
-
-        if isinstance(self.target, tuple):
-            return p.mean
-
-    def fitness_prediction(self, X):
-        p = self.model.posterior(X)
+    def pseudofitness(self, x: torch.tensor) -> torch.tensor:
+        """
+        When the optimization problem consists only of constraints, the
+        """
+        p = self.model.posterior(x)
 
         if self.is_fitness:
             return self.fitness_inverse(p.mean)
 
         if isinstance(self.target, tuple):
-            return self.targeting_constraint(X).log().clamp(min=-16)
+            return self.constraint_probability(x).log().clamp(min=-16)
 
     @property
     def model(self):
@@ -273,7 +280,7 @@ class ObjectiveList(Sequence):
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
         if all([hasattr(obj, attr) for obj in self.objectives]):
-            if OBJ_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
+            if OBJ_FIELD_TYPES.get(attr) in [float, "int", "bool"]:
                 return np.array([getattr(obj, attr) for obj in self.objectives])
             return [getattr(obj, attr) for obj in self.objectives]
         if attr in self.names:
@@ -300,38 +307,41 @@ class ObjectiveList(Sequence):
 
     @property
     def summary(self) -> pd.DataFrame:
-        table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=np.arange(len(self)))
+        # table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=np.arange(len(self)))
 
-        for index, obj in enumerate(self.objectives):
-            for attr, value in obj.summary.items():
-                table.at[index, attr] = value
+        # for index, obj in enumerate(self.objectives):
+        #     for attr, value in obj.summary.items():
+        #         table.at[index, attr] = value
 
-        for attr, dtype in OBJ_FIELD_TYPES.items():
-            table[attr] = table[attr].astype(dtype)
+        # for attr, dtype in OBJ_FIELD_TYPES.items():
+        #     table[attr] = table[attr].astype(dtype)
 
-        return table
+        return pd.concat([objective.summary for objective in self.objectives], axis=1)
 
     def __repr__(self):
-        return self.summary.T.__repr__()
+        return self.summary.__repr__()
 
     def _repr_html_(self):
-        return self.summary.T._repr_html_()
+        return self.summary._repr_html_()
 
     def add(self, objective):
         self.objectives.append(objective)
 
     @staticmethod
-    def _test_obj(obj, active=None, kind=None):
+    def _test_obj(obj, active=None, fitness=None, constraint=None):
         if active is not None:
             if obj.active != active:
                 return False
-        if kind is not None:
-            if obj.kind != kind:
+        if fitness is not None:
+            if obj.target is None:
+                return False
+        if constraint is not None:
+            if obj.constraint is None:
                 return False
         return True
 
-    def subset(self, active=None, kind=None):
-        return ObjectiveList([obj for obj in self.objectives if self._test_obj(obj, active=active, kind=kind)])
+    def subset(self, **kwargs):
+        return ObjectiveList([obj for obj in self.objectives if self._test_obj(obj, **kwargs)])
 
     def transform(self, Y):
         """
