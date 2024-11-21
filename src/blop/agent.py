@@ -101,6 +101,8 @@ class Agent:
             A databroker instance.
         verbose : bool
             To be verbose or not.
+        enforce_all_objectives_valid: bool
+            Whether to remove all beam diagnostics if one is bad. If `True`, disagnostics will be removed.
         tolerate_acquisition_errors : bool
             Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
         sample_center_on_init : bool
