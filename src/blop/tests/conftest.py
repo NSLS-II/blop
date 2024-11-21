@@ -49,16 +49,17 @@ def RE(db):
 
 single_task_agents = [
     "1d_1f",
-    # "1d_1c",
     "2d_1f",
     "2d_1f_1c",
     "2d_2f_2c",
     "3d_2r_2f_1c",
 ]
 
+nonpareto_multitask_agents = ["2d_2c"]
+
 pareto_agents = ["2d_2f_2c", "3d_2r_2f_1c"]
 
-all_agents = [*single_task_agents, *pareto_agents]
+all_agents = [*single_task_agents, *nonpareto_multitask_agents, *pareto_agents]
 
 
 def get_agent(param):
@@ -97,7 +98,7 @@ def get_agent(param):
                 DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
             ],
             objectives=[
-                Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
+                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
                 Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
             ],
             digestion=sketchy_himmelblau_digestion,
