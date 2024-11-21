@@ -1,4 +1,5 @@
 from collections.abc import Iterable, Sequence
+from typing import Union
 
 import numpy as np
 import pandas as pd
@@ -92,12 +93,12 @@ class Objective:
         name: str,
         description: str = "",
         type: str = "continuous",
-        target: float | str | None = None,
-        constraint: tuple[float, float] | set | None = None,
+        target: Union[float, str, None] = None,
+        constraint: Union[tuple[float, float], set, None] = None,
         transform: str = None,
         weight: float = 1.0,
         active: bool = True,
-        trust_domain: tuple[float, float] | None = None,
+        trust_domain: Union[tuple[float, float], None] = None,
         min_noise: float = DEFAULT_MIN_NOISE_LEVEL,
         max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
         units: str = None,
