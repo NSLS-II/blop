@@ -99,10 +99,7 @@ def ackley(*x):
     """
     X = np.c_[x]
     return (
-        -20 * np.exp(-0.2 * np.sqrt(0.5 * (X**2).sum(axis=1)))
-        - np.exp(0.5 * np.cos(2 * np.pi * X).sum(axis=1))
-        + np.e
-        + 20
+        -20 * np.exp(-0.2 * np.sqrt(0.5 * (X**2).sum(axis=1))) - np.exp(0.5 * np.cos(2 * np.pi * X).sum(axis=1)) + np.e + 20
     )
 
 
