@@ -192,6 +192,8 @@ class Agent:
             How many points to sample.
         method : str
             How to sample the points. Must be one of 'quasi-random', 'random', or 'grid'.
+        normalize: bool
+            If True, sample the unit hypercube. If False, sample the parameter space of the agent.
         """
 
         active_dofs = self.dofs(active=True)

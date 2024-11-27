@@ -334,10 +334,10 @@ class ObjectiveList(Sequence):
             if obj.active != active:
                 return False
         if fitness is not None:
-            if obj.target is None:
+            if fitness != (obj.target is not None):
                 return False
         if constraint is not None:
-            if obj.constraint is None:
+            if constraint != (obj.constraint is not None):
                 return False
         return True
 
