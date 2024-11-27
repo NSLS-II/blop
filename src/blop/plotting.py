@@ -14,7 +14,7 @@ MAX_TEST_INPUTS = 2**11
 
 
 def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
-    fitness_objs = agent.objectives(kind="fitness")
+    fitness_objs = agent.objectives(fitness=True)
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(fitness_objs),
@@ -97,7 +97,7 @@ def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
 
         val_ax.scatter(x_values, obj_values, s=size, color=color)
 
-        con_ax.plot(test_x, obj.targeting_constraint(test_model_inputs).detach())
+        con_ax.plot(test_x, obj.constraint_probability(test_model_inputs).detach())
 
         for z in [0, 1, 2]:
             val_ax.fill_between(
@@ -180,8 +180,8 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
         # test_values = obj.fitness_inverse(test_mean) if obj.kind == "fitness" else test_mean
 
         test_constraint = None
-        if not obj.kind == "fitness":
-            test_constraint = obj.targeting_constraint(model_inputs).detach().squeeze().numpy()
+        if obj.constraint is not None:
+            test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
 
         if gridded:
             # _ = agent.obj_axes[obj_index, 1].pcolormesh(
@@ -192,7 +192,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
             #     cmap=cmap,
             #     norm=val_norm,
             # )
-            if obj.kind == "fitness":
+            if obj.constraint is not None:
                 fitness_ax = agent.obj_axes[obj_index, 1].pcolormesh(
                     test_x,
                     test_y,
@@ -229,7 +229,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
             #     norm=val_norm,
             #     cmap=cmap,
             # )
-            if obj.kind == "fitness":
+            if obj.constraint is not None:
                 fitness_ax = agent.obj_axes[obj_index, 1].scatter(
                     test_x,
                     test_y,
@@ -260,7 +260,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
         val_cbar = agent.obj_fig.colorbar(val_ax, ax=agent.obj_axes[obj_index, 0], location="bottom", aspect=32, shrink=0.8)
         val_cbar.set_label(f"{obj.units or ''}")
 
-        if obj.kind == "fitness":
+        if obj.constraint is not None:
             _ = agent.obj_fig.colorbar(fitness_ax, ax=agent.obj_axes[obj_index, 1], location="bottom", aspect=32, shrink=0.8)
             _ = agent.obj_fig.colorbar(fit_err_ax, ax=agent.obj_axes[obj_index, 2], location="bottom", aspect=32, shrink=0.8)
 
@@ -539,7 +539,7 @@ def inspect_beam(agent, index, border=None):
 
 
 def _plot_pareto_front(agent, obj_indices=(0, 1)):
-    f_objs = agent.objectives(kind="fitness")
+    f_objs = agent.objectives(fitness=True)
     (i, j) = obj_indices
 
     if len(f_objs) < 2:
@@ -547,7 +547,7 @@ def _plot_pareto_front(agent, obj_indices=(0, 1)):
 
     fig, ax = plt.subplots(1, 1, figsize=(6, 6))
 
-    y = agent.train_targets(kind="fitness", concatenate=True)
+    y = agent.train_targets(fitness=True, concatenate=True)
 
     pareto_mask = agent.pareto_mask
     constraint = agent.evaluated_constraints.all(axis=-1)

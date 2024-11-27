@@ -30,7 +30,7 @@ TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0
 
 
 class ReadOnlyError(Exception):
-    ...
+    pass
 
 
 def _validate_dofs(dofs):
