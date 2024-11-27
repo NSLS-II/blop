@@ -3,6 +3,7 @@ import numpy as np
 from blop import DOF, Agent, Objective
 from blop.digestion import beam_stats_digestion
 from blop.sim import Beamline
+import torch
 
 
 def test_kb_simulation(RE, db):
@@ -37,3 +38,35 @@ def test_kb_simulation(RE, db):
 
     RE(agent.learn("qr", n=16))
     RE(agent.learn("qei", n=4, iterations=4))
+
+
+
+def test_nan_simulation(RE, db):
+    beamline = Beamline(name="bl")
+    beamline.det.noise.put(False)
+
+    pos_x10 = 10000
+    pos_y10 = 10000
+    pos_x20 = 10000
+    pos_y20 = 10000
+    search_range = 0.6
+
+    dofs = [
+        DOF(description="transfocator upstream x", device=beamline.kbv_dsv, search_domain=(pos_x10-search_range/2, pos_x10+search_range/2)),
+        DOF(description="transfocator downstream x", device=beamline.kbv_usv, search_domain=(pos_x20-search_range/2, pos_x20+search_range/2)),
+        DOF(description="transfocator upstream y", device=beamline.kbh_dsh, search_domain=(pos_y10-search_range/2, pos_y10+search_range/2)),
+        DOF(description="transfocator downstream y", device=beamline.kbh_ush, search_domain=(pos_y20-search_range/2, pos_y20+search_range/2)),
+    ]
+
+    objectives = [
+        Objective(name="bl_det_sum", target="max", trust_domain=(100000, np.inf)),
+    ]
+
+    agent = Agent(
+        dofs=dofs,
+        objectives=objectives,
+        detectors=[beamline.det],
+        db=db,
+    )
+
+    RE(agent.learn("qr", n=16))
