@@ -33,7 +33,7 @@ def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
     test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(fitness_objs):
-        obj_values = agent.train_targets()(obj.name).numpy()
+        obj_values = agent.train_targets()[obj.name].numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
