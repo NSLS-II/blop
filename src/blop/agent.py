@@ -35,6 +35,8 @@ from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 
+logger = logging.getLogger("maria")
+
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
 mpl.rc("image", cmap="coolwarm")
@@ -382,7 +384,7 @@ class Agent:
                         t0 = ttime.monotonic()
                         train_model(obj.model)
                         if self.verbose:
-                            print(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
+                            logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
 
                     else:
                         train_model(obj.model, hypers=cached_hypers)
@@ -432,7 +434,7 @@ class Agent:
 
         for i in range(iterations):
             if self.verbose:
-                print(f"running iteration {i + 1} / {iterations}")
+                logger.info(f"running iteration {i + 1} / {iterations}")
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
                 new_table = yield from self.acquire(res["points"])
@@ -761,7 +763,7 @@ class Agent:
                 train_model(obj.validity_conjugate_model)
 
         if self.verbose:
-            print(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
+            logger.info(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
         self.n_last_trained = len(self._table)
 

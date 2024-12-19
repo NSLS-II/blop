@@ -6,13 +6,22 @@ from botorch.models.gp_regression import SingleTaskGP
 from . import kernels
 
 
-def train_model(model, hypers=None, **kwargs):
+def train_model(model, hypers=None, max_fails=4, **kwargs):
     """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
-    if hypers is not None:
-        model.load_state_dict(hypers)
-    else:
-        botorch.fit.fit_gpytorch_mll(gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model), **kwargs)
-    model.trained = True
+    fails = 0
+    while True:
+        try:
+            if hypers is not None:
+                model.load_state_dict(hypers)
+            else:
+                botorch.fit.fit_gpytorch_mll(gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model), **kwargs)
+            model.trained = True
+            return
+        except Exception as e:
+            if fails < max_fails:
+                fails += 1
+            else:
+                raise e
 
 
 def construct_single_task_model(X, y, skew_dims=None, min_noise=1e-6, max_noise=1e0):
