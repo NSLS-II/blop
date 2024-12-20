@@ -863,15 +863,11 @@ class Agent:
         self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     def constraint(self, x):
-        p = torch.ones(x.shape[:-1])
+        log_p = torch.zeros(x.shape[:-1])
         for obj in self.objectives(active=True):
-            # if the constraint is non-trivial
-            if obj.constraint is not None:
-                p *= obj.constraint_probability(x)
-            # if the validity constaint is non-trivial
-            if obj.validity_conjugate_model is not None:
-                p *= obj.validity_constraint(x)
-        return p  # + 1e-6 * normalize(x, self.sample_domain).square().sum(axis=-1)
+            log_p += obj.log_total_constraint(x)
+
+        return log_p.exp()  # + 1e-6 * normalize(x, self.sample_domain).square().sum(axis=-1)
 
     @property
     def hypers(self) -> dict:
