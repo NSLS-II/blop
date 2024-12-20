@@ -155,6 +155,19 @@ class Objective:
         else:
             return np.array([value in self.constraint for value in np.atleast_1d(y)])
 
+    def log_total_constraint(self, x):
+
+        log_p = 0
+        # if you have a constraint
+        if self.constraint is not None:
+            log_p += self.constraint_probability(x).log()
+
+        # if the validity constaint is non-trivial
+        if self.validity_conjugate_model is not None:
+            log_p += self.validity_constraint(x).log()
+
+        return log_p
+
     @property
     def _trust_domain(self):
         if self.trust_domain is None:
