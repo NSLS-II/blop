@@ -186,7 +186,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
 
         fitness_ax = None
         fit_err_ax = None
-        
+
         if gridded:
             # _ = agent.obj_axes[obj_index, 1].pcolormesh(
             #     test_x,
