@@ -181,7 +181,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
 
         test_constraint = None
         if obj.constraint is None:
-            #test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
+            # test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
             test_constraint = agent.constraint(model_inputs).squeeze().numpy()
 
         if gridded:
@@ -218,7 +218,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
                     test_constraint,
                     shading=shading,
                     cmap=cmap,
-                    #norm=mpl.colors.LogNorm(),
+                    # norm=mpl.colors.LogNorm(),
                 )
 
         else:
