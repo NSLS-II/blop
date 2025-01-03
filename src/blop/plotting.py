@@ -180,8 +180,14 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
         # test_values = obj.fitness_inverse(test_mean) if obj.kind == "fitness" else test_mean
 
         test_constraint = None
-        if obj.constraint is not None:
+        if obj.constraint is None:
+            # test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
+            test_constraint = agent.constraint(model_inputs).squeeze().numpy()
+        else:
             test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
+
+        fitness_ax = None
+        fit_err_ax = None
 
         if gridded:
             # _ = agent.obj_axes[obj_index, 1].pcolormesh(
@@ -192,22 +198,22 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
             #     cmap=cmap,
             #     norm=val_norm,
             # )
-            if obj.constraint is not None:
+            if obj.constraint is None:
                 fitness_ax = agent.obj_axes[obj_index, 1].pcolormesh(
                     test_x,
                     test_y,
                     test_mean,
                     shading=shading,
-                    cmap=cmap,
                     norm=obj_norm,
+                    cmap=cmap,
                 )
                 fit_err_ax = agent.obj_axes[obj_index, 2].pcolormesh(
                     test_x,
                     test_y,
                     test_sigma,
                     shading=shading,
-                    cmap=cmap,
                     norm=mpl.colors.LogNorm(),
+                    cmap=cmap,
                 )
 
             if test_constraint is not None:
@@ -260,7 +266,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
         val_cbar = agent.obj_fig.colorbar(val_ax, ax=agent.obj_axes[obj_index, 0], location="bottom", aspect=32, shrink=0.8)
         val_cbar.set_label(f"{obj.units or ''}")
 
-        if obj.constraint is not None:
+        if obj.constraint is None:
             _ = agent.obj_fig.colorbar(fitness_ax, ax=agent.obj_axes[obj_index, 1], location="bottom", aspect=32, shrink=0.8)
             _ = agent.obj_fig.colorbar(fit_err_ax, ax=agent.obj_axes[obj_index, 2], location="bottom", aspect=32, shrink=0.8)
 
