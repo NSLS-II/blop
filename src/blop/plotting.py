@@ -183,6 +183,8 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
         if obj.constraint is None:
             # test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
             test_constraint = agent.constraint(model_inputs).squeeze().numpy()
+        else:
+            test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
 
         fitness_ax = None
         fit_err_ax = None
