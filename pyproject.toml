@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs", "setuptools_scm"]
 build-backend = "hatchling.build"
 
 [project]
-name = "bloptools"
+name = "blop"
 description = "Beamline optimization with machine learning"
 readme = { file = "README.rst", content-type = "text/x-rst" }
 authors = [
@@ -87,18 +87,18 @@ Documentation = "https://nsls-ii.github.io/blop"
 
 
 [tool.hatch.build.targets.wheel]
-only-include = ["src/blop"]
+only-include = ["blop"]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 
 
 [tool.setuptools_scm]
-version_file = "src/blop/_version.py"
+version_file = "blop/_version.py"
 
 [tool.hatch]
 version.source = "vcs"
-build.hooks.vcs.version-file = "src/blop/_version.py"
+build.hooks.vcs.version-file = "blop/_version.py"
 
 [tool.hatch.version.raw-options]
 local_scheme = "no-local-version"
