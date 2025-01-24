@@ -22,7 +22,7 @@ dependencies = [
     "gpytorch",
     "h5py",
     "matplotlib",
-    "numpy<2",
+    "numpy",
     "ophyd",
     "ortools",
     "scipy",
