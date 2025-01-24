@@ -3,6 +3,7 @@ import os
 import pathlib
 import time as ttime
 import warnings
+from abc import abstractmethod
 from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Callable, Optional, Sequence, Tuple
@@ -17,6 +18,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp
 import torch
+from bluesky_adaptive.agents.base import Agent as BlueskyAdaptiveBaseAgent
 from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
@@ -61,14 +63,12 @@ def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
                     )
 
 
-class Agent:
+class BaseAgent:
     def __init__(
         self,
+        *,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker = None,
-        detectors: Sequence[Signal] = None,
-        acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
         digestion_kwargs: dict = {},
         verbose: bool = False,
@@ -77,64 +77,37 @@ class Agent:
         model_inactive_objectives: bool = False,
         tolerate_acquisition_errors: bool = False,
         sample_center_on_init: bool = False,
-        trigger_delay: float = 0,
-        train_every: int = 1,
     ):
-        """
-        A Bayesian optimization agent.
+        """_summary_
 
         Parameters
         ----------
-        dofs : iterable of DOF objects
+        dofs : Sequence[DOF]
             The degrees of freedom that the agent can control, which determine the output of the model.
-        objectives : iterable of Objective objects
+        objectives : Sequence[Objective]
             The objectives which the agent will try to optimize.
-        detectors : iterable of ophyd objects
-            Detectors to trigger during acquisition.
-        acquisition_plan : optional
-            A plan that samples the beamline for some given inputs.
-        digestion :
-            A function to digest the output of the acquisition, taking a DataFrame as an argument.
-        digestion_kwargs :
-            Some kwargs for the digestion function.
-        db : optional
-            A databroker instance.
-        verbose : bool
-            To be verbose or not.
-        tolerate_acquisition_errors : bool
-            Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
-        sample_center_on_init : bool
-            Whether to sample the center of the DOF limits when the agent has no data yet.
-        trigger_delay : float
-            How many seconds to wait between moving DOFs and triggering detectors.
+        digestion : Callable, optional
+            A function to digest the output of the acquisition, taking a DataFrame as an argument, by default default_digestion_function
+        digestion_kwargs : dict, optional
+            Some kwargs for the digestion function, by default {}
+        verbose : bool, optional
+            To be verbose or not, by default False
+        enforce_all_objectives_valid : bool, optional # TODO
+            _description_, by default True
+        exclude_pruned : bool, optional # TODO
+            _description_, by default True
+        model_inactive_objectives : bool, optional # TODO
+            _description_, by default False
+        tolerate_acquisition_errors : bool, optional
+            Whether to allow errors during acquistion. If `True`, errors will be caught as warnings, by default False
+        sample_center_on_init : bool, optional
+            Whether to sample the center of the DOF limits when the agent has no data yet, by default False
         """
-
-        # DOFs are parametrized by whether they are active and whether they are read-only
-        #
-        # below are the behaviors of DOFs of each kind and mode:
-        #
-        # 'read': the agent will read the input on every acquisition (all dofs are always read)
-        # 'move': the agent will try to set and optimize over these (there must be at least one of these)
-        # 'input' means that the agent will use the value to make its posterior
-        #
-        #
-        #               not read-only        read-only
-        #          +---------------------+---------------+
-        #   active |  read, input, move  |  read, input  |
-        #          +---------------------+---------------+
-        # inactive |  read               |  read         |
-        #          +---------------------+---------------+
-        #
-        #
-
         self.dofs = DOFList(list(np.atleast_1d(dofs)))
         self.objectives = ObjectiveList(list(np.atleast_1d(objectives)))
-        self.detectors = list(np.atleast_1d(detectors or []))
 
         _validate_dofs_and_objs(self.dofs, self.objectives)
 
-        self.db = db
-        self.acquisition_plan = acquistion_plan
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs
 
@@ -145,8 +118,6 @@ class Agent:
         self.enforce_all_objectives_valid = enforce_all_objectives_valid
         self.exclude_pruned = exclude_pruned
 
-        self.train_every = train_every
-        self.trigger_delay = trigger_delay
         self.sample_center_on_init = sample_center_on_init
 
         self._table = pd.DataFrame()
@@ -155,68 +126,6 @@ class Agent:
         self.a_priori_hypers = None
 
         self.n_last_trained = 0
-
-    @property
-    def table(self):
-        return self._table
-
-    def unpack_run(self):
-        return
-
-    def measurement_plan(self):
-        return
-
-    def __iter__(self):
-        for index in range(len(self)):
-            yield self.dofs[index]
-
-    def __getattr__(self, attr):
-        acqf_config = acquisition.parse_acqf_identifier(attr, strict=False)
-        if acqf_config is not None:
-            acqf, _ = _construct_acqf(agent=self, acqf_name=acqf_config["name"])
-            return acqf
-        raise AttributeError(f"No attribute named '{attr}'.")
-
-    def refresh(self):
-        self._construct_all_models()
-        self._train_all_models()
-
-    def redigest(self):
-        self._table = self.digestion(self._table, **self.digestion_kwargs)
-
-    def sample(self, n: int = DEFAULT_MAX_SAMPLES, normalize: bool = False, method: str = "quasi-random") -> torch.Tensor:
-        """
-        Returns a (..., 1, n_active_dofs) tensor of points sampled within the parameter space.
-
-        Parameters
-        ----------
-        n : int
-            How many points to sample.
-        method : str
-            How to sample the points. Must be one of 'quasi-random', 'random', or 'grid'.
-        normalize: bool
-            If True, sample the unit hypercube. If False, sample the parameter space of the agent.
-        """
-
-        active_dofs = self.dofs(active=True)
-
-        if method == "quasi-random":
-            X = utils.normalized_sobol_sampler(n, d=len(active_dofs))
-
-        elif method == "random":
-            X = torch.rand(size=(n, 1, len(active_dofs)))
-
-        elif method == "grid":
-            n_side_if_settable = int(np.power(n, 1 / np.sum(~active_dofs.read_only)))
-            sides = [
-                torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in active_dofs
-            ]
-            X = torch.cat([x.unsqueeze(-1) for x in torch.meshgrid(sides, indexing="ij")], dim=-1).unsqueeze(-2).double()
-
-        else:
-            raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
-
-        return X.double() if normalize else self.dofs(active=True).untransform(X).double()
 
     def ask(self, acqf="qei", n=1, route=True, sequential=True, upsample=1, **acqf_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -321,6 +230,241 @@ class Agent:
         }
 
         return res
+
+
+class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
+
+    def __init__(self, *, acqf_string, route, sequential, upsample, acqf_kwargs, **kwargs):
+        super().__init__(**kwargs)
+        # TODO: make these into properties
+        self._acqf_string = acqf_string
+        self._route = route
+        self._sequential = sequential
+        self._upsample = upsample
+        self._acqf_kwargs = acqf_kwargs
+
+    def ask(self, batch_size) -> Tuple[Sequence[Dict[str, ArrayLike]], Sequence[ArrayLike]]:
+        default_result = super().ask(
+            n=batch_size,
+            acqf=self._acqf_string,
+            route=self._route,
+            sequential=self._sequential,
+            upsample=self._upsample,
+            **self._acqf_kwargs,
+        )
+
+        """res = {
+            "points": {dof.name: list(points[..., i]) for i, dof in enumerate(active_dofs(read_only=False))},
+            "acqf_name": acqf_config["name"],
+            "acqf_obj": list(np.atleast_1d(acqf_obj.numpy())),
+            "acqf_kwargs": acqf_kwargs,
+            "duration_ms": duration,
+            "sequential": sequential,
+            "upsample": upsample,
+            "read_only_values": read_only_values,
+            # "posterior": p,
+        }
+        """
+
+        points = default_result.pop("points")
+        acqf_obj = default_result.pop("acqf_obj")
+        # Turn dict of list of points into list of tensors, where the list is the length of list for the keys, and the tensors are the length of the keys
+        # TODO:
+
+        return points, [res.update({"next_point" = point, "acqf_obj"=a}) for point, a in zip(points, acqf_obj)]
+
+    def tell(self, x, y):
+        # In DirectOphyd way this is only called by learn with the signature
+        # self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
+        ...
+
+    def report(): ...
+
+    def unpack_run(self, run):
+        """Use my DOFs to convert the run into an independent array, and my objectives to create the dependent array.
+        Parameters
+        ----------
+        run : BlueskyRun
+
+        Returns
+        -------
+        independent_var :
+            The independent variable of the measurement
+        dependent_var :
+            The measured data, processed for relevance
+        """
+        ...
+
+    @abstractmethod
+    def measurement_plan(self, point: ArrayLike) -> Tuple[str, List, dict]:
+        """Fetch the string name of a registered plan, as well as the positional and keyword
+        arguments to pass that plan.
+
+        Args/Kwargs is a common place to transform relative into absolute motor coords, or
+        other device specific parameters.
+
+        Parameters
+        ----------
+        point : ArrayLike
+            Next point to measure using a given plan
+
+        Returns
+        -------
+        plan_name : str
+        plan_args : List
+            List of arguments to pass to plan from a point to measure.
+        plan_kwargs : dict
+            Dictionary of keyword arguments to pass the plan, from a point to measure.
+        """
+
+
+class Agent(BaseAgent):
+    def __init__(
+        self,
+        dofs: Sequence[DOF],
+        objectives: Sequence[Objective],
+        db: Broker = None,
+        detectors: Sequence[Signal] = None,
+        acquistion_plan=default_acquisition_plan,
+        digestion: Callable = default_digestion_function,
+        digestion_kwargs: dict = {},
+        verbose: bool = False,
+        enforce_all_objectives_valid: bool = True,
+        exclude_pruned: bool = True,
+        model_inactive_objectives: bool = False,
+        tolerate_acquisition_errors: bool = False,
+        sample_center_on_init: bool = False,
+        trigger_delay: float = 0,
+        train_every: int = 1,
+    ):
+        """
+        A Bayesian optimization agent.
+
+        Parameters
+        ----------
+        dofs : iterable of DOF objects
+            The degrees of freedom that the agent can control, which determine the output of the model.
+        objectives : iterable of Objective objects
+            The objectives which the agent will try to optimize.
+        detectors : iterable of ophyd objects
+            Detectors to trigger during acquisition.
+        acquisition_plan : optional
+            A plan that samples the beamline for some given inputs.
+        digestion :
+            A function to digest the output of the acquisition, taking a DataFrame as an argument.
+        digestion_kwargs :
+            Some kwargs for the digestion function.
+        db : optional
+            A databroker instance.
+        verbose : bool
+            To be verbose or not.
+        tolerate_acquisition_errors : bool
+            Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
+        sample_center_on_init : bool
+            Whether to sample the center of the DOF limits when the agent has no data yet.
+        trigger_delay : float
+            How many seconds to wait between moving DOFs and triggering detectors.
+        """
+
+        # DOFs are parametrized by whether they are active and whether they are read-only
+        #
+        # below are the behaviors of DOFs of each kind and mode:
+        #
+        # 'read': the agent will read the input on every acquisition (all dofs are always read)
+        # 'move': the agent will try to set and optimize over these (there must be at least one of these)
+        # 'input' means that the agent will use the value to make its posterior
+        #
+        #
+        #               not read-only        read-only
+        #          +---------------------+---------------+
+        #   active |  read, input, move  |  read, input  |
+        #          +---------------------+---------------+
+        # inactive |  read               |  read         |
+        #          +---------------------+---------------+
+        #
+        #
+
+        super().__init__(
+            dofs=dofs,
+            objectives=objectives,
+            digestion=digestion,
+            digestion_kwargs=digestion_kwargs,
+            verbose=verbose,
+            enforce_all_objectives_valid=enforce_all_objectives_valid,
+            exclude_pruned=exclude_pruned,
+            model_inactive_objectives=model_inactive_objectives,
+            tolerate_acquisition_errors=tolerate_acquisition_errors,
+            sample_center_on_init=sample_center_on_init,
+        )
+
+        self.detectors = list(np.atleast_1d(detectors or []))
+
+        self.db = db
+        self.acquisition_plan = acquistion_plan
+
+        self.train_every = train_every
+        self.trigger_delay = trigger_delay
+
+        self.initialized = False
+        self.a_priori_hypers = None
+
+        self.n_last_trained = 0
+
+    @property
+    def table(self):
+        return self._table
+
+    def __iter__(self):
+        for index in range(len(self)):
+            yield self.dofs[index]
+
+    def __getattr__(self, attr):
+        acqf_config = acquisition.parse_acqf_identifier(attr, strict=False)
+        if acqf_config is not None:
+            acqf, _ = _construct_acqf(agent=self, acqf_name=acqf_config["name"])
+            return acqf
+        raise AttributeError(f"No attribute named '{attr}'.")
+
+    def refresh(self):
+        self._construct_all_models()
+        self._train_all_models()
+
+    def redigest(self):
+        self._table = self.digestion(self._table, **self.digestion_kwargs)
+
+    def sample(self, n: int = DEFAULT_MAX_SAMPLES, normalize: bool = False, method: str = "quasi-random") -> torch.Tensor:
+        """
+        Returns a (..., 1, n_active_dofs) tensor of points sampled within the parameter space.
+
+        Parameters
+        ----------
+        n : int
+            How many points to sample.
+        method : str
+            How to sample the points. Must be one of 'quasi-random', 'random', or 'grid'.
+        normalize: bool
+            If True, sample the unit hypercube. If False, sample the parameter space of the agent.
+        """
+
+        active_dofs = self.dofs(active=True)
+
+        if method == "quasi-random":
+            X = utils.normalized_sobol_sampler(n, d=len(active_dofs))
+
+        elif method == "random":
+            X = torch.rand(size=(n, 1, len(active_dofs)))
+
+        elif method == "grid":
+            n_side_if_settable = int(np.power(n, 1 / np.sum(~active_dofs.read_only)))
+            sides = [
+                torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in active_dofs
+            ]
+            X = torch.cat([x.unsqueeze(-1) for x in torch.meshgrid(sides, indexing="ij")], dim=-1).unsqueeze(-2).double()
+
+        else:
+            raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
+
+        return X.double() if normalize else self.dofs(active=True).untransform(X).double()
 
     def tell(
         self,
