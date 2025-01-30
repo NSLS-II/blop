@@ -3,7 +3,7 @@ requires = ["hatchling", "hatch-vcs", "setuptools_scm"]
 build-backend = "hatchling.build"
 
 [project]
-name = "bloptools"
+name = "blop"
 description = "Beamline optimization with machine learning"
 readme = { file = "README.rst", content-type = "text/x-rst" }
 authors = [
@@ -22,7 +22,7 @@ dependencies = [
     "gpytorch",
     "h5py",
     "matplotlib",
-    "numpy<2",
+    "numpy",
     "ophyd",
     "ortools",
     "scipy",
