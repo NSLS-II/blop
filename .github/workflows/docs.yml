@@ -83,7 +83,7 @@ jobs:
       - name: Build Docs
         run: make -C docs/ html
 
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.REPOSITORY_NAME }}-docs
           path: docs/build/html/
