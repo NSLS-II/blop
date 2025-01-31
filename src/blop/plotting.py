@@ -172,8 +172,8 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
 
         # mask for nan values, uses x marker
         mask = np.isnan(values)
-        val_ax = agent.obj_axes[obj_index, 0].scatter(x_values, y_values, c=values, s=size, norm=val_norm, cmap=cmap, label="bad point")
-        val_ax = agent.obj_axes[obj_index, 0].scatter(x_values[mask], y_values[mask], c="k", marker="x", linewidths=4, s=75, label="good point")
+        val_ax = agent.obj_axes[obj_index, 0].scatter(x_values, y_values, c=values, s=size, norm=val_norm, cmap=cmap)
+        val_ax = agent.obj_axes[obj_index, 0].scatter(x_values[mask], y_values[mask], c="k", marker="x", linewidths=4, s=75)
 
         # mean and sigma will have shape (*input_shape,)
         test_posterior = obj.model.posterior(model_inputs)
