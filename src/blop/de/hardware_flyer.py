@@ -3,7 +3,7 @@
 import time as ttime
 from collections import deque
 
-from ophyd.sim import NullStatus
+from ophyd.sim import NullStatus  # type: ignore[import-untyped]
 
 
 class BlueskyFlyer:
