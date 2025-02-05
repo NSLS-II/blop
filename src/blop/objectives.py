@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Sequence
-from typing import Optional, Union
+from typing import Union, Optional, Literal, Any
 
 import numpy as np
 import pandas as pd
@@ -10,7 +10,7 @@ from .utils.functions import approximate_erf
 DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
 
-OBJ_FIELD_TYPES = {
+OBJ_FIELD_TYPES: dict[str, type] = {
     "name": str,
     "description": object,
     "active": bool,
@@ -28,20 +28,17 @@ OBJ_FIELD_TYPES = {
     "latent_groups": object,
 }
 
-SUPPORTED_OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
-TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0, 1.0)}
+OBJ_TYPES = ["continuous", "binary", "ordinal", "categorical"]
+TRANSFORM_DOMAINS: dict[str, tuple[float, float]] = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0, 1.0)}
 
 
 class DuplicateNameError(ValueError):
     pass
 
 
-domains = {"log"}
-
-
-def _validate_obj_transform(transform):
+def _validate_obj_transform(transform: str) -> None:
     if transform not in TRANSFORM_DOMAINS:
-        raise ValueError(f"'transform' must be a callable with one argument, or one of {TRANSFORM_DOMAINS}")
+        raise ValueError(f"'transform' must be one of {TRANSFORM_DOMAINS}")
 
 
 def _validate_continuous_domains(trust_domain, domain):
@@ -92,17 +89,17 @@ class Objective:
         self,
         name: str,
         description: str = "",
-        type: str = "continuous",
-        target: Union[float, str, None] = None,
-        constraint: Union[tuple[float, float], set, None] = None,
-        transform: str = None,
+        type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous",
+        target: Optional[Union[float, str]] = None,
+        constraint: Optional[Union[tuple[float, float], set]] = None,
+        transform: Optional[Literal["log", "logit", "arctanh"]] = None,
         weight: float = 1.0,
         active: bool = True,
-        trust_domain: Union[tuple[float, float], None] = None,
+        trust_domain: Optional[tuple[float, float]] = None,
         min_noise: float = DEFAULT_MIN_NOISE_LEVEL,
         max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
-        units: str = None,
-        latent_groups: Optional[list[tuple[str, ...]]] = None,
+        units: Optional[str] = None,
+        latent_groups: dict[str, Any] = {},
     ):
         self.name = name
         self.units = units

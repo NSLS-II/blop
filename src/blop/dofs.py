@@ -15,18 +15,18 @@ import pandas as pd
 import torch
 from ophyd import Signal, SignalRO  # type: ignore[import-untyped]
 
-DOF_FIELD_TYPES: dict[str, Literal["str", "object", "bool", "float", "int"]] = {
-    "description": "str",
-    "units": "str",
-    "readback": "object",
-    "type": "str",
-    "active": "bool",
-    "read_only": "bool",
-    "tags": "object",
-    "transform": "str",
-    "search_domain": "object",
-    "trust_domain": "object",
-    "domain": "object",
+DOF_FIELD_TYPES: dict[str, type] = {
+    "description": str,
+    "units": str,
+    "readback": object,
+    "type": str,
+    "active": bool,
+    "read_only": bool,
+    "tags": object,
+    "transform": str,
+    "search_domain": object,
+    "trust_domain": object,
+    "domain": object,
 }
 
 DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
