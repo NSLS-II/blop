@@ -1,6 +1,6 @@
 from typing import Union, Iterable
 
-import gpytorch # type: ignore[import-untyped]
+import gpytorch  # type: ignore[import-untyped]
 import numpy as np
 import torch
 
@@ -108,6 +108,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
     @property
     def lengthscales(self) -> torch.Tensor:
         return self.raw_lengthscales_constraint.transform(self.raw_lengthscales)
+
     @lengthscales.setter
     def lengthscales(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
         self._set_lengthscales(value)
@@ -115,6 +116,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
     @property
     def skew_entries(self) -> torch.Tensor:
         return self.raw_skew_entries_constraint.transform(self.raw_skew_entries)
+
     @skew_entries.setter
     def skew_entries(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
         self._set_skew_entries(value)
@@ -122,6 +124,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
     @property
     def outputscale(self) -> torch.Tensor:
         return self.raw_outputscale_constraint.transform(self.raw_outputscale)
+
     @outputscale.setter
     def outputscale(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
         self._set_outputscale(value)
@@ -160,13 +163,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
     def latent_transform(self) -> torch.Tensor:
         return torch.matmul(self.diag_matrix, self.skew_matrix)
 
-    def forward(
-        self, 
-        x1: torch.Tensor, 
-        x2: torch.Tensor, 
-        diag: bool = False, 
-        **params: dict
-    ) -> torch.Tensor:
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor, diag: bool = False, **params: dict) -> torch.Tensor:
         # adapted from the Matern kernel
         mean = x1.reshape(-1, x1.size(-1)).mean(0)[(None,) * (x1.dim() - 1)]
 

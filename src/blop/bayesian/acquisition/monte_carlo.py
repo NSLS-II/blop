@@ -3,10 +3,10 @@ from typing import Callable
 
 import numpy as np
 import torch
-from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy # type: ignore[import-untyped]
-from botorch.acquisition.monte_carlo import qExpectedImprovement, qProbabilityOfImprovement, qUpperConfidenceBound # type: ignore[import-untyped]
-from botorch.acquisition.multi_objective.monte_carlo import qNoisyExpectedHypervolumeImprovement # type: ignore[import-untyped]
-from botorch.models.model import Model # type: ignore[import-untyped]
+from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy  # type: ignore[import-untyped]
+from botorch.acquisition.monte_carlo import qExpectedImprovement, qProbabilityOfImprovement, qUpperConfidenceBound  # type: ignore[import-untyped]
+from botorch.acquisition.multi_objective.monte_carlo import qNoisyExpectedHypervolumeImprovement  # type: ignore[import-untyped]
+from botorch.models.model import Model  # type: ignore[import-untyped]
 from torch import Tensor
 
 

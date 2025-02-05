@@ -222,7 +222,7 @@ class DOF:
         else:
             return self.trust_domain or self.search_domain
 
-    def _transform(self, x: torch.Tensor, normalize: bool=True) -> torch.Tensor:
+    def _transform(self, x: torch.Tensor, normalize: bool = True) -> torch.Tensor:
         if self.type != "continuous":
             raise ValueError("Cannot transform non-continuous DOFs.")
 
@@ -329,13 +329,13 @@ class DOFList(Sequence[DOF]):
 
     @overload
     def __getitem__(self, i: int) -> DOF: ...
-    
-    @overload 
+
+    @overload
     def __getitem__(self, s: slice) -> Sequence[DOF]: ...
-    
+
     @overload
     def __getitem__(self, key: Iterable) -> Sequence[DOF]: ...
-    
+
     def __getitem__(self, key):
         if isinstance(key, str):
             if key not in self.names:
@@ -357,7 +357,7 @@ class DOFList(Sequence[DOF]):
         return self.summary.T.__repr__()
 
     def _repr_html_(self) -> Optional[str]:
-        return self.summary.T._repr_html_() # type: ignore
+        return self.summary.T._repr_html_()  # type: ignore
 
     def transform(self, X: torch.Tensor) -> torch.Tensor:
         """
@@ -418,7 +418,13 @@ class DOFList(Sequence[DOF]):
         self.dofs.append(dof)
 
     @staticmethod
-    def _test_dof(dof: DOF, type: Optional[Literal["continuous", "binary", "ordinal", "categorical"]] = None, active: Optional[bool] = None, read_only: Optional[bool] = None, tag: Optional[str] = None) -> bool:
+    def _test_dof(
+        dof: DOF,
+        type: Optional[Literal["continuous", "binary", "ordinal", "categorical"]] = None,
+        active: Optional[bool] = None,
+        read_only: Optional[bool] = None,
+        tag: Optional[str] = None,
+    ) -> bool:
         if type:
             if dof.type != type:
                 return False
@@ -433,7 +439,13 @@ class DOFList(Sequence[DOF]):
                 return False
         return True
 
-    def subset(self, type: Optional[Literal["continuous", "binary", "ordinal", "categorical"]] = None, active: Optional[bool] = None, read_only: Optional[bool] = None, tag: Optional[str] = None) -> "DOFList":
+    def subset(
+        self,
+        type: Optional[Literal["continuous", "binary", "ordinal", "categorical"]] = None,
+        active: Optional[bool] = None,
+        read_only: Optional[bool] = None,
+        tag: Optional[str] = None,
+    ) -> "DOFList":
         return DOFList(
             [dof for dof in self.dofs if self._test_dof(dof, type=type, active=active, read_only=read_only, tag=tag)]
         )
@@ -525,7 +537,9 @@ def _validate_dofs(dofs: Sequence[DOF]) -> Sequence[DOF]:
     return list(dofs)
 
 
-def _validate_continuous_dof_domains(search_domain: tuple[float, float], trust_domain: tuple[float, float], domain: tuple[float, float], read_only: bool):
+def _validate_continuous_dof_domains(
+    search_domain: tuple[float, float], trust_domain: tuple[float, float], domain: tuple[float, float], read_only: bool
+):
     """
     A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain.
 
