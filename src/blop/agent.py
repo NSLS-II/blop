@@ -3,7 +3,6 @@ import os
 import pathlib
 import time as ttime
 import warnings
-from abc import abstractmethod
 from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -17,6 +16,7 @@ import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy as sp
+import tiled.client.node  # noqa: F401
 import torch
 from bluesky_adaptive.agents.base import Agent as BlueskyAdaptiveBaseAgent
 from botorch.acquisition.objective import ScalarizedPosteriorTransform
