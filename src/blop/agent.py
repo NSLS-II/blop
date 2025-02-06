@@ -3,6 +3,7 @@ import os
 import pathlib
 import time as ttime
 import warnings
+from abc import ABC, abstractmethod
 from collections import OrderedDict
 from collections.abc import Mapping
 from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
@@ -16,9 +17,7 @@ import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy as sp
-import tiled.client.node  # noqa: F401
 import torch
-from bluesky_adaptive.agents.base import Agent as BlueskyAdaptiveBaseAgent
 from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
@@ -62,6 +61,25 @@ def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
                         f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist."
                         "it will be ignored."
                     )
+
+
+class BlueskyAdaptiveBaseAgent(ABC):
+    """Placeholder for inheritance for clarity, while bluesky-adaptive deps is a moving target.
+    E.g. some versions of databroker v2 will break the current implementation.
+    """
+
+    @abstractmethod
+    def measurement_plan(self, point: ArrayLike) -> Tuple[str, List, dict]: ...
+
+    @staticmethod
+    @abstractmethod
+    def unpack_run(run) -> Tuple[Union[float, ArrayLike], Union[float, ArrayLike]]: ...
+
+    @abstractmethod
+    def tell(self, x, y) -> Dict[str, ArrayLike]: ...
+
+    @abstractmethod
+    def ask(self, batch_size: int) -> Tuple[Sequence[Dict[str, ArrayLike]], Sequence[ArrayLike]]: ...
 
 
 class BaseAgent:
