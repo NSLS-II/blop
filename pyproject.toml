@@ -77,6 +77,7 @@ dev = [
   "bluesky_tiled_plugins",
   "fastapi",
   "caproto",
+  "json-rpc",
 ]
 
 
