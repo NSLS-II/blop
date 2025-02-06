@@ -322,6 +322,7 @@ class BaseAgent:
         metadata: Optional[Mapping] = {},
         append: bool = True,
         update_models: bool = True,
+        train: Optional[bool] = None,
     ):
         """
         Inform the agent about new inputs and targets for the model.
@@ -358,7 +359,7 @@ class BaseAgent:
         self._table = pd.concat([self._table, new_table]) if append else new_table
         self._table.index = np.arange(len(self._table))
         if update_models:
-            self.update_models()
+            self.update_models(train=train)
 
     def ask(self, acqf="qei", n=1, route=True, sequential=True, upsample=1, **acqf_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
