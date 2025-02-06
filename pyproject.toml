@@ -7,27 +7,29 @@ name = "bloptools"
 description = "Beamline optimization with machine learning"
 readme = { file = "README.rst", content-type = "text/x-rst" }
 authors = [
-  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" }
+  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" },
 ]
 maintainers = [
-  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" }
+  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" },
 ]
 requires-python = ">=3.9"
 
 dependencies = [
-    "area-detector-handlers",
-    "bluesky",
-    "botorch",
-    "databroker",
-    "gpytorch",
-    "h5py",
-    "matplotlib",
-    "numpy<2",
-    "ophyd",
-    "ortools",
-    "scipy",
-    "tables",
-    "torch",
+  "area-detector-handlers",
+  "bluesky",
+  "bluesky-adaptive",
+  "botorch",
+  "databroker",
+  "gpytorch",
+  "h5py",
+  "matplotlib",
+  "numpy<2",
+  "ophyd",
+  "ortools",
+  "scipy",
+  "tables",
+  "torch",
+  "tiled",
 ]
 
 classifiers = [
@@ -44,39 +46,33 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 
-sirepo = [
-    "sirepo-bluesky"
-]
+sirepo = ["sirepo-bluesky"]
 
-napari = [
-    "napari"
-]
+napari = ["napari"]
 
-gui = [
-    "nicegui"
-]
+gui = ["nicegui"]
 
 dev = [
-    "black",
-    "pytest-codecov",
-    "coverage",
-    "flake8",
-    "furo",
-    "isort",
-    "nbstripout",
-    "pre-commit",
-    "pre-commit-hooks",
-    "pytest",
-    "sphinx",
-    "twine",
-    "ipython",
-    "jupyter",
-    "matplotlib",
-    "nbsphinx",
-    "numpydoc",
-    "pandoc",
-    "sphinx-copybutton",
-    "sphinx_rtd_theme",
+  "black",
+  "pytest-codecov",
+  "coverage",
+  "flake8",
+  "furo",
+  "isort",
+  "nbstripout",
+  "pre-commit",
+  "pre-commit-hooks",
+  "pytest",
+  "sphinx",
+  "twine",
+  "ipython",
+  "jupyter",
+  "matplotlib",
+  "nbsphinx",
+  "numpydoc",
+  "pandoc",
+  "sphinx-copybutton",
+  "sphinx_rtd_theme",
 ]
 
 
