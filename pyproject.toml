@@ -73,7 +73,7 @@ dev = [
   "pandoc",
   "sphinx-copybutton",
   "sphinx_rtd_theme",
-  "databroker>=2.0.0b1",
+  "databroker[all]>=2.0.0b1",
   "bluesky_tiled_plugins",
   "humanize",
   "fastapi",
