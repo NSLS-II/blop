@@ -169,9 +169,6 @@ class BaseAgent:
         dof = self.dofs[index]
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
 
-        # check that inputs values are inside acceptable values
-        valid = (raw_inputs >= dof._trust_domain[0]) & (raw_inputs <= dof._trust_domain[1])
-        raw_inputs = torch.where(valid, raw_inputs, np.nan)
 
         return dof._transform(raw_inputs)
 
@@ -196,9 +193,6 @@ class BaseAgent:
         for obj in self.objectives(**subset_kwargs):
             y = raw_targets_dict[obj.name]
 
-            # check that targets values are inside acceptable values
-            valid = (y >= obj._trust_domain[0]) & (y <= obj._trust_domain[1])
-            y = torch.where(valid, y, np.nan)
 
             targets_dict[obj.name] = obj._transform(y)
 
@@ -587,8 +581,7 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         points: Dict = default_result.pop("points")
         acqf_obj: List[ArrayLike] = default_result.pop("acqf_obj")
         # Turn dict of list of points into list of consistently sized points
-        keys = list(points.keys())
-        points: List[Tuple[ArrayLike]] = list(zip(*[points[key] for key in keys]))
+        points: List[Tuple[ArrayLike]] = list(zip(*[value for _, value in points.items()]))
         dicts = []
         for point, obj in zip(points, acqf_obj):
             d = default_result.copy()
@@ -620,7 +613,7 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         dependent_var :
             The measured data, processed for relevance
         """
-        if self.digestion == default_digestion_function:
+        if not self.digestion or self.digestion == default_digestion_function:
             # Assume all raw data is available in primary stream as keys
             return (
                 [run.primary.data[key].read() for key in self.dofs.names],
