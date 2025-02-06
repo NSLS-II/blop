@@ -169,7 +169,6 @@ class BaseAgent:
         dof = self.dofs[index]
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
 
-
         return dof._transform(raw_inputs)
 
     def raw_targets(self, index=None, **subset_kwargs):
@@ -192,7 +191,6 @@ class BaseAgent:
 
         for obj in self.objectives(**subset_kwargs):
             y = raw_targets_dict[obj.name]
-
 
             targets_dict[obj.name] = obj._transform(y)
 
@@ -578,7 +576,7 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         }
         """
 
-        points: Dict = default_result.pop("points")
+        points: Dict[str, List[ArrayLike]] = default_result.pop("points")
         acqf_obj: List[ArrayLike] = default_result.pop("acqf_obj")
         # Turn dict of list of points into list of consistently sized points
         points: List[Tuple[ArrayLike]] = list(zip(*[value for _, value in points.items()]))
