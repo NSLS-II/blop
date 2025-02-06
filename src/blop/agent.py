@@ -92,7 +92,8 @@ class BaseAgent:
             A plan that samples the beamline for some given inputs, by default default_acquisition_plan.
             Called directly in Agent, used only by __name__ in BlueskyAdaptiveAgent.
         digestion : Callable, optional
-            A function to digest the output of the acquisition, taking a DataFrame as an argument, by default default_digestion_function
+            A function to digest the output of the acquisition, taking a DataFrame as an argument,
+            by default default_digestion_function
         digestion_kwargs : dict, optional
             Some kwargs for the digestion function, by default {}
         verbose : bool, optional
