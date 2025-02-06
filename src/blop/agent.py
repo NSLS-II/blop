@@ -6,7 +6,7 @@ import warnings
 from abc import abstractmethod
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
@@ -24,6 +24,7 @@ from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.models.transforms.input import Normalize
 from databroker import Broker
+from numpy.typing import ArrayLike
 from ophyd import Signal
 
 from . import plotting, utils
@@ -69,6 +70,7 @@ class BaseAgent:
         *,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
+        acquistion_plan: Optional[Union[Callable, str]] = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
         digestion_kwargs: dict = {},
         verbose: bool = False,
@@ -86,6 +88,9 @@ class BaseAgent:
             The degrees of freedom that the agent can control, which determine the output of the model.
         objectives : Sequence[Objective]
             The objectives which the agent will try to optimize.
+        acquistion_plan : Callable, optional
+            A plan that samples the beamline for some given inputs, by default default_acquisition_plan.
+            Called directly in Agent, used only by __name__ in BlueskyAdaptiveAgent.
         digestion : Callable, optional
             A function to digest the output of the acquisition, taking a DataFrame as an argument, by default default_digestion_function
         digestion_kwargs : dict, optional
@@ -108,6 +113,7 @@ class BaseAgent:
 
         _validate_dofs_and_objs(self.dofs, self.objectives)
 
+        self.acquisition_plan = acquistion_plan
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs
 
@@ -126,6 +132,232 @@ class BaseAgent:
         self.a_priori_hypers = None
 
         self.n_last_trained = 0
+
+    def raw_inputs(self, index=None, **subset_kwargs):
+        """
+        Get the raw, untransformed inputs for a DOF (or for a subset).
+        """
+        if index is None:
+            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
+
+    def train_inputs(self, index=None, **subset_kwargs):
+        """A two-dimensional tensor of all DOF values."""
+
+        if index is None:
+            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+
+        dof = self.dofs[index]
+        raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
+
+        # check that inputs values are inside acceptable values
+        valid = (raw_inputs >= dof._trust_domain[0]) & (raw_inputs <= dof._trust_domain[1])
+        raw_inputs = torch.where(valid, raw_inputs, np.nan)
+
+        return dof._transform(raw_inputs)
+
+    def raw_targets(self, index=None, **subset_kwargs):
+        """
+        Get the raw, untransformed inputs for an objective (or for a subset).
+        """
+        values = {}
+
+        for obj in self.objectives(**subset_kwargs):
+            # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
+            values[obj.name] = torch.tensor(self._table.loc[:, obj.name].values, dtype=torch.double)
+
+        return values
+
+    def train_targets(self, concatenate=False, **subset_kwargs):
+        """Returns the values associated with an objective name."""
+
+        targets_dict = {}
+        raw_targets_dict = self.raw_targets(**subset_kwargs)
+
+        for obj in self.objectives(**subset_kwargs):
+            y = raw_targets_dict[obj.name]
+
+            # check that targets values are inside acceptable values
+            valid = (y >= obj._trust_domain[0]) & (y <= obj._trust_domain[1])
+            y = torch.where(valid, y, np.nan)
+
+            targets_dict[obj.name] = obj._transform(y)
+
+        if self.enforce_all_objectives_valid:
+            all_valid_mask = True
+
+            for name, values in targets_dict.items():
+                all_valid_mask &= ~values.isnan()
+
+            for name in targets_dict.keys():
+                targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
+
+        if concatenate:
+            return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
+
+        return targets_dict
+
+    def _latent_dim_tuples(self, obj_index=None):
+        """
+        For the objective indexed by 'obj_index', return a list of tuples, where each tuple represents
+        a group of DOFs to fit a latent representation to.
+        """
+
+        if obj_index is None:
+            return {obj.name: self._latent_dim_tuples(obj_index=obj.name) for obj in self.objectives}
+
+        obj = self.objectives[obj_index]
+
+        latent_group_index = {}
+        for dof in self.dofs(active=True):
+            latent_group_index[dof.name] = dof.name
+            for group_index, latent_group in enumerate(obj.latent_groups):
+                if dof.name in latent_group:
+                    latent_group_index[dof.name] = group_index
+
+        u, uinv = np.unique(list(latent_group_index.values()), return_inverse=True)
+        return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
+
+    # @property
+    def pruned_mask(self):
+        if self.exclude_pruned and "prune" in self._table.columns:
+            return torch.tensor(self._table.prune.values.astype(bool))
+        return torch.zeros(len(self._table)).bool()
+
+    @property
+    def input_normalization(self):
+        """
+        Suitably transforms model inputs to the unit hypercube.
+
+        For modeling:
+
+        Always normalize between min and max values. This is always inside the trust domain, sometimes smaller.
+
+        For sampling:
+
+        Settable: normalize between search bounds
+        Read-only: constrain to the readback value
+        """
+
+        return Normalize(d=self.dofs.active.sum())
+
+    def _construct_model(self, obj, skew_dims=None):
+        """
+        Construct an untrained model for an objective.
+        """
+
+        skew_dims = skew_dims if skew_dims is not None else self._latent_dim_tuples(obj.name)
+
+        train_inputs = self.train_inputs(active=True)
+        train_targets = self.train_targets()[obj.name].unsqueeze(-1)
+
+        inputs_are_trusted = ~torch.isnan(train_inputs).any(axis=1)
+        targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
+
+        trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
+
+        obj._model = construct_single_task_model(
+            X=train_inputs[trusted],
+            y=train_targets[trusted],
+            min_noise=obj.min_noise,
+            max_noise=obj.max_noise,
+            skew_dims=self._latent_dim_tuples()[obj.name],
+        )
+
+        obj.model_dofs = set(self.dofs(active=True).names)  # if these change, retrain the model on self.ask()
+
+        if trusted.all():
+            obj.validity_conjugate_model = None
+            obj.validity_constraint = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
+
+        else:
+            dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
+                trusted.long(), learn_additional_noise=True
+            )
+
+            obj.validity_conjugate_model = models.LatentDirichletClassifier(
+                train_inputs=train_inputs[inputs_are_trusted],
+                train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2)[inputs_are_trusted].double(),
+                skew_dims=skew_dims,
+                likelihood=dirichlet_likelihood,
+                input_transform=self.input_normalization,
+            )
+
+            obj.validity_constraint = GenericDeterministicModel(
+                f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
+            )
+
+    def update_models(
+        self,
+        train: Optional[bool] = None,
+    ):
+        objectives_to_model = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
+        for obj in objectives_to_model:
+            t0 = ttime.monotonic()
+
+            cached_hypers = obj.model.state_dict() if hasattr(obj, "_model") else None
+            n_before_tell = obj.n_valid
+            self._construct_model(obj)
+            n_after_tell = obj.n_valid
+
+            if train is None:
+                train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
+
+            if len(obj.model.train_targets) >= 4:
+                if train:
+                    t0 = ttime.monotonic()
+                    train_model(obj.model)
+                    if self.verbose:
+                        logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
+
+                else:
+                    train_model(obj.model, hypers=cached_hypers)
+
+    def tell(
+        self,
+        data: Optional[Mapping] = {},
+        x: Optional[Mapping] = {},
+        y: Optional[Mapping] = {},
+        metadata: Optional[Mapping] = {},
+        append: bool = True,
+        update_models: bool = True,
+    ):
+        """
+        Inform the agent about new inputs and targets for the model.
+
+        If run with no arguments, it will just reconstruct all the models.
+
+        Parameters
+        ----------
+        x : dict
+            A dict keyed by the name of each DOF, with a list of values for each DOF.
+        y : dict
+            A dict keyed by the name of each objective, with a list of values for each objective.
+        append: bool
+            If `True`, will append new data to old data. If `False`, will replace old data with new data.
+        train: bool
+            Whether to train the models on construction.
+        hypers:
+            A dict of hyperparameters for the model to assume a priori, instead of training.
+        """
+
+        if not data:
+            if not x and y:
+                raise ValueError("Must supply either x and y, or data.")
+            data = {**x, **y, **metadata}
+
+        data = {k: list(np.atleast_1d(v)) for k, v in data.items()}
+        unique_field_lengths = {len(v) for v in data.values()}
+
+        if len(unique_field_lengths) > 1:
+            raise ValueError("All supplies values must be the same length!")
+
+        # TODO: This is an innefficient approach to caching data. Keep a list, make table at update model time.
+        new_table = pd.DataFrame(data)
+        self._table = pd.concat([self._table, new_table]) if append else new_table
+        self._table.index = np.arange(len(self._table))
+        if update_models:
+            self.update_models()
 
     def ask(self, acqf="qei", n=1, route=True, sequential=True, upsample=1, **acqf_kwargs):
         """Ask the agent for the best point to sample, given an acquisition function.
@@ -234,14 +466,80 @@ class BaseAgent:
 
 class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
 
-    def __init__(self, *, acqf_string, route, sequential, upsample, acqf_kwargs, **kwargs):
+    def __init__(
+        self, *, acqf_string, route, sequential, upsample, acqf_kwargs, detector_names: Optional[List[str]] = (), **kwargs
+    ):
         super().__init__(**kwargs)
-        # TODO: make these into properties
         self._acqf_string = acqf_string
         self._route = route
         self._sequential = sequential
         self._upsample = upsample
         self._acqf_kwargs = acqf_kwargs
+        self._detector_names = list(detector_names)
+
+    @property
+    def detector_names(self):
+        return [str(name) for name in self._detector_names]
+
+    @detector_names.setter
+    def detector_names(self, names):
+        self._detector_names = list(names)
+
+    @property
+    def acquisition_function(self):
+        return str(self._acqf_string)
+
+    @acquisition_function.setter
+    def acquisition_function(self, acqf_string):
+        self._acqf_string = str(acqf_string)
+
+    @property
+    def route(self):
+        return bool(self._route)
+
+    @route.setter
+    def route(self, route):
+        self._route = route
+
+    @property
+    def sequential(self):
+        return bool(self._sequential)
+
+    @sequential.setter
+    def sequential(self, sequential):
+        self._sequential = sequential
+
+    @property
+    def upsample(self):
+        return int(self._upsample)
+
+    @upsample.setter
+    def upsample(self, upsample):
+        self._upsample = int(upsample)
+
+    @property
+    def acqf_kwargs(self):
+        return {str(k): str(v) for k, v in self._acqf_kwargs.items()}
+
+    def update_acqf_kwargs(self, **kwargs):
+        self._acqf_kwargs.update(kwargs)
+
+    @property
+    def detector_names(self):
+        return [str(name) for name in self._detector_names]
+
+    @detector_names.setter
+    def detector_names(self, names):
+        self._detector_names = list(names)
+
+    def server_registrations(self):
+        """This is how we make these avaialble to the REST API."""
+        self._register_method("Update Acquistion Function Kwargs", self.update_acqf_kwargs)
+        self._register_property("Acquisition Function", self.acquisition_function, self.acquisition_function)
+        self._register_property("Route Points", self.route, self.route)
+        self._register_property("Sequential Points", self.sequential, self.sequential)
+        self._register_property("Upsample Points", self.upsample, self.upsample)
+        return super().server_registrations()
 
     def ask(self, batch_size) -> Tuple[Sequence[Dict[str, ArrayLike]], Sequence[ArrayLike]]:
         default_result = super().ask(
@@ -266,22 +564,31 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         }
         """
 
-        points = default_result.pop("points")
-        acqf_obj = default_result.pop("acqf_obj")
-        # Turn dict of list of points into list of tensors, where the list is the length of list for the keys, and the tensors are the length of the keys
-        # TODO:
-
-        return points, [res.update({"next_point" = point, "acqf_obj"=a}) for point, a in zip(points, acqf_obj)]
+        points: Dict = default_result.pop("points")
+        acqf_obj: List[ArrayLike] = default_result.pop("acqf_obj")
+        # Turn dict of list of points into list of consistently sized points
+        keys = list(points.keys())
+        points: List[Tuple[ArrayLike]] = list(zip(*[points[key] for key in keys]))
+        dicts = []
+        for point, obj in zip(points, acqf_obj):
+            d = default_result.copy()
+            d["point"] = point
+            d["acqf_obj"] = obj
+            dicts.append(d)
+        return points, dicts
 
     def tell(self, x, y):
-        # In DirectOphyd way this is only called by learn with the signature
-        # self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
-        ...
+        x = {key: x_i for x_i, key in zip(x, self.dofs.names)}
+        y = {key: y_i for y_i, key in zip(y, self.objectives.names)}
+        super().tell(data={**x, **y})
+        return {**x, **y}
 
-    def report(): ...
+    def report():
+        raise NotImplementedError("Report is not implmented for BlueskyAdaptiveAgent")
 
     def unpack_run(self, run):
         """Use my DOFs to convert the run into an independent array, and my objectives to create the dependent array.
+        In practice for shape management, we will use lists not np.arrays at this stage.
         Parameters
         ----------
         run : BlueskyRun
@@ -293,15 +600,26 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         dependent_var :
             The measured data, processed for relevance
         """
-        ...
+        if self.digestion == default_digestion_function:
+            # Assume all raw data is available in primary stream as keys
+            return (
+                [run.primary.data[key].read() for key in self.dofs.names],
+                [run.primary.data[key].read() for key in self.objectives.names],
+            )
+        else:
+            # Hope and pray that the digestion function designed for DataFrame can handle the XArray
+            data: pd.DataFrame = self.digestion(run.primary.data.read(), **self.digestion_kwargs)
+            return [data.loc[:, key] for key in self.dofs.names], [data.loc[:, key] for key in self.objectives.names]
 
-    @abstractmethod
     def measurement_plan(self, point: ArrayLike) -> Tuple[str, List, dict]:
         """Fetch the string name of a registered plan, as well as the positional and keyword
         arguments to pass that plan.
 
         Args/Kwargs is a common place to transform relative into absolute motor coords, or
         other device specific parameters.
+
+        By default, this measurement plan attempts to use in the built in functionality in a QueueServer compatible way.
+        Signals and Devices are not passed as objects, but serialized as strings for the RE as a service to use.
 
         Parameters
         ----------
@@ -316,6 +634,21 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         plan_kwargs : dict
             Dictionary of keyword arguments to pass the plan, from a point to measure.
         """
+        if isinstance(self.acquisition_plan, Callable):
+            plan_name = self.acquisition_plan.__name__
+        else:
+            plan_name = self.acquisition_plan
+        if plan_name == "default_acquisition_plan":
+            # Convert point back to dict form for the sake of compatability with default plan
+            acquisition_dofs = self.dofs(active=True, read_only=False)
+
+            return self.acquisition_plan.__name__, [
+                acquisition_dofs,
+                {dof.name: point[i] for i, dof in enumerate(acquisition_dofs)},
+                [*self.detector_names, *[dev.__name__ for dev in self.dofs.devices]],
+            ]
+        else:
+            raise NotImplementedError("Only default_acquisition_plan is implemented")
 
 
 class Agent(BaseAgent):
@@ -387,6 +720,7 @@ class Agent(BaseAgent):
         super().__init__(
             dofs=dofs,
             objectives=objectives,
+            acquistion_plan=acquistion_plan,
             digestion=digestion,
             digestion_kwargs=digestion_kwargs,
             verbose=verbose,
@@ -400,7 +734,6 @@ class Agent(BaseAgent):
         self.detectors = list(np.atleast_1d(detectors or []))
 
         self.db = db
-        self.acquisition_plan = acquistion_plan
 
         self.train_every = train_every
         self.trigger_delay = trigger_delay
@@ -465,73 +798,6 @@ class Agent(BaseAgent):
             raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
 
         return X.double() if normalize else self.dofs(active=True).untransform(X).double()
-
-    def tell(
-        self,
-        data: Optional[Mapping] = {},
-        x: Optional[Mapping] = {},
-        y: Optional[Mapping] = {},
-        metadata: Optional[Mapping] = {},
-        append: bool = True,
-        update_models: bool = True,
-        train: bool = None,
-    ):
-        """
-        Inform the agent about new inputs and targets for the model.
-
-        If run with no arguments, it will just reconstruct all the models.
-
-        Parameters
-        ----------
-        x : dict
-            A dict keyed by the name of each DOF, with a list of values for each DOF.
-        y : dict
-            A dict keyed by the name of each objective, with a list of values for each objective.
-        append: bool
-            If `True`, will append new data to old data. If `False`, will replace old data with new data.
-        train: bool
-            Whether to train the models on construction.
-        hypers:
-            A dict of hyperparameters for the model to assume a priori, instead of training.
-        """
-
-        if not data:
-            if not x and y:
-                raise ValueError("Must supply either x and y, or data.")
-            data = {**x, **y, **metadata}
-
-        data = {k: list(np.atleast_1d(v)) for k, v in data.items()}
-        unique_field_lengths = {len(v) for v in data.values()}
-
-        if len(unique_field_lengths) > 1:
-            raise ValueError("All supplies values must be the same length!")
-
-        new_table = pd.DataFrame(data)
-        self._table = pd.concat([self._table, new_table]) if append else new_table
-        self._table.index = np.arange(len(self._table))
-
-        if update_models:
-            objectives_to_model = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
-            for obj in objectives_to_model:
-                t0 = ttime.monotonic()
-
-                cached_hypers = obj.model.state_dict() if hasattr(obj, "_model") else None
-                n_before_tell = obj.n_valid
-                self._construct_model(obj)
-                n_after_tell = obj.n_valid
-
-                if train is None:
-                    train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
-
-                if len(obj.model.train_targets) >= 4:
-                    if train:
-                        t0 = ttime.monotonic()
-                        train_model(obj.model)
-                        if self.verbose:
-                            logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
-
-                    else:
-                        train_model(obj.model, hypers=cached_hypers)
 
     def learn(
         self,
@@ -845,52 +1111,6 @@ class Agent(BaseAgent):
         """A mask of whether all objectives are valid for each data point."""
         return ~torch.isnan(self.scalarized_fitnesses())
 
-    def _construct_model(self, obj, skew_dims=None):
-        """
-        Construct an untrained model for an objective.
-        """
-
-        skew_dims = skew_dims if skew_dims is not None else self._latent_dim_tuples(obj.name)
-
-        train_inputs = self.train_inputs(active=True)
-        train_targets = self.train_targets()[obj.name].unsqueeze(-1)
-
-        inputs_are_trusted = ~torch.isnan(train_inputs).any(axis=1)
-        targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
-
-        trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
-
-        obj._model = construct_single_task_model(
-            X=train_inputs[trusted],
-            y=train_targets[trusted],
-            min_noise=obj.min_noise,
-            max_noise=obj.max_noise,
-            skew_dims=self._latent_dim_tuples()[obj.name],
-        )
-
-        obj.model_dofs = set(self.dofs(active=True).names)  # if these change, retrain the model on self.ask()
-
-        if trusted.all():
-            obj.validity_conjugate_model = None
-            obj.validity_constraint = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
-
-        else:
-            dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
-                trusted.long(), learn_additional_noise=True
-            )
-
-            obj.validity_conjugate_model = models.LatentDirichletClassifier(
-                train_inputs=train_inputs[inputs_are_trusted],
-                train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2)[inputs_are_trusted].double(),
-                skew_dims=skew_dims,
-                likelihood=dirichlet_likelihood,
-                input_transform=self.input_normalization,
-            )
-
-            obj.validity_constraint = GenericDeterministicModel(
-                f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
-            )
-
     def _construct_all_models(self):
         """Construct a model for each objective."""
         objectives_to_construct = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
@@ -918,27 +1138,6 @@ class Agent(BaseAgent):
 
         return acquisition._construct_acqf(self, identifier=identifier, return_metadata=return_metadata)
 
-    def _latent_dim_tuples(self, obj_index=None):
-        """
-        For the objective indexed by 'obj_index', return a list of tuples, where each tuple represents
-        a group of DOFs to fit a latent representation to.
-        """
-
-        if obj_index is None:
-            return {obj.name: self._latent_dim_tuples(obj_index=obj.name) for obj in self.objectives}
-
-        obj = self.objectives[obj_index]
-
-        latent_group_index = {}
-        for dof in self.dofs(active=True):
-            latent_group_index[dof.name] = dof.name
-            for group_index, latent_group in enumerate(obj.latent_groups):
-                if dof.name in latent_group:
-                    latent_group_index[dof.name] = group_index
-
-        u, uinv = np.unique(list(latent_group_index.values()), return_inverse=True)
-        return [tuple(np.where(uinv == i)[0]) for i in range(len(u))]
-
     @property
     def sample_domain(self):
         """
@@ -947,23 +1146,6 @@ class Agent(BaseAgent):
         Discrete DOFs are relaxed to some continuous domain.
         """
         return self.dofs(active=True).transform(self.dofs(active=True).search_domain.T).clone()
-
-    @property
-    def input_normalization(self):
-        """
-        Suitably transforms model inputs to the unit hypercube.
-
-        For modeling:
-
-        Always normalize between min and max values. This is always inside the trust domain, sometimes smaller.
-
-        For sampling:
-
-        Settable: normalize between search bounds
-        Read-only: constrain to the readback value
-        """
-
-        return Normalize(d=self.dofs.active.sum())
 
     def save_data(self, path="./data.h5"):
         """
@@ -1066,70 +1248,6 @@ class Agent(BaseAgent):
         Description and identifiers for all supported acquisition functions.
         """
         return acquisition.all_acqfs()
-
-    def raw_inputs(self, index=None, **subset_kwargs):
-        """
-        Get the raw, untransformed inputs for a DOF (or for a subset).
-        """
-        if index is None:
-            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
-
-    def train_inputs(self, index=None, **subset_kwargs):
-        """A two-dimensional tensor of all DOF values."""
-
-        if index is None:
-            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-
-        dof = self.dofs[index]
-        raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
-
-        # check that inputs values are inside acceptable values
-        valid = (raw_inputs >= dof._trust_domain[0]) & (raw_inputs <= dof._trust_domain[1])
-        raw_inputs = torch.where(valid, raw_inputs, np.nan)
-
-        return dof._transform(raw_inputs)
-
-    def raw_targets(self, index=None, **subset_kwargs):
-        """
-        Get the raw, untransformed inputs for an objective (or for a subset).
-        """
-        values = {}
-
-        for obj in self.objectives(**subset_kwargs):
-            # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
-            values[obj.name] = torch.tensor(self._table.loc[:, obj.name].values, dtype=torch.double)
-
-        return values
-
-    def train_targets(self, concatenate=False, **subset_kwargs):
-        """Returns the values associated with an objective name."""
-
-        targets_dict = {}
-        raw_targets_dict = self.raw_targets(**subset_kwargs)
-
-        for obj in self.objectives(**subset_kwargs):
-            y = raw_targets_dict[obj.name]
-
-            # check that targets values are inside acceptable values
-            valid = (y >= obj._trust_domain[0]) & (y <= obj._trust_domain[1])
-            y = torch.where(valid, y, np.nan)
-
-            targets_dict[obj.name] = obj._transform(y)
-
-        if self.enforce_all_objectives_valid:
-            all_valid_mask = True
-
-            for name, values in targets_dict.items():
-                all_valid_mask &= ~values.isnan()
-
-            for name in targets_dict.keys():
-                targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
-
-        if concatenate:
-            return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
-
-        return targets_dict
 
     @property
     def best(self):
@@ -1244,9 +1362,3 @@ class Agent(BaseAgent):
                 )
         self.refresh()
         # return self._table["prune"]
-
-    # @property
-    def pruned_mask(self):
-        if self.exclude_pruned and "prune" in self._table.columns:
-            return torch.tensor(self._table.prune.values.astype(bool))
-        return torch.zeros(len(self._table)).bool()
