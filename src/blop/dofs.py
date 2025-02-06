@@ -4,11 +4,7 @@ import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, fields
 from operator import attrgetter
-<<<<<<< HEAD
-from typing import Optional, Union
-=======
-from typing import Any, Literal, Optional, Union, cast, SupportsIndex, overload
->>>>>>> f674432 (Added typing for dofs.py)
+from typing import Any, Literal, Optional, Union, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -313,7 +309,7 @@ class DOFList(Sequence[DOF]):
     def __call__(self, *args, **kwargs):
         return self.subset(*args, **kwargs)
 
-    def __getattr__(self, attr: str) -> Any:
+    def __getattr__(self, attr: str) -> Union[DOF, list[Any], np.ndarray]:
         # This is called if we can't find the attribute in the normal way.
         if all(hasattr(dof, attr) for dof in self.dofs):
             if DOF_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:

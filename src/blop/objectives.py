@@ -1,11 +1,12 @@
 from collections.abc import Iterable, Sequence
-from typing import Union, Optional, Literal, Any
+from typing import Union, Optional, Literal, Any, overload
 
 import numpy as np
 import pandas as pd
 import torch
-
+from botorch.models.model import Model  # type: ignore[import-untyped]
 from .utils.functions import approximate_erf
+
 
 DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0
@@ -106,6 +107,7 @@ class Objective:
         self.description = description
         self.type = type
         self.active = active
+        self._model: Optional[Model] = None
 
         if (target is None) and (constraint is None):
             raise ValueError("You must supply either a 'target' or a 'constraint'.")
@@ -209,7 +211,7 @@ class Objective:
         return f"{self.description}{f' [{self.units}]' if self.units else ''}"
 
     @property
-    def noise_bounds(self) -> tuple:
+    def noise_bounds(self) -> tuple[float, float]:
         return (self.min_noise, self.max_noise)
 
     @property
@@ -235,7 +237,7 @@ class Objective:
         return self.model.likelihood.noise.item() if hasattr(self, "model") else np.nan
 
     @property
-    def snr(self) -> float:
+    def snr(self) -> Optional[int]:
         return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if hasattr(self, "model") else None
 
     @property
@@ -257,44 +259,55 @@ class Objective:
 
         return p.detach()
 
-    def pseudofitness(self, x: torch.tensor) -> torch.tensor:
+    def pseudofitness(self, x: torch.Tensor) -> torch.Tensor:
         """
         When the optimization problem consists only of constraints, the
         """
-        p = self.model.posterior(x)
-
-        if self.is_fitness:
-            return self.fitness_inverse(p.mean)
-
         if isinstance(self.target, tuple):
             return self.constraint_probability(x).log().clamp(min=-16)
 
+        raise NotImplementedError("Pseudofitness is not implemented for this objective.")
+
     @property
-    def model(self):
+    def model(self) -> Model:
+        if not self._model:
+            raise RuntimeError("Model has not been fit yet.")
         return self._model.eval()
 
 
 class ObjectiveList(Sequence):
-    def __init__(self, objectives: Optional[list] = None):
-        self.objectives = objectives or []
+    def __init__(self, objectives: list[Objective] = []):
+        self.objectives: list[Objective] = objectives
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, **kwargs) -> "ObjectiveList":
         return self.subset(*args, **kwargs)
 
     @property
-    def names(self):
+    def names(self) -> list[str]:
         return [obj.name for obj in self.objectives]
 
-    def __getattr__(self, attr):
+    def __getattr__(self, attr: str) -> Union[Objective, list[Any], np.ndarray]:
         # This is called if we can't find the attribute in the normal way.
-        if all(hasattr(obj, attr) for obj in self.objectives):
-            if OBJ_FIELD_TYPES.get(attr) in [float, "int", "bool"]:
+        if all([hasattr(obj, attr) for obj in self.objectives]):
+            if OBJ_FIELD_TYPES.get(attr) in [float, int, bool]:
                 return np.array([getattr(obj, attr) for obj in self.objectives])
             return [getattr(obj, attr) for obj in self.objectives]
         if attr in self.names:
             return self.__getitem__(attr)
 
         raise AttributeError(f"ObjectiveList object has no attribute named '{attr}'.")
+
+    @overload
+    def __getitem__(self, key: str) -> Objective: ...
+
+    @overload
+    def __getitem__(self, i: int) -> Objective: ...
+
+    @overload
+    def __getitem__(self, s: slice) -> Sequence[Objective]: ...
+
+    @overload
+    def __getitem__(self, key: Iterable) -> Sequence[Objective]: ...
 
     def __getitem__(self, key):
         if isinstance(key, str):
@@ -310,7 +323,7 @@ class ObjectiveList(Sequence):
         else:
             raise ValueError(f"Invalid index {key}.")
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.objectives)
 
     @property
@@ -326,51 +339,47 @@ class ObjectiveList(Sequence):
 
         return pd.concat([objective.summary for objective in self.objectives], axis=1)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return self.summary.__repr__()
 
-    def _repr_html_(self):
-        return self.summary._repr_html_()
+    def _repr_html_(self) -> str:
+        return self.summary._repr_html_()  # type: ignore
 
-    def add(self, objective):
+    def add(self, objective: Objective) -> None:
         self.objectives.append(objective)
 
     @staticmethod
-    def _test_obj(obj, active=None, fitness=None, constraint=None):
-        if active is not None:
+    def _test_obj(
+        obj: Objective, active: Optional[bool] = None, fitness: Optional[bool] = None, constraint: Optional[bool] = None
+    ) -> bool:
+        if active:
             if obj.active != active:
                 return False
-        if fitness is not None:
+        if fitness:
             if fitness != (obj.target is not None):
                 return False
-        if constraint is not None:
+        if constraint:
             if constraint != (obj.constraint is not None):
                 return False
         return True
 
-    def subset(self, **kwargs):
+    def subset(self, **kwargs) -> "ObjectiveList":
         return ObjectiveList([obj for obj in self.objectives if self._test_obj(obj, **kwargs)])
 
-    def transform(self, Y):
+    def transform(self, Y: torch.Tensor) -> torch.Tensor:
         """
         Transform the experiment space to the model space.
         """
         if Y.shape[-1] != len(self):
             raise ValueError(f"Cannot transform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
 
-        if not isinstance(Y, torch.Tensor):
-            Y = torch.tensor(Y, dtype=torch.double)
-
         return torch.cat([obj._transform(Y[..., i]).unsqueeze(-1) for i, obj in enumerate(self.objectives)], dim=-1)
 
-    def untransform(self, Y):
+    def untransform(self, Y: torch.Tensor) -> torch.Tensor:
         """
         Transform the model space to the experiment space.
         """
         if Y.shape[-1] != len(self):
             raise ValueError(f"Cannot untransform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
-
-        if not isinstance(Y, torch.Tensor):
-            Y = torch.tensor(Y, dtype=torch.double)
 
         return torch.cat([obj._untransform(Y[..., i]).unsqueeze(-1) for i, obj in enumerate(self.objectives)], dim=-1)
