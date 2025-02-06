@@ -17,7 +17,7 @@ requires-python = ">=3.9"
 dependencies = [
   "area-detector-handlers",
   "bluesky",
-  "bluesky-adaptive",
+  "bluesky-adaptive[all]",
   "botorch",
   "databroker",
   "gpytorch",
@@ -75,7 +75,6 @@ dev = [
   "sphinx_rtd_theme",
   "databroker>=2.0.0b1",
   "bluesky_tiled_plugins",
-  "fastapi",
 ]
 
 
