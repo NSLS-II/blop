@@ -69,17 +69,17 @@ class BlueskyAdaptiveBaseAgent(ABC):
     """
 
     @abstractmethod
-    def measurement_plan(self, point: ArrayLike) -> Tuple[str, List, dict]: ...
+    def measurement_plan(self, point: ArrayLike) -> Tuple[str, List, dict]: ...  # noqa: E704
 
     @staticmethod
     @abstractmethod
-    def unpack_run(run) -> Tuple[Union[float, ArrayLike], Union[float, ArrayLike]]: ...
+    def unpack_run(run) -> Tuple[Union[float, ArrayLike], Union[float, ArrayLike]]: ...  # noqa: E704
 
     @abstractmethod
-    def tell(self, x, y) -> Dict[str, ArrayLike]: ...
+    def tell(self, x, y) -> Dict[str, ArrayLike]: ...  # noqa: E704
 
     @abstractmethod
-    def ask(self, batch_size: int) -> Tuple[Sequence[Dict[str, ArrayLike]], Sequence[ArrayLike]]: ...
+    def ask(self, batch_size: int) -> Tuple[Sequence[Dict[str, ArrayLike]], Sequence[ArrayLike]]: ...  # noqa: E704
 
 
 class BaseAgent:
