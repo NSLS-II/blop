@@ -1,4 +1,5 @@
 import os
+from typing import Optional, Any
 
 import pandas as pd
 import yaml
@@ -6,6 +7,7 @@ import yaml
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
 from .monte_carlo import *  # noqa F401
+from ...agent import Agent
 
 # from botorch.utils.transforms import normalize
 
@@ -16,14 +18,13 @@ with open(f"{here}/config.yml") as f:
     config = yaml.safe_load(f)
 
 
-def all_acqfs(columns=("identifier", "type", "multitask_only", "description")):
-    cols = list(columns)
-    acqfs = pd.DataFrame(config).T[cols]
+def all_acqfs(columns: list[str] = ["identifier", "type", "multitask_only", "description"]) -> pd.DataFrame:
+    acqfs = pd.DataFrame(config).T[columns]
     acqfs.index.name = "name"
     return acqfs.sort_values(["type", "name"])
 
 
-def parse_acqf_identifier(identifier, strict=True):
+def parse_acqf_identifier(identifier: str, strict: bool = True) -> Optional[dict[str, Any]]:
     for acqf_name in config.keys():
         if identifier.lower() in [acqf_name, config[acqf_name]["identifier"]]:
             return {"name": acqf_name, **config[acqf_name]}
@@ -32,9 +33,17 @@ def parse_acqf_identifier(identifier, strict=True):
     return None
 
 
-def _construct_acqf(agent, acqf_name, **acqf_kwargs):
+def _construct_acqf(agent: Agent, acqf_name: str, **acqf_kwargs: Any) -> tuple[Any, dict[str, Any]]:
     """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
     their identifiers can be found at `agent.all_acqfs`.
+
+    Args:
+        agent: The optimization agent
+        acqf_name: Name of the acquisition function
+        **acqf_kwargs: Additional keyword arguments for the acquisition function
+
+    Returns:
+        tuple: (acquisition_function, acquisition_function_kwargs)
     """
 
     acqf_config = config["upper_confidence_bound"]
