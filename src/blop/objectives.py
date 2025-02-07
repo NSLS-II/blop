@@ -42,7 +42,7 @@ def _validate_obj_transform(transform: str) -> None:
         raise ValueError(f"'transform' must be one of {TRANSFORM_DOMAINS}")
 
 
-def _validate_continuous_domains(trust_domain, domain):
+def _validate_continuous_domains(trust_domain: Optional[tuple[float, float]], domain: Optional[tuple[float, float]]):
     """
     A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
 
@@ -50,7 +50,7 @@ def _validate_continuous_domains(trust_domain, domain):
     search_domain \\subseteq trust_domain \\subseteq domain
     """
 
-    if (trust_domain is not None) and (domain is not None):
+    if trust_domain and domain:
         if (trust_domain[0] < domain[0]) or (trust_domain[1] > domain[1]):
             raise ValueError(f"The trust domain {trust_domain} is outside the transform domain {domain}.")
 
@@ -107,9 +107,15 @@ class Objective:
         self.description = description
         self.type = type
         self.active = active
-        self._model: Optional[Model] = None
 
-        if (target is None) and (constraint is None):
+        # TODO: These are currently set outside of the class, in agent.py.
+        #       We should move them inside the class, and make them private.
+        #       Or reconsider the design of the class.
+        self._model: Optional[Model] = None
+        self.validity_conjugate_model: Optional[Model] = None
+        self.validity_constraint: Optional[Model] = None
+
+        if not target and not constraint:
             raise ValueError("You must supply either a 'target' or a 'constraint'.")
 
         self.target = target
@@ -123,10 +129,10 @@ class Objective:
         if self.type == "continuous":
             _validate_continuous_domains(trust_domain, self.domain)
         else:
-            raise NotImplementedError()
+            raise NotImplementedError("Non-continuous objectives are not supported yet.")
 
         self.trust_domain = trust_domain
-        self.weight = weight if target is not None else None
+        self.weight = weight if target else None
         self.min_noise = min_noise
         self.max_noise = max_noise
         self.latent_groups = latent_groups or []
@@ -137,72 +143,74 @@ class Objective:
                 raise ValueError("'target' must be either 'min', 'max', a number, or a tuple of numbers.")
 
     @property
-    def domain(self):
+    def domain(self) -> tuple[float, float]:
         """
         The total domain of the objective.
         """
-        if self.transform is None:
+        if not self.transform:
             if self.type == "continuous":
                 return (-np.inf, np.inf)
+            else:
+                raise NotImplementedError("Non-continuous objectives are not supported yet.")
         return TRANSFORM_DOMAINS[self.transform]
 
-    def constrain(self, y):
+    def constrain(self, y: torch.Tensor) -> torch.Tensor:
         if self.constraint is None:
             raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
         elif isinstance(self.constraint, tuple):
             return (y > self.constraint[0]) & (y < self.constraint[1])
         else:
-            return np.array([value in self.constraint for value in np.atleast_1d(y)])
+            return torch.tensor([value in self.constraint for value in np.atleast_1d(y)])
 
-    def log_total_constraint(self, x):
-        log_p = 0
+    def log_total_constraint(self, x: torch.Tensor) -> torch.Tensor:
+
+        log_p = torch.tensor([0.0], dtype=torch.double)
         # if you have a constraint
-        if self.constraint is not None:
+        if self.constraint:
             log_p += self.constraint_probability(x).log()
 
         # if the validity constaint is non-trivial
-        if self.validity_conjugate_model is not None:
+        if self.validity_conjugate_model and self.validity_constraint:
             log_p += self.validity_constraint(x).log()
 
         return log_p
 
     @property
-    def _trust_domain(self):
-        if self.trust_domain is None:
+    def _trust_domain(self) -> tuple[float, float]:
+        if not self.trust_domain:
             return self.domain
         return self.trust_domain
 
-    def _transform(self, y):
-        if not isinstance(y, torch.Tensor):
-            y = torch.tensor(y, dtype=torch.double)
+    def _transform(self, y: torch.Tensor) -> torch.Tensor:
 
         y = torch.where((y > self.domain[0]) & (y < self.domain[1]), y, np.nan)
 
         if self.transform == "log":
             y = y.log()
-        if self.transform == "logit":
+        elif self.transform == "logit":
             y = (y / (1 - y)).log()
-        if self.transform == "arctanh":
+        elif self.transform == "arctanh":
             y = torch.arctanh(y)
+        else:
+            raise NotImplementedError(f"Transform {self.transform} is not supported yet.")
 
         if self.target == "min":
             y = -y
 
         return y
 
-    def _untransform(self, y):
-        if not isinstance(y, torch.Tensor):
-            y = torch.tensor(y, dtype=torch.double)
-
+    def _untransform(self, y: torch.Tensor) -> torch.Tensor:
         if self.target == "min":
             y = -y
 
         if self.transform == "log":
             y = y.exp()
-        if self.transform == "logit":
+        elif self.transform == "logit":
             y = 1 / (1 + torch.exp(-y))
-        if self.transform == "arctanh":
+        elif self.transform == "arctanh":
             y = torch.tanh(y)
+        else:
+            raise NotImplementedError(f"Transform {self.transform} is not supported yet.")
 
         return y
 
@@ -245,7 +253,7 @@ class Objective:
         return int((~self.model.train_targets.isnan()).sum()) if hasattr(self, "model") else 0
 
     def constraint_probability(self, x: torch.Tensor) -> torch.Tensor:
-        if self.constraint is None:
+        if not self.constraint:
             raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
 
         a, b = self.constraint
@@ -263,6 +271,7 @@ class Objective:
         """
         When the optimization problem consists only of constraints, the
         """
+        # TODO: In what cases would the target be a tuple?
         if isinstance(self.target, tuple):
             return self.constraint_probability(x).log().clamp(min=-16)
 
