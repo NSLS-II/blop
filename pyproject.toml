@@ -51,6 +51,8 @@ napari = ["napari"]
 
 gui = ["nicegui"]
 
+adaptive = ["bluesky-adaptive"]
+
 dev = [
   "black",
   "pytest-codecov",
