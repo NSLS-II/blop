@@ -49,6 +49,8 @@ pre-commit = [
   "import-linter",
   "nbstripout",
 ]
+adaptive = ["bluesky-adaptive"]
+
 dev = [
   "pytest-codecov",
   "coverage",

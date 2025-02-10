@@ -7,7 +7,7 @@ import yaml
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
 from .monte_carlo import *  # noqa F401
-from ...agent import Agent
+from ...agent import BaseAgent
 
 # from botorch.utils.transforms import normalize
 
@@ -33,7 +33,7 @@ def parse_acqf_identifier(identifier: str, strict: bool = True) -> Optional[dict
     return None
 
 
-def _construct_acqf(agent: Agent, acqf_name: str, **acqf_kwargs: Any) -> tuple[Any, dict[str, Any]]:
+def _construct_acqf(agent: BaseAgent, acqf_name: str, **acqf_kwargs: Any) -> tuple[Any, dict[str, Any]]:
     """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
     their identifiers can be found at `agent.all_acqfs`.
 
@@ -94,7 +94,7 @@ def _construct_acqf(agent: Agent, acqf_name: str, **acqf_kwargs: Any) -> tuple[A
         acqf = monte_carlo.qConstrainedLowerBoundMaxValueEntropy(
             constraint=agent.constraint,
             model=agent.fitness_model,
-            candidate_set=agent.test_inputs(n=1024).squeeze(1),
+            candidate_set=agent.sample(n=1024).squeeze(1),
         )
 
     elif acqf_name == "monte_carlo_noisy_expected_hypervolume_improvement":
