@@ -51,6 +51,8 @@ napari = ["napari"]
 
 gui = ["nicegui"]
 
+adaptive = ["bluesky-adaptive"]
+
 dev = [
   "black",
   "pytest-codecov",
@@ -72,6 +74,9 @@ dev = [
   "pandoc",
   "sphinx-copybutton",
   "sphinx_rtd_theme",
+  "pandas-stubs",
+  "types-PyYAML",
+  "mypy",
 ]
 
 
