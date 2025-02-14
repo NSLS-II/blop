@@ -33,7 +33,6 @@ from . import plotting, utils
 from .bayesian import acquisition, models
 from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
 from .bayesian.models import construct_single_task_model, train_model
-# from .bayesian.transforms import TargetingPosteriorTransform
 from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList

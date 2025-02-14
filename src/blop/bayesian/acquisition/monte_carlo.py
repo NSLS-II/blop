@@ -9,8 +9,9 @@ from botorch.acquisition.monte_carlo import (  # type: ignore[import-untyped]
     qProbabilityOfImprovement,
     qUpperConfidenceBound,
 )
-from botorch.acquisition.multi_objective.monte_carlo import \
-    qNoisyExpectedHypervolumeImprovement  # type: ignore[import-untyped]
+from botorch.acquisition.multi_objective.monte_carlo import (  # type: ignore[import-untyped]
+    qNoisyExpectedHypervolumeImprovement,
+)
 from botorch.models.model import Model  # type: ignore[import-untyped]
 from torch import Tensor
 
