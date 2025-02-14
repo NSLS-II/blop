@@ -87,7 +87,7 @@ class DOF:
     description: str = ""
     type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous"
     search_domain: Union[tuple[float, float], set[int], set[str], set[bool]] = (-np.inf, np.inf)
-    trust_domain: Union[tuple[float, float], set[int], set[str], set[bool]] = (-np.inf, np.inf)
+    trust_domain: Optional[Union[tuple[float, float], set[int], set[str], set[bool]]] = None
     active: bool = True
     read_only: bool = False
     transform: Optional[Literal["log", "logit", "arctanh"]] = None
@@ -147,7 +147,7 @@ class DOF:
                 continuous_search_domain = cast(tuple[float, float], self.search_domain)
                 continuous_trust_domain = cast(tuple[float, float], self.trust_domain)
                 continuous_domain = cast(tuple[float, float], self.domain)
-                
+
                 _validate_continuous_dof_domains(
                     search_domain=continuous_search_domain,
                     trust_domain=continuous_trust_domain,
@@ -163,9 +163,9 @@ class DOF:
                     center = float(self._untransform(torch.mean(transformed)))
                     self.device = Signal(name=self.name, value=center)
         else:
-            discrete_search_domain = cast(Union[set[str], set[int]], self.search_domain)
-            discrete_trust_domain = cast(Union[set[str], set[int]], self.trust_domain)
-            
+            discrete_search_domain = cast(Union[set[str], set[int]], self._search_domain)
+            discrete_trust_domain = cast(Union[set[str], set[int]], self._trust_domain)
+
             _validate_discrete_dof_domains(search_domain=discrete_search_domain, trust_domain=discrete_trust_domain)
 
             if self.type == "binary":
@@ -323,8 +323,13 @@ class DOFList(Sequence[DOF]):
 
     def __getattr__(self, attr: str) -> Union[DOF, list[Any], torch.Tensor]:
         # This is called if we can't find the attribute in the normal way.
+<<<<<<< HEAD
         if all(hasattr(dof, attr) for dof in self.dofs):
             if DOF_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
+=======
+        if all([hasattr(dof, attr) for dof in self.dofs]):
+            if DOF_FIELD_TYPES.get(attr) in [float, int, bool]:
+>>>>>>> 88d3124 (Fixed tests and a few errors)
                 return torch.tensor([getattr(dof, attr) for dof in self.dofs])
             return [getattr(dof, attr) for dof in self.dofs]
         if attr in self.names:
@@ -433,16 +438,16 @@ class DOFList(Sequence[DOF]):
         read_only: Optional[bool] = None,
         tag: Optional[str] = None,
     ) -> bool:
-        if type:
+        if type is not None:
             if dof.type != type:
                 return False
-        if active:
+        if active is not None:
             if dof.active != active:
                 return False
-        if read_only:
+        if read_only is not None:
             if dof.read_only != read_only:
                 return False
-        if tag:
+        if tag is not None:
             if not np.isin(np.atleast_1d(tag), dof.tags).any():
                 return False
         return True
@@ -580,8 +585,7 @@ def _validate_continuous_dof_domains(
 
 
 def _validate_discrete_dof_domains(
-    search_domain: Union[set[int], set[str]], 
-    trust_domain: Union[set[int], set[str]]
+    search_domain: Union[set[int], set[str]], trust_domain: Union[set[int], set[str]]
 ) -> None:
     """
     Check that all the domains are kosher by enforcing that:

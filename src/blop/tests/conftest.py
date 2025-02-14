@@ -69,15 +69,15 @@ def get_agent(param):
 
     if param == "1d_1f":
         return Agent(
-            dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-            objectives=Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
+            dofs=[DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))],
+            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", target="min")],
             digestion=sketchy_himmelblau_digestion,
         )
 
     elif param == "1d_1c":
         return Agent(
-            dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-            objectives=Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
+            dofs=[DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))],
+            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105))],
             digestion=sketchy_himmelblau_digestion,
         )
 
@@ -87,7 +87,7 @@ def get_agent(param):
                 DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
                 DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
             ],
-            objectives=Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
+            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", target="min")],
             digestion=sketchy_himmelblau_digestion,
         )
 

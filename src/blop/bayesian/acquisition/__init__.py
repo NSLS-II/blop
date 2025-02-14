@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Any
+from typing import Optional, Any, TYPE_CHECKING
 
 import pandas as pd
 import yaml
@@ -8,14 +8,17 @@ from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
 from .monte_carlo import *  # noqa F401
-from ...agent import BaseAgent
+
+if TYPE_CHECKING:
+    from ...agent import BaseAgent
 
 # from botorch.utils.transforms import normalize
 
 
 here, this_filename = os.path.split(__file__)
 
-with open(f"{here}/config.yml") as f:
+# TODO: Move this into the code, rather than a config file
+with open(f"{here}/config.yml", "r") as f:
     config = yaml.safe_load(f)
 
 
@@ -34,7 +37,7 @@ def parse_acqf_identifier(identifier: str, strict: bool = True) -> Optional[dict
     return None
 
 
-def _construct_acqf(agent: BaseAgent, acqf_name: str, **acqf_kwargs: Any) -> tuple[AcquisitionFunction, dict[str, Any]]:
+def _construct_acqf(agent: "BaseAgent", acqf_name: str, **acqf_kwargs: Any) -> tuple[AcquisitionFunction, dict[str, Any]]:
     """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
     their identifiers can be found at `agent.all_acqfs`.
 

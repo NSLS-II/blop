@@ -163,9 +163,7 @@ class Objective:
             return torch.tensor([value in self.constraint for value in np.atleast_1d(y)])
 
     def log_total_constraint(self, x: torch.Tensor) -> torch.Tensor:
-
-        log_p = torch.tensor([0.0], dtype=torch.double)
-        # if you have a constraint
+        log_p = torch.zeros(x.shape[:-1])
         if self.constraint:
             log_p += self.constraint_probability(x).log()
 
@@ -191,8 +189,6 @@ class Objective:
             y = (y / (1 - y)).log()
         elif self.transform == "arctanh":
             y = torch.arctanh(y)
-        else:
-            raise NotImplementedError(f"Transform {self.transform} is not supported yet.")
 
         if self.target == "min":
             y = -y
@@ -209,8 +205,6 @@ class Objective:
             y = 1 / (1 + torch.exp(-y))
         elif self.transform == "arctanh":
             y = torch.tanh(y)
-        else:
-            raise NotImplementedError(f"Transform {self.transform} is not supported yet.")
 
         return y
 
@@ -242,19 +236,21 @@ class Objective:
 
     @property
     def noise(self) -> float:
-        return self.model.likelihood.noise.item() if hasattr(self, "model") else np.nan
+        return self.model.likelihood.noise.item() if self.model else np.nan
 
     @property
     def snr(self) -> Optional[int]:
-        return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if hasattr(self, "model") else None
+        return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if self.model else None
 
     @property
     def n_valid(self) -> int:
-        return int((~self.model.train_targets.isnan()).sum()) if hasattr(self, "model") else 0
+        return int((~self.model.train_targets.isnan()).sum()) if self.model else 0
 
     def constraint_probability(self, x: torch.Tensor) -> torch.Tensor:
         if not self.constraint:
             raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
+        if not self.model:
+            raise RuntimeError("Cannot call 'constrain' with an untrained objective.")
 
         a, b = self.constraint
         p = self.model.posterior(x)
@@ -278,10 +274,8 @@ class Objective:
         raise NotImplementedError("Pseudofitness is not implemented for this objective.")
 
     @property
-    def model(self) -> Model:
-        if not self._model:
-            raise RuntimeError("Model has not been fit yet.")
-        return self._model.eval()
+    def model(self) -> Optional[Model]:
+        return self._model.eval() if self._model else None
 
 
 class ObjectiveList(Sequence[Objective]):

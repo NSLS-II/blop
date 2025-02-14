@@ -11,7 +11,9 @@ from .dofs import DOF
 def list_scan_with_delay(*args: Any, delay: float = 0, **kwargs: Any) -> Generator[Msg, None, str]:
     "Accepts all the normal 'scan' parameters, plus an optional delay."
 
-    def one_nd_step_with_delay(detectors: Sequence[Signal], step: Mapping[Movable, Any], pos_cache: Mapping[Movable, Any]) -> Generator[Msg, None, None]:
+    def one_nd_step_with_delay(
+        detectors: Sequence[Signal], step: Mapping[Movable, Any], pos_cache: Mapping[Movable, Any]
+    ) -> Generator[Msg, None, None]:
         "This is a copy of bluesky.plan_stubs.one_nd_step with a sleep added."
         motors = step.keys()
         yield from bps.move_per_step(step, pos_cache)
@@ -24,10 +26,7 @@ def list_scan_with_delay(*args: Any, delay: float = 0, **kwargs: Any) -> Generat
 
 
 def default_acquisition_plan(
-    dofs: Sequence[DOF], 
-    inputs: Mapping[str, Sequence[Any]], 
-    dets: Sequence[Signal], 
-    **kwargs: Any
+    dofs: Sequence[DOF], inputs: Mapping[str, Sequence[Any]], dets: Sequence[Signal], **kwargs: Any
 ) -> Generator[Msg, None, str]:
     """
     Parameters

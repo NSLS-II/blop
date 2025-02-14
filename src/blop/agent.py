@@ -324,7 +324,7 @@ class BaseAgent:
 
         elif method == "grid":
             read_only_tensor = cast(torch.Tensor, active_dofs.read_only)
-            n_side_if_settable = int(np.power(n, 1 / np.sum(~read_only_tensor)))
+            n_side_if_settable = int(np.power(n, 1 / torch.sum(~read_only_tensor)))
             sides = [
                 torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in active_dofs
             ]
@@ -412,9 +412,11 @@ class BaseAgent:
         for obj in objectives_to_model:
             t0 = ttime.monotonic()
 
-            cached_hypers = obj.model.state_dict() if hasattr(obj, "_model") else None
+            cached_hypers = obj.model.state_dict() if obj.model else None
             n_before_tell = obj.n_valid
             self._construct_model(obj)
+            if not obj.model:
+                raise RuntimeError(f"Expected {obj} to have a constructed model.")
             n_after_tell = obj.n_valid
 
             if train is None:
@@ -543,7 +545,9 @@ class BaseAgent:
                 sequential=sequential,
                 num_restarts=NUM_RESTARTS,
                 raw_samples=RAW_SAMPLES,  # used for intialization heuristic
-                fixed_features={i: dof._transform(dof.readback) for i, dof in enumerate(active_dofs) if dof.read_only},
+                fixed_features={
+                    i: dof._transform(torch.tensor(dof.readback)) for i, dof in enumerate(active_dofs) if dof.read_only
+                },
             )
 
             # this includes both RO and non-RO DOFs.
@@ -605,6 +609,7 @@ class Agent(BaseAgent):
         tolerate_acquisition_errors: bool = False,
         sample_center_on_init: bool = False,
         trigger_delay: float = 0,
+        train_every: int = 3,
     ):
         """
         A Bayesian optimization agent.
@@ -665,6 +670,7 @@ class Agent(BaseAgent):
             model_inactive_objectives=model_inactive_objectives,
             tolerate_acquisition_errors=tolerate_acquisition_errors,
             sample_center_on_init=sample_center_on_init,
+            train_every=train_every,
         )
 
         self.detectors = list(np.atleast_1d(detectors or []))
@@ -780,6 +786,8 @@ class Agent(BaseAgent):
 
         if item in ["mean", "error"]:
             for obj in self.objectives(active=True):
+                if not obj.model:
+                    raise RuntimeError(f"Expected {obj} to have a constructed model.")
                 p = obj.model.posterior(test_grid)
 
                 if item == "mean":
@@ -796,14 +804,10 @@ class Agent(BaseAgent):
             except Exception as e:
                 raise ValueError("'item' must be either 'mean', 'error', or a valid acq func.") from e
 
-<<<<<<< HEAD
-            acqf, _ = self._get_acquisition_function(identifier=acqf_identifier, return_metadata=True)
-=======
             if not acqf_identifier:
                 raise ValueError(f"Failed to parse acqf_identifier from item: {item}.")
 
             acqf, acqf_meta = self._get_acquisition_function(identifier=acqf_identifier["name"], return_metadata=True)
->>>>>>> cadc15f (Fixed typing on agent.py)
             a = acqf(test_grid).detach().numpy()
 
             self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
@@ -864,8 +868,8 @@ class Agent(BaseAgent):
         self._table = pd.DataFrame()
 
         for obj in self.objectives(active=True):
-            if hasattr(obj, "_model"):
-                del obj._model
+            if not obj._model:
+                obj._model = None
 
         self.n_last_trained = 0
 
@@ -1015,12 +1019,12 @@ class Agent(BaseAgent):
             Forget the last n=last points.
         """
 
-        if last:
+        if last is not None:
             if last > len(self._table):
                 raise ValueError(f"Cannot forget last {last} data points (only {len(self._table)} samples have been taken).")
             self.forget(index=self._table.index[-last:], train=train)
 
-        elif index:
+        elif index is not None:
             self._table.drop(index=index, inplace=True)
             self._construct_all_models()
             if train:
@@ -1031,8 +1035,11 @@ class Agent(BaseAgent):
 
     def _set_hypers(self, hypers: dict[str, Any]):
         for obj in self.objectives(active=True):
+            if not obj.model:
+                raise RuntimeError(f"Expected {obj} to have a constructed model.")
             obj.model.load_state_dict(hypers[obj.name])
-        self.validity_constraint.load_state_dict(hypers["validity_constraint"])
+        if self.validity_constraint:
+            self.validity_constraint.load_state_dict(hypers["validity_constraint"])
 
     @property
     def hypers(self) -> dict[str, dict[str, dict[str, torch.Tensor]]]:
@@ -1041,6 +1048,8 @@ class Agent(BaseAgent):
         for obj in self.objectives:
             hypers[obj.name] = {"model": {}, "validity_conjugate_model": {}}
 
+            if not obj.model:
+                raise RuntimeError(f"Expected {obj} to have a constructed model.")
             for key, value in obj.model.state_dict().items():
                 hypers[obj.name]["model"][key] = value
 
@@ -1151,11 +1160,7 @@ class Agent(BaseAgent):
         else:
             plotting._plot_acqf_many_dofs(self, acqfs=np.atleast_1d(acqf), axes=axes, **kwargs)
 
-<<<<<<< HEAD
-    def plot_validity(self, axes: tuple = (0, 1), **kwargs):
-=======
     def plot_validity(self, axes: tuple[int, int] = (0, 1), **kwargs) -> None:
->>>>>>> cadc15f (Fixed typing on agent.py)
         """Plot the modeled constraint over test inputs sampling the limits of the parameter space.
 
         Parameters
@@ -1174,7 +1179,7 @@ class Agent(BaseAgent):
 
     @property
     def latent_transforms(self) -> dict[str, Kernel]:
-        return {obj.name: obj.model.covar_module.latent_transform for obj in self.objectives(active=True)}
+        return {obj.name: obj.model.covar_module.latent_transform for obj in self.objectives(active=True) if obj.model}
 
     def plot_pareto_front(self, **kwargs) -> None:
         """Plot the improvement of the agent over time."""
@@ -1192,6 +1197,8 @@ class Agent(BaseAgent):
             raise ValueError("Number of pruning objectives and thresholds should be the same")
         for i in range(len(pruning_objs)):
             obj = pruning_objs[i]
+            if not obj.model:
+                raise RuntimeError(f"Expected {obj} to have a constructed model.")
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(obj.model.likelihood, obj.model)
             train_targets = self.train_targets()
             if not isinstance(train_targets, dict):

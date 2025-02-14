@@ -8,8 +8,8 @@ def himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback.
     """
-    df["x1"] = df["x1"].fillna(0)
-    df["x2"] = df["x2"].fillna(0)
+    df["x1"] = df["x1"].fillna(0) if "x1" in df.columns else 0
+    df["x2"] = df["x2"].fillna(0) if "x2" in df.columns else 0
     df["himmelblau"] = functions.himmelblau(x1=df.x1, x2=df.x2)
     df["himmelblau_transpose"] = functions.himmelblau(x1=df.x2, x2=df.x1)
     return df
