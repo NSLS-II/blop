@@ -5,11 +5,10 @@ import time as ttime
 import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Any, Callable, Optional, Sequence, Union, Iterator, Generator
+from typing import Any, Callable, Optional, Sequence, Union, Iterator, Generator, Hashable, cast
 
 from bluesky.run_engine import Msg
 import bluesky.plan_stubs as bps  # noqa F401
-import bluesky.plans as bp  # noqa F401
 import botorch  # type: ignore[import-untyped]
 import gpytorch  # type: ignore[import-untyped]
 import h5py  # type: ignore[import-untyped]
@@ -18,14 +17,17 @@ import numpy as np
 import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
 import torch
+from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
 from botorch.models.deterministic import GenericDeterministicModel  # type: ignore[import-untyped]
 from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[import-untyped]
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
 from botorch.models.model import Model  # type: ignore[import-untyped]
+from botorch.posteriors.posterior import Posterior  # type: ignore[import-untyped]
 from databroker import Broker  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
+from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
 
 from . import plotting, utils
 from .bayesian import acquisition, models
@@ -788,7 +790,14 @@ class Agent(BaseAgent):
             except Exception as e:
                 raise ValueError("'item' must be either 'mean', 'error', or a valid acq func.") from e
 
+<<<<<<< HEAD
             acqf, _ = self._get_acquisition_function(identifier=acqf_identifier, return_metadata=True)
+=======
+            if not acqf_identifier:
+                raise ValueError(f"Failed to parse acqf_identifier from item: {item}.")
+
+            acqf, acqf_meta = self._get_acquisition_function(identifier=acqf_identifier["name"], return_metadata=True)
+>>>>>>> cadc15f (Fixed typing on agent.py)
             a = acqf(test_grid).detach().numpy()
 
             self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
@@ -840,7 +849,7 @@ class Agent(BaseAgent):
         return products
 
     def load_data(self, data_file: str, append: bool = True):
-        new_table = pd.read_hdf(data_file, key="table")
+        new_table = pd.DataFrame(pd.read_hdf(data_file, key="table"))
         self._table = pd.concat([self._table, new_table]) if append else new_table
         self.refresh()
 
@@ -919,12 +928,15 @@ class Agent(BaseAgent):
         """
         Y = self.train_targets(active=True, fitness=True, concatenate=True)
 
+        if not isinstance(Y, torch.Tensor):
+            raise RuntimeError(f"Expected Y to be a torch.Tensor, but got {type(Y)}.")
+
         # nuke the bad points
-        Y[~self.evaluated_constraints.all(axis=-1)] = -np.inf
+        Y[~self.evaluated_constraints.all(dim=-1)] = -np.inf
         if Y.shape[-1] < 2:
             raise ValueError("Computing the Pareto front requires at least 2 fitness objectives.")
-        in_pareto_front = ~(Y.unsqueeze(1) > Y.unsqueeze(0)).all(axis=-1).any(axis=0)
-        return in_pareto_front & self.evaluated_constraints.all(axis=-1)
+        in_pareto_front = ~(Y.unsqueeze(1) > Y.unsqueeze(0)).all(dim=-1).any(dim=0)
+        return in_pareto_front & self.evaluated_constraints.all(dim=-1)
 
     @property
     def pareto_front(self) -> pd.DataFrame:
@@ -935,8 +947,11 @@ class Agent(BaseAgent):
 
     @property
     def min_ref_point(self) -> ArrayLike:
-        y = self.train_targets(concatenate=True)[:, self.objectives.type == "fitness"]
-        return y[y.argmax(axis=0)].min(axis=0).values
+        y = self.train_targets(concatenate=True)
+        if not isinstance(y, torch.Tensor):
+            raise RuntimeError(f"Expected y to be a torch.Tensor, but got {type(y)}.")
+        y = y[:, self.objectives.type == "fitness"]
+        return y[y.argmax(dim=0)].min(dim=0).values
 
     @property
     def all_objectives_valid(self) -> torch.Tensor:
@@ -963,12 +978,14 @@ class Agent(BaseAgent):
 
         self.n_last_trained = len(self._table)
 
-    def _get_acquisition_function(self, identifier: str, return_metadata: bool = False) -> AcquisitionFunction:
+    def _get_acquisition_function(
+        self, identifier: str, return_metadata: bool = False
+    ) -> tuple[AcquisitionFunction, dict[str, Any]]:
         """Returns a BoTorch acquisition function for a given identifier. Acquisition functions can be
         found in `agent.all_acqfs`.
         """
 
-        return acquisition._construct_acqf(self, identifier=identifier, return_metadata=return_metadata)
+        return acquisition._construct_acqf(self, acqf_name=identifier, return_metadata=return_metadata)
 
     def save_data(self, path: str = "./data.h5"):
         """
@@ -980,7 +997,7 @@ class Agent(BaseAgent):
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
         self._table.to_hdf(path, key="table")
 
-    def forget(self, last: Optional[int] = None, index: Optional[int] = None, train: bool = True):
+    def forget(self, last: Optional[int] = None, index: Optional[pd.Index] = None, train: bool = True):
         """
         Make the agent forget some data.
 
@@ -992,12 +1009,12 @@ class Agent(BaseAgent):
             Forget the last n=last points.
         """
 
-        if last is not None:
+        if last:
             if last > len(self._table):
                 raise ValueError(f"Cannot forget last {last} data points (only {len(self._table)} samples have been taken).")
-            self.forget(index=self._table.index.values[-last:], train=train)
+            self.forget(index=self._table.index[-last:], train=train)
 
-        elif index is not None:
+        elif index:
             self._table.drop(index=index, inplace=True)
             self._construct_all_models()
             if train:
@@ -1014,7 +1031,7 @@ class Agent(BaseAgent):
     @property
     def hypers(self) -> dict[str, dict[str, dict[str, torch.Tensor]]]:
         """Returns a dict of all the hyperparameters for each model in each objective."""
-        hypers = {}
+        hypers: dict[str, dict[str, dict[str, torch.Tensor]]] = {}
         for obj in self.objectives:
             hypers[obj.name] = {"model": {}, "validity_conjugate_model": {}}
 
@@ -1045,7 +1062,7 @@ class Agent(BaseAgent):
     @staticmethod
     def load_hypers(filepath: str) -> dict[str, dict[str, dict[str, torch.Tensor]]]:
         """Load hyperparameters from a file."""
-        hypers = {}
+        hypers: dict[str, dict[str, dict[str, torch.Tensor]]] = {}
         with h5py.File(filepath, "r") as f:
             for obj_name in f.keys():
                 hypers[obj_name] = {"model": OrderedDict(), "validity_conjugate_model": OrderedDict()}
@@ -1059,23 +1076,23 @@ class Agent(BaseAgent):
         return hypers
 
     @property
-    def all_acqfs(self) -> dict[str, AcquisitionFunction]:
+    def all_acqfs(self) -> pd.DataFrame:
         """
         Description and identifiers for all supported acquisition functions.
         """
         return acquisition.all_acqfs()
 
     @property
-    def best(self) -> pd.DataFrame:
+    def best(self) -> Union[pd.DataFrame, pd.Series]:
         """Returns all data for the best point."""
         return self._table.loc[self.argmax_best_f()]
 
     @property
-    def best_inputs(self) -> dict[str, Any]:
+    def best_inputs(self) -> dict[Hashable, Any]:
         """Returns the value of each DOF at the best point."""
-        return self._table.loc[self.argmax_best_f(), self.dofs.names].to_dict()
+        return self._table.iloc[self.argmax_best_f()][self.dofs.names].to_dict()
 
-    def go_to(self, **positions: Any):
+    def go_to(self, **positions: Any) -> Generator[Any, None, None]:
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as
 
         RE(agent.go_to(some_dof=x1, some_other_dof=x2, ...))
@@ -1094,9 +1111,10 @@ class Agent(BaseAgent):
 
     def go_to_best(self) -> Generator[Any, None, None]:
         """Go to the position of the best input seen so far."""
-        yield from self.go_to(**self.best_inputs)
+        best_inputs = cast(dict[str, Any], self.best_inputs)  # Cast to ensure string keys
+        yield from self.go_to(**best_inputs)
 
-    def plot_objectives(self, axes: tuple[int, int] = (0, 1), **kwargs):
+    def plot_objectives(self, axes: tuple[int, int] = (0, 1), **kwargs) -> None:
         """Plot the sampled objectives
 
         Parameters
@@ -1104,7 +1122,6 @@ class Agent(BaseAgent):
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
-
         if len(self.dofs(active=True, read_only=False)) == 1:
             if len(self.objectives(active=True, fitness=True)) > 0:
                 plotting._plot_fitness_objs_one_dof(self, **kwargs)
@@ -1113,7 +1130,7 @@ class Agent(BaseAgent):
         else:
             plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)
 
-    def plot_acquisition(self, acqf: str = "ei", axes: tuple[int, int] = (0, 1), **kwargs):
+    def plot_acquisition(self, acqf: str = "ei", axes: tuple[int, int] = (0, 1), **kwargs) -> None:
         """Plot an acquisition function over test inputs sampling the limits of the parameter space.
 
         Parameters
@@ -1125,11 +1142,14 @@ class Agent(BaseAgent):
         """
         if len(self.dofs(active=True, read_only=False)) == 1:
             plotting._plot_acqf_one_dof(self, acqfs=np.atleast_1d(acqf), **kwargs)
-
         else:
             plotting._plot_acqf_many_dofs(self, acqfs=np.atleast_1d(acqf), axes=axes, **kwargs)
 
+<<<<<<< HEAD
     def plot_validity(self, axes: tuple = (0, 1), **kwargs):
+=======
+    def plot_validity(self, axes: tuple[int, int] = (0, 1), **kwargs) -> None:
+>>>>>>> cadc15f (Fixed typing on agent.py)
         """Plot the modeled constraint over test inputs sampling the limits of the parameter space.
 
         Parameters
@@ -1139,23 +1159,22 @@ class Agent(BaseAgent):
         """
         if len(self.dofs(active=True, read_only=False)) == 1:
             plotting._plot_valid_one_dof(self, **kwargs)
-
         else:
             plotting._plot_valid_many_dofs(self, axes=axes, **kwargs)
 
-    def plot_history(self, **kwargs):
+    def plot_history(self, **kwargs) -> None:
         """Plot the improvement of the agent over time."""
         plotting._plot_history(self, **kwargs)
 
     @property
-    def latent_transforms(self) -> dict[str, LatentTransform]:
+    def latent_transforms(self) -> dict[str, Kernel]:
         return {obj.name: obj.model.covar_module.latent_transform for obj in self.objectives(active=True)}
 
-    def plot_pareto_front(self, **kwargs):
+    def plot_pareto_front(self, **kwargs) -> None:
         """Plot the improvement of the agent over time."""
         plotting._plot_pareto_front(self, **kwargs)
 
-    def prune(self, pruning_objs: list[Objective] = [], thresholds: list[float] = []):
+    def prune(self, pruning_objs: list[Objective] = [], thresholds: list[float] = []) -> None:
         """Prune low-fidelity datapoints from model fitting"""
         # set the prune column to false
         self._table = self._table.assign(prune=[False for i in range(self._table.shape[0])])
@@ -1168,7 +1187,11 @@ class Agent(BaseAgent):
         for i in range(len(pruning_objs)):
             obj = pruning_objs[i]
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(obj.model.likelihood, obj.model)
-            mlls = mll(obj.model(self.train_inputs()), self.train_targets()[obj.name].unsqueeze(-1)).detach()
+            train_targets = self.train_targets()
+            if not isinstance(train_targets, dict):
+                raise TypeError("Expected train_targets to return a dict")
+            target_tensor = train_targets[obj.name].unsqueeze(-1)
+            mlls = mll(obj.model(self.train_inputs()), target_tensor).detach()
             mlls -= mlls.max()
             mlls_wo_nans = [x for x in mlls if not np.isnan(x)]
             # Q: SHOULD WE MAKE AN OPTION TO HAVE THIS BE >, IN CASE THEY ARE NOT NEGATED?
@@ -1177,4 +1200,3 @@ class Agent(BaseAgent):
                     torch.tensor(self._table["prune"].values), mlls < thresholds[i] * np.quantile(mlls_wo_nans, q=0.25)
                 )
         self.refresh()
-        # return self._table["prune"]

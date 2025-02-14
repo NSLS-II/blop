@@ -3,6 +3,7 @@ from typing import Optional, Any
 
 import pandas as pd
 import yaml
+from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
@@ -33,7 +34,7 @@ def parse_acqf_identifier(identifier: str, strict: bool = True) -> Optional[dict
     return None
 
 
-def _construct_acqf(agent: BaseAgent, acqf_name: str, **acqf_kwargs: Any) -> tuple[Any, dict[str, Any]]:
+def _construct_acqf(agent: BaseAgent, acqf_name: str, **acqf_kwargs: Any) -> tuple[AcquisitionFunction, dict[str, Any]]:
     """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
     their identifiers can be found at `agent.all_acqfs`.
 
