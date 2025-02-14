@@ -5,6 +5,9 @@ import json  # noqa F401
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
 import databroker
+##
+
+##
 import matplotlib.pyplot as plt
 import numpy as np  # noqa F401
 from bluesky.callbacks import best_effort
@@ -25,12 +28,24 @@ def re_env(db_type=DEFAULT_DB_TYPE, root_dir=DEFAULT_ROOT_DIR):
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)
 
+    ##
     db = Broker.named(db_type)
+    # print(" this is db_type")
+    # print(databroker.__version__)
+    # db = databroker.catalog["http://localhost:8000"]
+    # print("hi")
+    print(databroker.__version__)
+ 
+
     db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-    try:
-        databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-    except Exception:
-        pass
+    print(db.reg.config)
+    databroker.assets.utils.install_sentinels(db.config, version=2)
+
+    # try:
+    #     databroker.assets.utils.install_sentinels(db.reg.config, version=2)
+    # except Exception:
+    #     print("exception")
+    #     pass
     RE.subscribe(db.insert)
 
     _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)

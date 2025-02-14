@@ -1,0 +1,43 @@
+database:
+  uri: "sqlite+aiosqlite:///./tiled.sqlite"
+  init_if_not_exists: true
+authentication:
+  allow_anonymous_access: True
+  tiled_admins:
+  - provider: pam
+    id: jmoylan1
+  - provider: toy
+    id: bill
+  providers:
+  - provider: pam  # keep name for now, for back-compat with database
+    authenticator: tiled.authenticators:LDAPAuthenticator
+    args:
+      server_address: "duoproxy.nsls2.bnl.gov"
+      bind_dn_template:
+      - "BNL\\{username}"
+      use_tls: true
+      use_ssl: true
+      confirmation_message: "You have logged in as {id}."
+  - provider: toy
+    authenticator: tiled.authenticators:DictionaryAuthenticator
+    args:
+      users_to_passwords:
+        nate: "nate"
+        bill: "bill"
+      confirmation_message: "You have logged in."
+trees:
+  - path: /local/raw
+    tree: catalog
+    args:
+      uri: "sqlite+aiosqlite:////tmp/sirepo-bluesky-data/catalog.db"
+      writable_storage: "file:///tmp/sirepo-bluesky-data/data"
+      init_if_not_exists: true
+    access_control:
+      access_policy: tiled.access_policies:SimpleAccessPolicy
+      args:
+        provider: "toy"
+        access_lists:
+          bill: tiled.access_policies:SimpleAccessPolicy.ALL
+          #provider: "pam"
+          #access_lists:
+          #jmoylan1: tiled.access_policies:SimpleAccessPolicy.ALL
