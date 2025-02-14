@@ -222,7 +222,7 @@ class BaseAgent:
 
         obj = self.objectives[obj_index]
 
-        latent_group_index = {}
+        latent_group_index: dict[str, Union[str, int]] = {}
         for dof in self.dofs(active=True):
             latent_group_index[dof.name] = dof.name
             for group_index, latent_group in enumerate(obj.latent_groups):
@@ -323,7 +323,8 @@ class BaseAgent:
             X = torch.rand(size=(n, 1, len(active_dofs)))
 
         elif method == "grid":
-            n_side_if_settable = int(np.power(n, 1 / np.sum(~active_dofs.read_only)))
+            read_only_tensor = cast(torch.Tensor, active_dofs.read_only)
+            n_side_if_settable = int(np.power(n, 1 / np.sum(~read_only_tensor)))
             sides = [
                 torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in active_dofs
             ]
@@ -508,7 +509,7 @@ class BaseAgent:
 
         # these are the fake acquisiton functions that we don't need to construct
         if acqf_config["name"] in ["quasi-random", "random", "grid"]:
-            candidates = self.sample(n=n, method=acqf_config["name"]).squeeze(1).numpy()
+            candidates = self.sample(n=n, method=acqf_config["name"]).squeeze(1)
 
             # define dummy acqf kwargs and objective
             acqf_kwargs, acqf_obj = {}, torch.zeros(len(candidates))
@@ -522,7 +523,7 @@ class BaseAgent:
 
             # if the model for any active objective mismatches the active dofs, reconstrut and train it
             for obj in active_objs:
-                if obj.model_dofs != set(active_dofs.names):
+                if hasattr(obj, "model_dofs") and obj.model_dofs != set(active_dofs.names):
                     self._construct_model(obj)
                     train_model(obj.model)
 
@@ -547,14 +548,15 @@ class BaseAgent:
 
             # this includes both RO and non-RO DOFs.
             # and is in the transformed model space
-            candidates = self.dofs(active=True).untransform(candidates).numpy()
+            candidates = self.dofs(active=True).untransform(candidates)
 
         # p = self.posterior(candidates) if hasattr(self, "model") else None
 
         active_dofs = self.dofs(active=True)
 
-        points = candidates[..., ~active_dofs.read_only]
-        read_only_values = candidates[..., active_dofs.read_only]
+        read_only_tensor = cast(torch.Tensor, active_dofs.read_only)
+        points = candidates[..., ~read_only_tensor].numpy()
+        read_only_values = candidates[..., read_only_tensor]
 
         duration = 1e3 * (ttime.monotonic() - start_time)
 
@@ -737,7 +739,11 @@ class Agent(BaseAgent):
         """
 
         if self.sample_center_on_init and not self.initialized:
-            center_inputs = np.atleast_2d(self.dofs(active=True, read_only=False).search_domain.mean(axis=1))
+            center_inputs = {
+                dof.name: [np.array(dof.search_domain).mean()]
+                for dof in self.dofs(active=True, read_only=False)
+                if isinstance(dof.search_domain, tuple)
+            }
             new_table = yield from self.acquire(center_inputs)
             new_table.loc[:, "acqf"] = "sample_center_on_init"
 

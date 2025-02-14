@@ -1,7 +1,7 @@
 # content of conftest.py
 import asyncio
 
-import databroker
+import databroker  # type: ignore[import-untyped]
 import numpy as np
 import pytest
 from bluesky.callbacks import best_effort

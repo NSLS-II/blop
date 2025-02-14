@@ -42,7 +42,7 @@ def _validate_obj_transform(transform: str) -> None:
         raise ValueError(f"'transform' must be one of {TRANSFORM_DOMAINS}")
 
 
-def _validate_continuous_domains(trust_domain: Optional[tuple[float, float]], domain: Optional[tuple[float, float]]):
+def _validate_continuous_domains(trust_domain: Optional[tuple[float, float]], domain: Optional[tuple[float, float]]) -> None:
     """
     A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
 
@@ -92,7 +92,7 @@ class Objective:
         description: str = "",
         type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous",
         target: Optional[Union[float, str]] = None,
-        constraint: Optional[Union[tuple[float, float], set]] = None,
+        constraint: Optional[Union[tuple[float, float], set[Any]]] = None,
         transform: Optional[Literal["log", "logit", "arctanh"]] = None,
         weight: float = 1.0,
         active: bool = True,
@@ -101,7 +101,7 @@ class Objective:
         max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
         units: Optional[str] = None,
         latent_groups: dict[str, Any] = {},
-    ):
+    ) -> None:
         self.name = name
         self.units = units
         self.description = description
@@ -284,11 +284,11 @@ class Objective:
         return self._model.eval()
 
 
-class ObjectiveList(Sequence):
-    def __init__(self, objectives: list[Objective] = []):
+class ObjectiveList(Sequence[Objective]):
+    def __init__(self, objectives: list[Objective] = []) -> None:
         self.objectives: list[Objective] = objectives
 
-    def __call__(self, *args, **kwargs) -> "ObjectiveList":
+    def __call__(self, *args: Any, **kwargs: Any) -> "ObjectiveList":
         return self.subset(*args, **kwargs)
 
     @property
@@ -307,10 +307,10 @@ class ObjectiveList(Sequence):
         raise AttributeError(f"ObjectiveList object has no attribute named '{attr}'.")
 
     @overload
-    def __getitem__(self, key: str) -> Objective: ...
+    def __getitem__(self, key: int) -> Objective: ...
 
     @overload
-    def __getitem__(self, i: int) -> Objective: ...
+    def __getitem__(self, key: str) -> Objective: ...
 
     @overload
     def __getitem__(self, s: slice) -> Sequence[Objective]: ...
@@ -372,8 +372,8 @@ class ObjectiveList(Sequence):
                 return False
         return True
 
-    def subset(self, **kwargs) -> "ObjectiveList":
-        return ObjectiveList([obj for obj in self.objectives if self._test_obj(obj, **kwargs)])
+    def subset(self, **kwargs: Any) -> "ObjectiveList":
+        return self.__class__([obj for obj in self.objectives if self._test_obj(obj, **kwargs)])
 
     def transform(self, Y: torch.Tensor) -> torch.Tensor:
         """

@@ -86,8 +86,8 @@ class DOF:
     name: str = ""
     description: str = ""
     type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous"
-    search_domain: Union[tuple[float, float], set[int], set[str]] = (-np.inf, np.inf)
-    trust_domain: Union[tuple[float, float], set[int], set[str]] = (-np.inf, np.inf)
+    search_domain: Union[tuple[float, float], set[int], set[str], set[bool]] = (-np.inf, np.inf)
+    trust_domain: Union[tuple[float, float], set[int], set[str], set[bool]] = (-np.inf, np.inf)
     active: bool = True
     read_only: bool = False
     transform: Optional[Literal["log", "logit", "arctanh"]] = None
@@ -96,7 +96,7 @@ class DOF:
     travel_expense: float = 1
     units: Optional[str] = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         nodef_f_vals = ((f.name, attrgetter(f.name)(self)) for f in fields(self))
 
         nodef_f_repr = []
@@ -110,12 +110,13 @@ class DOF:
         return f"{self.__class__.__name__}({', '.join(nodef_f_repr)})"
 
     # Some post-processing. This is specific to dataclasses
-    def __post_init__(self):
-        if (not self.name) ^ (not self.device):
-            if not self.name:
+    def __post_init__(self) -> None:
+        # Either name or device must be provided
+        if (not self.name) != (not self.device):
+            if self.device:
                 self.name = self.device.name
         else:
-            raise ValueError("You must specify exactly one of 'name' or 'device'.")
+            raise ValueError("You must specify exactly one of 'name' or 'device'. Not both.")
         if self.read_only:
             if not self.type:
                 if isinstance(self.readback, float):
@@ -143,32 +144,43 @@ class DOF:
 
         if self.type == "continuous":
             if not self.read_only:
+                continuous_search_domain = cast(tuple[float, float], self.search_domain)
+                continuous_trust_domain = cast(tuple[float, float], self.trust_domain)
+                continuous_domain = cast(tuple[float, float], self.domain)
+                
                 _validate_continuous_dof_domains(
-                    search_domain=self._search_domain,
-                    trust_domain=self._trust_domain,
-                    domain=self.domain,
+                    search_domain=continuous_search_domain,
+                    trust_domain=continuous_trust_domain,
+                    domain=continuous_domain,
                     read_only=self.read_only,
                 )
 
-                self.search_domain = (float(self.search_domain[0]), float(self.search_domain[1]))
+                self.search_domain = (float(continuous_search_domain[0]), float(continuous_search_domain[1]))
 
                 if not self.device:
-                    center = float(self._untransform(np.mean([self._transform(np.array(self.search_domain))])))
+                    search_tensor = torch.tensor(continuous_search_domain, dtype=torch.float)
+                    transformed = self._transform(search_tensor)
+                    center = float(self._untransform(torch.mean(transformed)))
                     self.device = Signal(name=self.name, value=center)
         else:
-            _validate_discrete_dof_domains(search_domain=self._search_domain, trust_domain=self._trust_domain)
+            discrete_search_domain = cast(Union[set[str], set[int]], self.search_domain)
+            discrete_trust_domain = cast(Union[set[str], set[int]], self.trust_domain)
+            
+            _validate_discrete_dof_domains(search_domain=discrete_search_domain, trust_domain=discrete_trust_domain)
 
             if self.type == "binary":
                 if not self.search_domain:
-                    self.search_domain = [False, True]
+                    self.search_domain = {False, True}
                 if len(self.search_domain) != 2:
                     raise ValueError("A binary DOF must have a domain of 2.")
             else:
-                if self.search_domain is None:
+                if not self.search_domain:
                     raise ValueError("Discrete domain must be supplied for ordinal and categorical degrees of freedom.")
 
-            self.search_domain = set(self.search_domain)
             self.device = Signal(name=self.name, value=list(self.search_domain)[0])
+
+        if not self.device:
+            raise ValueError("Expected device to be set. Please check that the DOF has a name or device.")
 
         if not self.read_only:
             # check that the device has a put method
@@ -179,7 +191,7 @@ class DOF:
         self.device.kind = "hinted"
 
     @property
-    def _search_domain(self) -> Union[tuple[float, float], set[int], set[str]]:
+    def _search_domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
         """
         Compute the search domain of the DOF.
         """
@@ -193,14 +205,14 @@ class DOF:
             return self.search_domain
 
     @property
-    def _trust_domain(self) -> Union[tuple[float, float], set[int], set[str]]:
+    def _trust_domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
         """
         If trust_domain is None, then we return the total domain.
         """
         return self.trust_domain or self.domain
 
     @property
-    def domain(self) -> Union[tuple[float, float], set[int], set[str]]:
+    def domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
         """
         The total domain; the user can't control this. This is what we fall back on as the trust_domain if none is supplied.
         If the DOF is continuous:
@@ -286,15 +298,15 @@ class DOF:
     def has_model(self) -> bool:
         return hasattr(self, "model")
 
-    def activate(self):
+    def activate(self) -> None:
         self.active = True
 
-    def deactivate(self):
+    def deactivate(self) -> None:
         self.active = False
 
 
 class DOFList(Sequence[DOF]):
-    def __init__(self, dofs: list[DOF] = []):
+    def __init__(self, dofs: list[DOF] = []) -> None:
         _validate_dofs(dofs)
         self.dofs = dofs or []
 
@@ -306,14 +318,14 @@ class DOFList(Sequence[DOF]):
     def devices(self) -> list[Signal]:
         return [dof.device for dof in self.dofs]
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any) -> "DOFList":
         return self.subset(*args, **kwargs)
 
-    def __getattr__(self, attr: str) -> Union[DOF, list[Any], np.ndarray]:
+    def __getattr__(self, attr: str) -> Union[DOF, list[Any], torch.Tensor]:
         # This is called if we can't find the attribute in the normal way.
         if all(hasattr(dof, attr) for dof in self.dofs):
             if DOF_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
-                return np.array([getattr(dof, attr) for dof in self.dofs])
+                return torch.tensor([getattr(dof, attr) for dof in self.dofs])
             return [getattr(dof, attr) for dof in self.dofs]
         if attr in self.names:
             return self.__getitem__(attr)
@@ -321,16 +333,16 @@ class DOFList(Sequence[DOF]):
         raise AttributeError(f"DOFList object has no attribute named '{attr}'.")
 
     @overload
+    def __getitem__(self, key: int) -> DOF: ...
+
+    @overload
     def __getitem__(self, key: str) -> DOF: ...
 
     @overload
-    def __getitem__(self, i: int) -> DOF: ...
+    def __getitem__(self, key: slice) -> Sequence[DOF]: ...
 
     @overload
-    def __getitem__(self, s: slice) -> Sequence[DOF]: ...
-
-    @overload
-    def __getitem__(self, key: Iterable) -> Sequence[DOF]: ...
+    def __getitem__(self, key: list[int]) -> Sequence[DOF]: ...
 
     def __getitem__(self, key):
         if isinstance(key, str):
@@ -396,20 +408,20 @@ class DOFList(Sequence[DOF]):
         return table
 
     @property
-    def search_domain(self) -> np.ndarray:
+    def search_domain(self) -> torch.Tensor:
         """
         Returns a (n_dof, 2) array of domain.
         """
-        return np.array([dof._search_domain for dof in self.dofs])
+        return torch.tensor([dof._search_domain for dof in self.dofs])
 
     @property
-    def trust_domain(self) -> np.ndarray:
+    def trust_domain(self) -> torch.Tensor:
         """
         Returns a (n_dof, 2) array of domain.
         """
-        return np.array([dof._trust_domain for dof in self.dofs])
+        return torch.tensor([dof._trust_domain for dof in self.dofs])
 
-    def add(self, dof: DOF):
+    def add(self, dof: DOF) -> None:
         _validate_dofs([*self.dofs, dof])
         self.dofs.append(dof)
 
@@ -446,24 +458,24 @@ class DOFList(Sequence[DOF]):
             [dof for dof in self.dofs if self._test_dof(dof, type=type, active=active, read_only=read_only, tag=tag)]
         )
 
-    def activate(self, **subset_kwargs):
+    def activate(self, **subset_kwargs: Any) -> None:
         for dof in self.dofs:
             if self._test_dof(dof, **subset_kwargs):
                 dof.active = True
 
-    def deactivate(self, **subset_kwargs):
+    def deactivate(self, **subset_kwargs: Any) -> None:
         for dof in self.dofs:
             if self._test_dof(dof, **subset_kwargs):
                 dof.active = False
 
-    def activate_only(self, **subset_kwargs):
+    def activate_only(self, **subset_kwargs: Any) -> None:
         for dof in self.dofs:
             if self._test_dof(dof, **subset_kwargs):
                 dof.active = True
             else:
                 dof.active = False
 
-    def deactivate_only(self, **subset_kwargs):
+    def deactivate_only(self, **subset_kwargs: Any) -> None:
         for dof in self.dofs:
             if self._test_dof(dof, **subset_kwargs):
                 dof.active = False
@@ -476,7 +488,7 @@ class BrownianMotion(SignalRO):
     Read-only degree of freedom simulating brownian motion
     """
 
-    def __init__(self, name=None, theta=0.95, *args, **kwargs):
+    def __init__(self, name: Optional[str] = None, theta: float = 0.95, *args: Any, **kwargs: Any) -> None:
         name = name if name is not None else str(uuid.uuid4())
 
         super().__init__(*args, name=name, **kwargs)
@@ -485,7 +497,7 @@ class BrownianMotion(SignalRO):
         self.old_t = ttime.monotonic()
         self.old_y = 0.0
 
-    def get(self):
+    def get(self) -> float:
         new_t = ttime.monotonic()
         alpha = self.theta ** (new_t - self.old_t)
         new_y = alpha * self.old_y + np.sqrt(1 - alpha**2) * np.random.standard_normal()
@@ -500,10 +512,10 @@ class TimeReadback(SignalRO):
     Returns the current timestamp.
     """
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
-    def get(self):
+    def get(self) -> float:
         return ttime.time()
 
 
@@ -512,16 +524,17 @@ class ConstantReadback(SignalRO):
     Returns a constant every time you read it (more useful than you'd think).
     """
 
-    def __init__(self, constant=1, *args, **kwargs):
+    def __init__(self, constant: float = 1, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
 
         self.constant = constant
 
-    def get(self):
+    def get(self) -> float:
         return self.constant
 
 
 def _validate_dofs(dofs: Sequence[DOF]) -> Sequence[DOF]:
+    """Validate a sequence of DOFs."""
     dof_names = [dof.name for dof in dofs]
 
     # check that dof names are unique
@@ -535,9 +548,9 @@ def _validate_dofs(dofs: Sequence[DOF]) -> Sequence[DOF]:
 
 def _validate_continuous_dof_domains(
     search_domain: tuple[float, float], trust_domain: tuple[float, float], domain: tuple[float, float], read_only: bool
-):
+) -> None:
     """
-    A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain.
+    A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
 
     Check that all the domains are kosher by enforcing that:
     search_domain \\subseteq trust_domain \\subseteq domain
@@ -566,12 +579,13 @@ def _validate_continuous_dof_domains(
             raise ValueError(f"The trust domain {trust_domain} must be a subset of the domain {domain}.")
 
 
-def _validate_discrete_dof_domains(search_domain: Union[set[int], set[str]], trust_domain: Union[set[int], set[str]]):
+def _validate_discrete_dof_domains(
+    search_domain: Union[set[int], set[str]], 
+    trust_domain: Union[set[int], set[str]]
+) -> None:
     """
-    A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
-
     Check that all the domains are kosher by enforcing that:
-    search_domain \\subseteq trust_domain \\subseteq domain
+    search_domain \\subseteq trust_domain
     """
     if not trust_domain.issuperset(search_domain):
         raise ValueError(f"The trust domain {trust_domain} not a superset of the search domain {search_domain}.")
