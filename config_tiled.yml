@@ -26,7 +26,7 @@ authentication:
         bill: "bill"
       confirmation_message: "You have logged in."
 trees:
-  - path: /
+  - path: /local/raw
     tree: catalog
     args:
       uri: "sqlite+aiosqlite:////tmp/sirepo-bluesky-data/catalog.db"
