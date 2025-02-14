@@ -1,12 +1,12 @@
 from collections.abc import Iterable, Sequence
-from typing import Union, Optional, Literal, Any, overload
+from typing import Any, Literal, Optional, Union, overload
 
 import numpy as np
 import pandas as pd
 import torch
 from botorch.models.model import Model  # type: ignore[import-untyped]
-from .utils.functions import approximate_erf
 
+from .utils.functions import approximate_erf
 
 DEFAULT_MIN_NOISE_LEVEL = 1e-6
 DEFAULT_MAX_NOISE_LEVEL = 1e0

@@ -1,8 +1,9 @@
+from typing import Optional, Union
+
 import botorch  # type: ignore[import-untyped]
 import numpy as np
 import scipy as sp  # type: ignore[import-untyped]
 import torch
-from typing import Union, Optional
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2  # type: ignore[import-untyped]
 
 from . import functions  # noqa

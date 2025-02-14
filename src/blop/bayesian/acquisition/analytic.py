@@ -3,7 +3,11 @@ from typing import Callable
 
 import numpy as np
 import torch
-from botorch.acquisition.analytic import LogExpectedImprovement, LogProbabilityOfImprovement, UpperConfidenceBound  # type: ignore[import-untyped]
+from botorch.acquisition.analytic import (  # type: ignore[import-untyped]
+    LogExpectedImprovement,
+    LogProbabilityOfImprovement,
+    UpperConfidenceBound,
+)
 from botorch.models.model import Model  # type: ignore[import-untyped]
 from torch import Tensor
 

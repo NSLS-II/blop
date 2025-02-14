@@ -2,7 +2,7 @@ import itertools
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterator, Optional, Generator
+from typing import Any, Generator, Iterator, Optional
 
 import h5py  # type: ignore[import-untyped]
 import numpy as np

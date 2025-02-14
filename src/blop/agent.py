@@ -5,9 +5,8 @@ import time as ttime
 import warnings
 from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Any, Callable, Optional, Sequence, Union, Iterator, Generator, Hashable, cast
+from typing import Any, Callable, Generator, Hashable, Iterator, Optional, Sequence, Union, cast
 
-from bluesky.run_engine import Msg
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
 import gpytorch  # type: ignore[import-untyped]
@@ -17,23 +16,23 @@ import numpy as np
 import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
 import torch
+from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
 from botorch.models.deterministic import GenericDeterministicModel  # type: ignore[import-untyped]
+from botorch.models.model import Model  # type: ignore[import-untyped]
 from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[import-untyped]
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
-from botorch.models.model import Model  # type: ignore[import-untyped]
 from botorch.posteriors.posterior import Posterior  # type: ignore[import-untyped]
 from databroker import Broker  # type: ignore[import-untyped]
+from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
-from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
 
 from . import plotting, utils
 from .bayesian import acquisition, models
 from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
 from .bayesian.models import construct_single_task_model, train_model
-
 # from .bayesian.transforms import TargetingPosteriorTransform
 from .digestion import default_digestion_function
 from .dofs import DOF, DOFList

@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 import pandas as pd
 import yaml

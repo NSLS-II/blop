@@ -1,4 +1,5 @@
-from typing import Any, Generator, Sequence, Mapping
+from typing import Any, Generator, Mapping, Sequence
+
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 from bluesky.protocols import Movable

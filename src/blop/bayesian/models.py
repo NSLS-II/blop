@@ -1,8 +1,9 @@
+from typing import Any, Optional, Union
+
 import botorch  # type: ignore[import-untyped]
 import gpytorch  # type: ignore[import-untyped]
 import torch
 from botorch.models.gp_regression import SingleTaskGP  # type: ignore[import-untyped]
-from typing import Optional, Union, Any
 
 from . import kernels
 

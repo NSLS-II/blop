@@ -1,4 +1,4 @@
-from typing import Union, Iterable
+from typing import Iterable, Union
 
 import gpytorch  # type: ignore[import-untyped]
 import numpy as np
