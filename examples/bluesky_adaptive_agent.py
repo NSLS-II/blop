@@ -1,9 +1,10 @@
 from typing import Any, Callable, Sequence
 
-from databroker.client import BlueskyRun  # type: ignore[import-untyped]
-from bluesky_adaptive.agents.base import Agent as BlueskyAdaptiveBaseAgent  # type: ignore[import-untyped]
 import pandas as pd
+from bluesky_adaptive.agents.base import Agent as BlueskyAdaptiveBaseAgent  # type: ignore[import-untyped]
+from databroker.client import BlueskyRun  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
+
 from blop.agent import BaseAgent as BlopAgent  # type: ignore[import-untyped]
 from blop.digestion import default_digestion_function  # type: ignore[import-untyped]
 
