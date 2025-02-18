@@ -158,7 +158,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(agent.objectives):
-        targets = agent.train_targets()[obj.name].numpy()
+        targets = agent.train_targets()[obj.name]
 
         values = obj._untransform(targets)
         # mask does not generate properly when values is a tensor (returns values of 0 instead of booleans)
