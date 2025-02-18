@@ -1,4 +1,4 @@
-from typing import Optional, Union
+from typing import Union
 
 import botorch  # type: ignore[import-untyped]
 import numpy as np
