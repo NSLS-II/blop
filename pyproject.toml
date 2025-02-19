@@ -44,6 +44,11 @@ dynamic = ["version"]
 sirepo = ["sirepo-bluesky"]
 napari = ["napari"]
 gui = ["nicegui"]
+pre-commit = [
+  "ruff",
+  "import-linter",
+  "nbstripout",
+]
 dev = [
   "pytest-codecov",
   "coverage",
