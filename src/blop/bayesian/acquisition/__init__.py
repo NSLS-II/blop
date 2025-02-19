@@ -12,7 +12,7 @@ from .monte_carlo import *  # noqa F401
 
 here, this_filename = os.path.split(__file__)
 
-with open(f"{here}/config.yml", "r") as f:
+with open(f"{here}/config.yml") as f:
     config = yaml.safe_load(f)
 
 

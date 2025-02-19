@@ -1,4 +1,3 @@
-import sirepo_bluesky
 from ophyd.utils import make_dir_tree
 from sirepo_bluesky.shadow_handler import ShadowFileHandler
 from sirepo_bluesky.sirepo_bluesky import SirepoBluesky

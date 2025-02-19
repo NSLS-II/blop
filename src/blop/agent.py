@@ -5,8 +5,8 @@ import time as ttime
 import warnings
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import Mapping
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Mapping, Sequence
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401

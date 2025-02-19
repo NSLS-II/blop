@@ -115,7 +115,10 @@ lint.ignore = [
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"src/blop/tests/**/*" = ["S101", "D"]
+"src/blop/tests/**/*" = ["S101", "SLF001", "D"]
+# Ignore F821: undefined name '...' since the ipython profiles are dynamically loaded into the namespace
+"docs/**/*" = ["F821"]
+"examples/**/*" = ["F821"]
 
 [tool.importlinter]
 root_package = "blop"
