@@ -37,7 +37,7 @@ from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 
-logger = logging.getLogger("maria")
+logger = logging.getLogger("blop")
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -57,7 +57,7 @@ def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
         for latent_group in obj.latent_groups:
             for dof_name in latent_group:
                 if dof_name not in dofs.names:
-                    warnings.warn(
+                    logger.warning(
                         f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist."
                         "it will be ignored."
                     )
@@ -252,7 +252,7 @@ class BaseAgent:
 
         return Normalize(d=self.dofs.active.sum())
 
-    def _construct_model(self, obj, skew_dims=None):
+    def _try_construct_model(self, obj, skew_dims=None, error_on_fail=False):
         """
         Construct an untrained model for an objective.
         """
@@ -266,6 +266,16 @@ class BaseAgent:
         targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
 
         trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
+
+        if ~trusted.any():
+            message = f"Agent cannot construct model for objective '{obj.name}' as it has fewer than 2 valid points."
+            if error_on_fail:
+                raise RuntimeError(message)
+            else:
+                logger.warning(message)
+                if hasattr(obj, "_model"):
+                    del obj._model
+                return False
 
         obj._model = construct_single_task_model(
             X=train_inputs[trusted],
@@ -298,6 +308,8 @@ class BaseAgent:
                 f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
             )
 
+        return True
+
     def update_models(
         self,
         train: Optional[bool] = None,
@@ -308,11 +320,12 @@ class BaseAgent:
 
             cached_hypers = obj.model.state_dict() if hasattr(obj, "_model") else None
             n_before_tell = obj.n_valid
-            self._construct_model(obj)
-            n_after_tell = obj.n_valid
+            success = self._try_construct_model(obj)
+            if not success:
+                continue
 
             if train is None:
-                train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
+                train = int(obj.n_valid / self.train_every) > int(n_before_tell / self.train_every)
 
             if len(obj.model.train_targets) >= 4:
                 if train:
@@ -404,17 +417,17 @@ class BaseAgent:
             acqf_kwargs, acqf_obj = {}, torch.zeros(len(candidates))
 
         else:
-            # check that all the objectives have models
-            if not all(hasattr(obj, "_model") for obj in active_objs):
-                raise RuntimeError(
-                    f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
-                )
-
-            # if the model for any active objective mismatches the active dofs, reconstrut and train it
             for obj in active_objs:
-                if obj.model_dofs != set(active_dofs.names):
-                    self._construct_model(obj)
+                # if the model for any active objective mismatches the active dofs, reconstruct and train it
+                if getattr(obj, "model_dofs", {}) != set(active_dofs.names):
+                    self._try_construct_model(obj, error_on_fail=True)
                     train_model(obj.model)
+
+            # # check that all the objectives have models
+            # if not all(getattr(obj, "_model", None) is not None for obj in active_objs):
+            #     raise RuntimeError(
+            #         f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
+            #     )
 
             if acqf_config["type"] == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
@@ -1126,7 +1139,7 @@ class Agent(BaseAgent):
         """Construct a model for each objective."""
         objectives_to_construct = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
         for obj in objectives_to_construct:
-            self._construct_model(obj)
+            self._try_construct_model(obj)
 
     def _train_all_models(self, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""

@@ -1,6 +1,6 @@
 import time as ttime
 import uuid
-import warnings
+import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, fields
 from operator import attrgetter
@@ -28,6 +28,7 @@ DOF_FIELD_TYPES = {
 DOF_TYPES = ["continuous", "binary", "ordinal", "categorical"]
 TRANSFORM_DOMAINS = {"log": (0.0, np.inf), "logit": (0.0, 1.0), "arctanh": (-1.0, 1.0)}
 
+logger = logging.getLogger("blop")
 
 class ReadOnlyError(Exception):
     pass
@@ -162,7 +163,7 @@ class DOF:
                     self.type = "continuous"
                 else:
                     self.type = "categorical"
-                warnings.warn(f"No type was specified for DOF {self.name}. Assuming type={self.type}.")
+                logger.warning(f"No type was specified for DOF '{self.name}'. Assuming type='{self.type}'.")
         else:
             if self.search_domain is None:
                 raise ValueError("You must specify the search domain if read_only=False.")
@@ -236,12 +237,6 @@ class DOF:
         else:
             return self.search_domain
 
-    @property
-    def _trust_domain(self):
-        """
-        If trust_domain is None, then we return the total domain.
-        """
-        return self.trust_domain or self.domain
 
     @property
     def domain(self):
@@ -264,12 +259,22 @@ class DOF:
 
     def _trust(self, x):
         return (self.trust_domain[0] <= x) & (x <= self.trust_domain[1])
+    
+
+    @property
+    def _trust_domain(self):
+        """
+        If trust_domain is None, then we return the total domain.
+        """
+        return self.trust_domain or self.search_domain or self.domain
+    
+    # trust domain \subseteq search domain \subseteq domain
 
     def _transform(self, x, normalize=True):
         if not isinstance(x, torch.Tensor):
             x = torch.tensor(x, dtype=torch.double)
 
-        x = torch.where((x > self.domain[0]) & (x < self.domain[1]), x, torch.nan)
+        x = torch.where((x >= self._trust_domain[0]) & (x <= self._trust_domain[1]), x, torch.nan)
 
         if self.transform == "log":
             x = torch.log(x)
@@ -279,8 +284,8 @@ class DOF:
             x = torch.arctanh(x)
 
         if normalize and not self.read_only:
-            min, max = self._transform(self._search_domain, normalize=False)
-            x = (x - min) / (max - min)
+            x_min, x_max = self._transform(self._trust_domain, normalize=False)
+            x = (x - x_min) / (x_max - x_min)
 
         return x
 
@@ -289,8 +294,8 @@ class DOF:
             x = torch.tensor(x, dtype=torch.double)
 
         if not self.read_only:
-            min, max = self._transform(self._search_domain, normalize=False)
-            x = x * (max - min) + min
+            x_min, x_max = self._transform(self._trust_domain, normalize=False)
+            x = x * (x_max - x_min) + x_min
 
         if self.transform is None:
             return x
