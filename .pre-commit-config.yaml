@@ -1,28 +1,36 @@
-default_language_version:
-    python: python3
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
+      - id: check-added-large-files
       - id: check-yaml
+      - id: check-merge-conflict
       - id: end-of-file-fixer
-      - id: trailing-whitespace
-  - repo: https://github.com/ambv/black
-    rev: 24.10.0
+
+  - repo: local
     hooks:
-      - id: black
-        language_version: python3
-      - id: black-jupyter
-        language_version: python3
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.1.1
-    hooks:
-      - id: flake8
-  - repo: https://github.com/pycqa/isort
-    rev: 5.13.2
-    hooks:
-      - id: isort
-        args: ["--profile", "black"]
+      - id: ruff
+        name: lint with ruff
+        language: system
+        entry: ruff check --force-exclude
+        types: [python]
+        require_serial: true
+
+      - id: ruff-format
+        name: format with ruff
+        language: system
+        entry: ruff format --force-exclude
+        types: [python]
+        require_serial: true
+
+      - id: lint-imports
+        name: Ensure import directionality
+        pass_filenames: false
+        language: system
+        entry: lint-imports
+        types: [python]
+        require_serial: false
+
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1
     hooks:
