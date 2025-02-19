@@ -7,8 +7,7 @@ repos:
       - id: check-merge-conflict
       - id: end-of-file-fixer
 
-  - repo: https://github.com/astral-sh/ruff
-    rev: 0.9.6
+  - repo: local
     hooks:
       - id: ruff
         name: lint with ruff
@@ -24,11 +23,8 @@ repos:
         types: [python]
         require_serial: true
 
-  - repo: https://github.com/seddonym/import-linter
-    rev: v2.2
-    hooks:
-      - id: lint-imports
-        name: Ensure import directionality
+      - id: import-linter
+        name: ensure import directionality 
         pass_filenames: false
         language: system
         entry: lint-imports
