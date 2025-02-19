@@ -223,6 +223,7 @@ class DOF:
         # all dof degrees of freedom are hinted
         self.device.kind = "hinted"
 
+
     @property
     def _search_domain(self):
         """

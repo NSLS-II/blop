@@ -157,14 +157,14 @@ class BaseAgent:
         Get the raw, untransformed inputs for a DOF (or for a subset).
         """
         if index is None:
-            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
+            return torch.stack([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
 
     def train_inputs(self, index=None, **subset_kwargs):
         """A two-dimensional tensor of all DOF values."""
 
         if index is None:
-            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+            return torch.stack([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
 
         dof = self.dofs[index]
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
@@ -173,26 +173,20 @@ class BaseAgent:
 
     def raw_targets(self, index=None, **subset_kwargs):
         """
-        Get the raw, untransformed inputs for an objective (or for a subset).
+        Get the raw, untransformed targets for an objective (or for a subset of objectives).
         """
-        values = {}
+        if index is None:
+            return {obj.name: self.raw_targets(obj.name) for obj in self.objectives(**subset_kwargs)}
+        return torch.tensor(self._table.loc[:, self.objectives[index].name].values, dtype=torch.double)
 
-        for obj in self.objectives(**subset_kwargs):
-            # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
-            values[obj.name] = torch.tensor(self._table.loc[:, obj.name].values, dtype=torch.double)
-
-        return values
-
-    def train_targets(self, concatenate=False, **subset_kwargs):
+    def train_targets(self, index=None, concatenate=False, **subset_kwargs):
         """Returns the values associated with an objective name."""
 
         targets_dict = {}
         raw_targets_dict = self.raw_targets(**subset_kwargs)
 
         for obj in self.objectives(**subset_kwargs):
-            y = raw_targets_dict[obj.name]
-
-            targets_dict[obj.name] = obj._transform(y)
+            targets_dict[obj.name] = obj._transform(raw_targets_dict[obj.name])
 
         if self.enforce_all_objectives_valid:
             all_valid_mask = True
@@ -204,8 +198,11 @@ class BaseAgent:
                 targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
 
         if concatenate:
-            return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
-
+            return torch.stack([values for values in targets_dict.values()], axis=-1)
+        
+        if index is not None:
+            return targets_dict[self.objectives[index].name]
+        
         return targets_dict
 
     def _latent_dim_tuples(self, obj_index=None):
