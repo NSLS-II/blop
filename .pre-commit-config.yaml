@@ -8,7 +8,7 @@ repos:
       - id: end-of-file-fixer
 
   - repo: https://github.com/astral-sh/ruff
-    rev: v0.9.6
+    rev: 0.9.6
     hooks:
       - id: ruff
         name: lint with ruff
@@ -25,7 +25,7 @@ repos:
         require_serial: true
 
   - repo: https://github.com/seddonym/import-linter
-    rev: v2.2.0
+    rev: 2.2.0
     hooks:
       - id: lint-imports
         name: Ensure import directionality
