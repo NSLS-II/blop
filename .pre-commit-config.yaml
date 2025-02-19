@@ -25,7 +25,7 @@ repos:
         require_serial: true
 
   - repo: https://github.com/seddonym/import-linter
-    rev: 2.2.0
+    rev: v2.2
     hooks:
       - id: lint-imports
         name: Ensure import directionality
