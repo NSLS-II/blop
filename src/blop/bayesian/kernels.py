@@ -16,7 +16,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
         scale_output=True,
         **kwargs,
     ):
-        super(LatentKernel, self).__init__()
+        super().__init__()
 
         self.num_inputs = num_inputs
         self.scale_output = scale_output
@@ -27,7 +27,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
             if skew_dims:
                 self.skew_dims = [torch.arange(self.num_inputs)]
             else:
-                self.skew_dims = [(i) for i in torch.arange(num_inputs)]
+                self.skew_dims = [torch.arange(num_inputs)]
         elif hasattr(skew_dims, "__iter__"):
             self.skew_dims = [torch.tensor(np.atleast_1d(skew_group)) for skew_group in skew_dims]
         else:
@@ -48,17 +48,15 @@ class LatentKernel(gpytorch.kernels.Kernel):
                 i = dim * torch.ones(j.shape).long()
                 skew_group_submatrix_indices.append(torch.cat((i, j, k), dim=0))
 
-        self.diag_matrix_indices = tuple(
+        self.diag_matrix_indices = (
             [
                 torch.kron(torch.arange(self.num_outputs), torch.ones(self.num_inputs)).long(),
                 *2 * [torch.arange(self.num_inputs).repeat(self.num_outputs)],
-            ]
+            ],
         )
 
         self.skew_matrix_indices = (
-            tuple(torch.cat(skew_group_submatrix_indices, dim=1))
-            if len(skew_group_submatrix_indices) > 0
-            else tuple([[], []])
+            tuple(torch.cat(skew_group_submatrix_indices, dim=1)) if len(skew_group_submatrix_indices) > 0 else ([[], []])
         )
 
         self.n_skew_entries = len(self.skew_matrix_indices[0])

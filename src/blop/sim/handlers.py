@@ -23,9 +23,9 @@ class ExternalFileReference(Signal):
     def describe(self):
         resource_document_data = super().describe()
         resource_document_data[self.name].update(
-            dict(
-                external="FILESTORE:",
-                dtype="array",
-            )
+            {
+                "external": "FILESTORE:",
+                "dtype": "array",
+            }
         )
         return resource_document_data

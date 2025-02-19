@@ -18,7 +18,7 @@ def omea_evaluation(motors, bounds, popsize, num_interm_vals, num_scans_at_once,
         max_int_pos = []
         for uid in uids:
             current_fly_data.append(db[uid].table(flyer_name))
-        for i, t in enumerate(current_fly_data):
+        for _, t in enumerate(current_fly_data):
             pop_pos_dict = {}
             positions_dict = {}
             max_int_index = t[f"{flyer_name}_{intensity_name}"].idxmax()
@@ -194,7 +194,7 @@ def crossover(population, mutated_indv, crosspb):
         v_trial = {}
         for elem, param in x_t.items():
             v_trial[elem] = {}
-            for param_name, pos in param.items():
+            for param_name, _ in param.items():
                 crossover_val = random.random()
                 if crossover_val <= crosspb:
                     v_trial[elem][param_name] = mutated_indv[i][elem][param_name]
@@ -207,7 +207,7 @@ def crossover(population, mutated_indv, crosspb):
 def create_selection_params(motors, population, cross_indv):
     if motors is not None and population is None:
         # hardware
-        positions = [elm for elm in cross_indv]
+        positions = list(cross_indv)
         indv = {}
         for elem, param in motors.items():
             indv[elem] = {}
@@ -217,7 +217,7 @@ def create_selection_params(motors, population, cross_indv):
         return positions
     if motors is None and population is not None:
         # sirepo simulation
-        positions = [elm for elm in cross_indv]
+        positions = list(cross_indv)
         positions.insert(0, population[0])
         return positions
 
@@ -293,7 +293,8 @@ def select(
         )
     del new_population[0]
     del new_intensities[0]
-    assert len(new_population) == len(population)
+    if len(new_population) != len(population):
+        raise ValueError("new_population and population must have the same length")
     for i in range(len(new_intensities)):
         if new_intensities[i] > intensities[i]:
             population[i] = new_population[i]
@@ -484,7 +485,7 @@ def optimization_plan(
             raise ValueError(f"The following parameters are set to None, but need to be set: {invalid_params}")
         # Initial population
         initial_population = []
-        for i in range(popsize):
+        for _ in range(popsize):
             indv = {}
             for elem, param in bounds.items():
                 indv[elem] = {}
@@ -664,7 +665,9 @@ def optimization_plan(
                 )
             all_uids[f"gen-{v}"] += uid_list
 
-            assert len(rand_pop) == 1 and len(rand_int) == 1
+            if not (len(rand_pop) == 1 and len(rand_int) == 1):
+                raise ValueError("rand_pop and rand_int must have length 1")
+
             pop_positions[change_indx] = rand_pop[0]
             pop_intensity[change_indx] = rand_int[0]
 

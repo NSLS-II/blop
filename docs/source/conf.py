@@ -20,6 +20,11 @@
 # import sys
 # sys.path.insert(0, os.path.abspath('.'))
 
+# The version info for the project you're documenting, acts as replacement for
+# |version| and |release|, also used in various other places throughout the
+# built documents.
+#
+import blop
 
 # -- General configuration ------------------------------------------------
 
@@ -70,12 +75,6 @@ master_doc = "index"
 project = "blop"
 copyright = "2020, Brookhaven National Laboratory"
 author = "Brookhaven National Laboratory"
-
-# The version info for the project you're documenting, acts as replacement for
-# |version| and |release|, also used in various other places throughout the
-# built documents.
-#
-import blop
 
 # The short X.Y version.
 version = blop.__version__

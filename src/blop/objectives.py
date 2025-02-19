@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Sequence
-from typing import Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -102,7 +102,7 @@ class Objective:
         min_noise: float = DEFAULT_MIN_NOISE_LEVEL,
         max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
         units: str = None,
-        latent_groups: list[tuple[str, ...]] = {},
+        latent_groups: Optional[list[tuple[str, ...]]] = None,
     ):
         self.name = name
         self.units = units
@@ -130,7 +130,7 @@ class Objective:
         self.weight = weight if target is not None else None
         self.min_noise = min_noise
         self.max_noise = max_noise
-        self.latent_groups = latent_groups
+        self.latent_groups = latent_groups or []
 
         if isinstance(self.target, str):
             # eventually we will be able to target other strings, as outputs of a discrete objective
@@ -278,8 +278,8 @@ class Objective:
 
 
 class ObjectiveList(Sequence):
-    def __init__(self, objectives: list = []):
-        self.objectives = objectives
+    def __init__(self, objectives: Optional[list] = None):
+        self.objectives = objectives or []
 
     def __call__(self, *args, **kwargs):
         return self.subset(*args, **kwargs)
@@ -290,7 +290,7 @@ class ObjectiveList(Sequence):
 
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
-        if all([hasattr(obj, attr) for obj in self.objectives]):
+        if all(hasattr(obj, attr) for obj in self.objectives):
             if OBJ_FIELD_TYPES.get(attr) in [float, "int", "bool"]:
                 return np.array([getattr(obj, attr) for obj in self.objectives])
             return [getattr(obj, attr) for obj in self.objectives]
