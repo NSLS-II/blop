@@ -156,7 +156,6 @@ class Objective:
             return np.array([value in self.constraint for value in np.atleast_1d(y)])
 
     def log_total_constraint(self, x):
-
         log_p = 0
         # if you have a constraint
         if self.constraint is not None:
@@ -257,9 +256,7 @@ class Objective:
 
         sish = s + 0.1 * m.std()  # for numerical stability
 
-        p = (
-            0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]
-        )  # noqa
+        p = 0.5 * (approximate_erf((b - m) / (np.sqrt(2) * sish)) - approximate_erf((a - m) / (np.sqrt(2) * sish)))[..., -1]  # noqa
 
         return p.detach()
 

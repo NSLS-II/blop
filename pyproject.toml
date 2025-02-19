@@ -110,6 +110,7 @@ lint.ignore = [
   "D",  # TODO: Add docstrings, then enforce these errors
   "SLF001",  # TODO: Fix private member access, https://github.com/NSLS-II/blop/issues/94
 ] 
+lint.preview = true # so that preview mode PLC2701, and LOG015 is enabled
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

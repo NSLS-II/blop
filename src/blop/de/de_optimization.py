@@ -425,7 +425,7 @@ def optimization_plan(
             for p in range(len(needed_params)):
                 if needed_params[p] is None:
                     invalid_params.append(needed_param_names["hardware"][p])
-            raise ValueError(f"The following parameters are set to None, but " f"need to be set: {invalid_params}")
+            raise ValueError(f"The following parameters are set to None, but need to be set: {invalid_params}")
         # check if bounds passed in are within the actual bounds of the motors
         check_opt_bounds(motors, bounds)
         # create initial population
@@ -481,7 +481,7 @@ def optimization_plan(
             for p in range(len(needed_params)):
                 if needed_params[p] is None:
                     invalid_params.append(needed_param_names["sirepo"][p])
-            raise ValueError(f"The following parameters are set to None, but " f"need to be set: {invalid_params}")
+            raise ValueError(f"The following parameters are set to None, but need to be set: {invalid_params}")
         # Initial population
         initial_population = []
         for i in range(popsize):

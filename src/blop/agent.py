@@ -477,7 +477,6 @@ class BaseAgent:
 
 
 class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
-
     def __init__(
         self, *, acqf_string, route, sequential, upsample, acqf_kwargs, detector_names: Optional[List[str]] = (), **kwargs
     ):

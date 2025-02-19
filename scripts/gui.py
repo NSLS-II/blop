@@ -128,7 +128,7 @@ def learn():
 
     n = int(agent.acqf_number) if acqf != "qr" else 16
 
-    ui.notify(f"sampling {n} points with acquisition function \"{acqf_config['long_name']}\"")
+    ui.notify(f'sampling {n} points with acquisition function "{acqf_config["long_name"]}"')
 
     RE(agent.learn(acqf, n=n))
 
