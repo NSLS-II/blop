@@ -37,7 +37,7 @@ from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 
-logger = logging.getLogger("maria")
+logger = logging.getLogger("blop")
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -57,7 +57,7 @@ def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
         for latent_group in obj.latent_groups:
             for dof_name in latent_group:
                 if dof_name not in dofs.names:
-                    warnings.warn(
+                    logger.warning(
                         f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist."
                         "it will be ignored."
                     )
@@ -157,14 +157,14 @@ class BaseAgent:
         Get the raw, untransformed inputs for a DOF (or for a subset).
         """
         if index is None:
-            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
+            return torch.stack([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
 
     def train_inputs(self, index=None, **subset_kwargs):
         """A two-dimensional tensor of all DOF values."""
 
         if index is None:
-            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+            return torch.stack([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
 
         dof = self.dofs[index]
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
@@ -173,26 +173,20 @@ class BaseAgent:
 
     def raw_targets(self, index=None, **subset_kwargs):
         """
-        Get the raw, untransformed inputs for an objective (or for a subset).
+        Get the raw, untransformed targets for an objective (or for a subset of objectives).
         """
-        values = {}
+        if index is None:
+            return {obj.name: self.raw_targets(obj.name) for obj in self.objectives(**subset_kwargs)}
+        return torch.tensor(self._table.loc[:, self.objectives[index].name].values, dtype=torch.double)
 
-        for obj in self.objectives(**subset_kwargs):
-            # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
-            values[obj.name] = torch.tensor(self._table.loc[:, obj.name].values, dtype=torch.double)
-
-        return values
-
-    def train_targets(self, concatenate=False, **subset_kwargs):
+    def train_targets(self, index=None, concatenate=False, **subset_kwargs):
         """Returns the values associated with an objective name."""
 
         targets_dict = {}
         raw_targets_dict = self.raw_targets(**subset_kwargs)
 
         for obj in self.objectives(**subset_kwargs):
-            y = raw_targets_dict[obj.name]
-
-            targets_dict[obj.name] = obj._transform(y)
+            targets_dict[obj.name] = obj._transform(raw_targets_dict[obj.name])
 
         if self.enforce_all_objectives_valid:
             all_valid_mask = True
@@ -204,8 +198,11 @@ class BaseAgent:
                 targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
 
         if concatenate:
-            return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], axis=-1)
-
+            return torch.stack([values for values in targets_dict.values()], axis=-1)
+        
+        if index is not None:
+            return targets_dict[self.objectives[index].name]
+        
         return targets_dict
 
     def _latent_dim_tuples(self, obj_index=None):
@@ -252,7 +249,7 @@ class BaseAgent:
 
         return Normalize(d=self.dofs.active.sum())
 
-    def _construct_model(self, obj, skew_dims=None):
+    def _try_construct_model(self, obj, skew_dims=None, error_on_fail=False):
         """
         Construct an untrained model for an objective.
         """
@@ -266,6 +263,16 @@ class BaseAgent:
         targets_are_trusted = ~torch.isnan(train_targets).any(axis=1)
 
         trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
+
+        if ~trusted.any():
+            message = f"Agent cannot construct model for objective '{obj.name}' as it has fewer than 2 valid points."
+            if error_on_fail:
+                raise RuntimeError(message)
+            else:
+                logger.warning(message)
+                if hasattr(obj, "_model"):
+                    del obj._model
+                return False
 
         obj._model = construct_single_task_model(
             X=train_inputs[trusted],
@@ -298,6 +305,8 @@ class BaseAgent:
                 f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
             )
 
+        return True
+
     def update_models(
         self,
         train: Optional[bool] = None,
@@ -308,11 +317,12 @@ class BaseAgent:
 
             cached_hypers = obj.model.state_dict() if hasattr(obj, "_model") else None
             n_before_tell = obj.n_valid
-            self._construct_model(obj)
-            n_after_tell = obj.n_valid
+            success = self._try_construct_model(obj)
+            if not success:
+                continue
 
             if train is None:
-                train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
+                train = int(obj.n_valid / self.train_every) > int(n_before_tell / self.train_every)
 
             if len(obj.model.train_targets) >= 4:
                 if train:
@@ -404,17 +414,17 @@ class BaseAgent:
             acqf_kwargs, acqf_obj = {}, torch.zeros(len(candidates))
 
         else:
-            # check that all the objectives have models
-            if not all(hasattr(obj, "_model") for obj in active_objs):
-                raise RuntimeError(
-                    f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
-                )
-
-            # if the model for any active objective mismatches the active dofs, reconstrut and train it
             for obj in active_objs:
-                if obj.model_dofs != set(active_dofs.names):
-                    self._construct_model(obj)
+                # if the model for any active objective mismatches the active dofs, reconstruct and train it
+                if getattr(obj, "model_dofs", {}) != set(active_dofs.names):
+                    self._try_construct_model(obj, error_on_fail=True)
                     train_model(obj.model)
+
+            # # check that all the objectives have models
+            # if not all(getattr(obj, "_model", None) is not None for obj in active_objs):
+            #     raise RuntimeError(
+            #         f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
+            #     )
 
             if acqf_config["type"] == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
@@ -1126,7 +1136,7 @@ class Agent(BaseAgent):
         """Construct a model for each objective."""
         objectives_to_construct = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
         for obj in objectives_to_construct:
-            self._construct_model(obj)
+            self._try_construct_model(obj)
 
     def _train_all_models(self, **kwargs):
         """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""

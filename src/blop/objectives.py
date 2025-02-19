@@ -178,7 +178,7 @@ class Objective:
         if not isinstance(y, torch.Tensor):
             y = torch.tensor(y, dtype=torch.double)
 
-        y = torch.where((y > self.domain[0]) & (y < self.domain[1]), y, np.nan)
+        y = torch.where((y > self._trust_domain[0]) & (y < self._trust_domain[1]), y, np.nan)
 
         if self.transform == "log":
             y = y.log()
