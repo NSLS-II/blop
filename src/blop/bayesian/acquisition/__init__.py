@@ -12,12 +12,13 @@ from .monte_carlo import *  # noqa F401
 
 here, this_filename = os.path.split(__file__)
 
-with open(f"{here}/config.yml", "r") as f:
+with open(f"{here}/config.yml") as f:
     config = yaml.safe_load(f)
 
 
-def all_acqfs(columns=["identifier", "type", "multitask_only", "description"]):
-    acqfs = pd.DataFrame(config).T[columns]
+def all_acqfs(columns=("identifier", "type", "multitask_only", "description")):
+    cols = list(columns)
+    acqfs = pd.DataFrame(config).T[cols]
     acqfs.index.name = "name"
     return acqfs.sort_values(["type", "name"])
 

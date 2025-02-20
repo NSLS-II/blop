@@ -4,7 +4,7 @@ import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, fields
 from operator import attrgetter
-from typing import Tuple, Union
+from typing import Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -55,10 +55,7 @@ def _validate_continuous_dof_domains(search_domain, trust_domain, domain, read_o
     if not read_only:
         if len(search_domain) != 2:
             raise ValueError(f"Bad search domain {search_domain}. The search domain must have length 2.")
-        try:
-            search_domain = tuple((float(search_domain[0]), float(search_domain[1])))
-        except TypeError:
-            raise ValueError("If type='continuous', then 'search_domain' must be a tuple of two numbers.")
+        search_domain = (float(search_domain[0]), float(search_domain[1]))
 
         if search_domain[0] >= search_domain[1]:
             raise ValueError("The lower search bound must be strictly less than the upper search bound.")
@@ -127,8 +124,8 @@ class DOF:
     description: str = ""
     type: str = None
     transform: str = None
-    search_domain: Union[Tuple[float, float], Sequence] = None
-    trust_domain: Union[Tuple[float, float], Sequence] = None
+    search_domain: Union[tuple[float, float], Sequence] = None
+    trust_domain: Union[tuple[float, float], Sequence] = None
     units: str = None
     active: bool = True
     read_only: bool = False
@@ -162,7 +159,7 @@ class DOF:
                     self.type = "continuous"
                 else:
                     self.type = "categorical"
-                warnings.warn(f"No type was specified for DOF {self.name}. Assuming type={self.type}.")
+                warnings.warn(f"No type was specified for DOF {self.name}. Assuming type={self.type}.", stacklevel=2)
         else:
             if self.search_domain is None:
                 raise ValueError("You must specify the search domain if read_only=False.")
@@ -191,7 +188,7 @@ class DOF:
                     read_only=self.read_only,
                 )
 
-                self.search_domain = tuple((float(self.search_domain[0]), float(self.search_domain[1])))
+                self.search_domain = (float(self.search_domain[0]), float(self.search_domain[1]))
 
                 if self.device is None:
                     center = float(self._untransform(np.mean([self._transform(np.array(self.search_domain))])))
@@ -230,7 +227,7 @@ class DOF:
         if self.read_only:
             value = self.readback
             if self.type == "continuous":
-                return tuple((value, value))
+                return (value, value)
             else:
                 return {value}
         else:
@@ -336,9 +333,9 @@ class DOF:
 
 
 class DOFList(Sequence):
-    def __init__(self, dofs: list = []):
+    def __init__(self, dofs: Optional[list] = None):
         _validate_dofs(dofs)
-        self.dofs = dofs
+        self.dofs = dofs or []
 
     @property
     def names(self) -> list:
@@ -353,7 +350,7 @@ class DOFList(Sequence):
 
     def __getattr__(self, attr):
         # This is called if we can't find the attribute in the normal way.
-        if all([hasattr(dof, attr) for dof in self.dofs]):
+        if all(hasattr(dof, attr) for dof in self.dofs):
             if DOF_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
                 return np.array([getattr(dof, attr) for dof in self.dofs])
             return [getattr(dof, attr) for dof in self.dofs]
@@ -503,7 +500,7 @@ class BrownianMotion(SignalRO):
     def __init__(self, name=None, theta=0.95, *args, **kwargs):
         name = name if name is not None else str(uuid.uuid4())
 
-        super().__init__(name=name, *args, **kwargs)
+        super().__init__(*args, name=name, **kwargs)
 
         self.theta = theta
         self.old_t = ttime.monotonic()

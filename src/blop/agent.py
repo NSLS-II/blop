@@ -5,8 +5,8 @@ import time as ttime
 import warnings
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from collections.abc import Mapping
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from collections.abc import Mapping, Sequence
+from typing import Callable, Optional, Union
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
@@ -57,7 +57,7 @@ def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
         for latent_group in obj.latent_groups:
             for dof_name in latent_group:
                 if dof_name not in dofs.names:
-                    warnings.warn(
+                    logger.warn(
                         f"DOF name '{dof_name}' in latent group for objective '{obj.name}' does not exist."
                         "it will be ignored."
                     )
@@ -69,17 +69,17 @@ class BlueskyAdaptiveBaseAgent(ABC):
     """
 
     @abstractmethod
-    def measurement_plan(self, point: ArrayLike) -> Tuple[str, List, dict]: ...  # noqa: E704
+    def measurement_plan(self, point: ArrayLike) -> tuple[str, list, dict]: ...  # noqa: E704
 
     @staticmethod
     @abstractmethod
-    def unpack_run(run) -> Tuple[Union[float, ArrayLike], Union[float, ArrayLike]]: ...  # noqa: E704
+    def unpack_run(run) -> tuple[Union[float, ArrayLike], Union[float, ArrayLike]]: ...  # noqa: E704
 
     @abstractmethod
-    def tell(self, x, y) -> Dict[str, ArrayLike]: ...  # noqa: E704
+    def tell(self, x, y) -> dict[str, ArrayLike]: ...  # noqa: E704
 
     @abstractmethod
-    def ask(self, batch_size: int) -> Tuple[Sequence[Dict[str, ArrayLike]], Sequence[ArrayLike]]: ...  # noqa: E704
+    def ask(self, batch_size: int) -> tuple[Sequence[dict[str, ArrayLike]], Sequence[ArrayLike]]: ...  # noqa: E704
 
 
 class BaseAgent:
@@ -90,7 +90,7 @@ class BaseAgent:
         objectives: Sequence[Objective],
         acquistion_plan: Optional[Union[Callable, str]] = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
-        digestion_kwargs: dict = {},
+        digestion_kwargs: Optional[dict] = None,
         verbose: bool = False,
         enforce_all_objectives_valid: bool = True,
         exclude_pruned: bool = True,
@@ -134,7 +134,7 @@ class BaseAgent:
 
         self.acquisition_plan = acquistion_plan
         self.digestion = digestion
-        self.digestion_kwargs = digestion_kwargs
+        self.digestion_kwargs = digestion_kwargs or {}
 
         self.verbose = verbose
 
@@ -197,7 +197,7 @@ class BaseAgent:
         if self.enforce_all_objectives_valid:
             all_valid_mask = True
 
-            for name, values in targets_dict.items():
+            for _, values in targets_dict.items():
                 all_valid_mask &= ~values.isnan()
 
             for name in targets_dict.keys():
@@ -477,9 +477,8 @@ class BaseAgent:
 
 
 class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
-
     def __init__(
-        self, *, acqf_string, route, sequential, upsample, acqf_kwargs, detector_names: Optional[List[str]] = (), **kwargs
+        self, *, acqf_string, route, sequential, upsample, acqf_kwargs, detector_names: Optional[list[str]] = None, **kwargs
     ):
         super().__init__(**kwargs)
         self._acqf_string = acqf_string
@@ -487,7 +486,7 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         self._sequential = sequential
         self._upsample = upsample
         self._acqf_kwargs = acqf_kwargs
-        self._detector_names = list(detector_names)
+        self._detector_names = detector_names or []
 
     @property
     def detector_names(self):
@@ -553,7 +552,7 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         self._register_property("Upsample Points", self.upsample, self.upsample)
         return super().server_registrations()
 
-    def ask(self, batch_size) -> Tuple[Sequence[Dict[str, ArrayLike]], Sequence[ArrayLike]]:
+    def ask(self, batch_size) -> tuple[Sequence[dict[str, ArrayLike]], Sequence[ArrayLike]]:
         default_result = super().ask(
             n=batch_size,
             acqf=self._acqf_string,
@@ -576,10 +575,10 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
         }
         """
 
-        points: Dict[str, List[ArrayLike]] = default_result.pop("points")
-        acqf_obj: List[ArrayLike] = default_result.pop("acqf_obj")
+        points: dict[str, list[ArrayLike]] = default_result.pop("points")
+        acqf_obj: list[ArrayLike] = default_result.pop("acqf_obj")
         # Turn dict of list of points into list of consistently sized points
-        points: List[Tuple[ArrayLike]] = list(zip(*[value for _, value in points.items()]))
+        points: list[tuple[ArrayLike]] = list(zip(*[value for _, value in points.items()]))
         dicts = []
         for point, obj in zip(points, acqf_obj):
             d = default_result.copy()
@@ -622,7 +621,7 @@ class BlueskyAdaptiveAgent(BaseAgent, BlueskyAdaptiveBaseAgent):
             data: pd.DataFrame = self.digestion(run.primary.data.read(), **self.digestion_kwargs)
             return [data.loc[:, key] for key in self.dofs.names], [data.loc[:, key] for key in self.objectives.names]
 
-    def measurement_plan(self, point: ArrayLike) -> Tuple[str, List, dict]:
+    def measurement_plan(self, point: ArrayLike) -> tuple[str, list, dict]:
         """Fetch the string name of a registered plan, as well as the positional and keyword
         arguments to pass that plan.
 
@@ -671,7 +670,7 @@ class Agent(BaseAgent):
         detectors: Sequence[Signal] = None,
         acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
-        digestion_kwargs: dict = {},
+        digestion_kwargs: Optional[dict] = None,
         verbose: bool = False,
         enforce_all_objectives_valid: bool = True,
         exclude_pruned: bool = True,
@@ -899,10 +898,10 @@ class Agent(BaseAgent):
         else:
             try:
                 acqf_identifier = acquisition.parse_acqf_identifier(identifier=item)
-            except Exception:
-                raise ValueError("'item' must be either 'mean', 'error', or a valid acq func.")
+            except Exception as e:
+                raise ValueError("'item' must be either 'mean', 'error', or a valid acq func.") from e
 
-            acqf, acqf_meta = self._get_acquisition_function(identifier=acqf_identifier, return_metadata=True)
+            acqf, _ = self._get_acquisition_function(identifier=acqf_identifier, return_metadata=True)
             a = acqf(test_grid).detach().numpy()
 
             self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
@@ -943,7 +942,7 @@ class Agent(BaseAgent):
         except Exception as error:
             if not self.tolerate_acquisition_errors:
                 raise error
-            logging.warning(f"Error in acquisition/digestion: {repr(error)}")
+            logger.warn(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(points)
             for obj in self.objectives(active=True):
                 products.loc[:, obj.name] = np.nan
@@ -972,7 +971,7 @@ class Agent(BaseAgent):
         self,
         output_dir="./",
         iterations=16,
-        per_iter_learn_kwargs_list=[{"acqf": "qr", "n": 32}, {"acqf": "qei", "n": 1, "iterations": 4}],
+        per_iter_learn_kwargs_list=({"acqf": "qr", "n": 32}, {"acqf": "qei", "n": 1, "iterations": 4}),
     ):
         """Iterate over having the agent learn from scratch, and save the results to an output directory.
 
@@ -1291,7 +1290,7 @@ class Agent(BaseAgent):
         """Go to the position of the best input seen so far."""
         yield from self.go_to(**self.best_inputs)
 
-    def plot_objectives(self, axes: Tuple = (0, 1), **kwargs):
+    def plot_objectives(self, axes: tuple = (0, 1), **kwargs):
         """Plot the sampled objectives
 
         Parameters
@@ -1308,7 +1307,7 @@ class Agent(BaseAgent):
         else:
             plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)
 
-    def plot_acquisition(self, acqf="ei", axes: Tuple = (0, 1), **kwargs):
+    def plot_acquisition(self, acqf="ei", axes: tuple = (0, 1), **kwargs):
         """Plot an acquisition function over test inputs sampling the limits of the parameter space.
 
         Parameters
@@ -1324,7 +1323,7 @@ class Agent(BaseAgent):
         else:
             plotting._plot_acqf_many_dofs(self, acqfs=np.atleast_1d(acqf), axes=axes, **kwargs)
 
-    def plot_validity(self, axes: Tuple = (0, 1), **kwargs):
+    def plot_validity(self, axes: tuple = (0, 1), **kwargs):
         """Plot the modeled constraint over test inputs sampling the limits of the parameter space.
 
         Parameters
@@ -1350,7 +1349,7 @@ class Agent(BaseAgent):
         """Plot the improvement of the agent over time."""
         plotting._plot_pareto_front(self, **kwargs)
 
-    def prune(self, pruning_objs=[], thresholds=[]):
+    def prune(self, pruning_objs=(), thresholds=()):
         """Prune low-fidelity datapoints from model fitting"""
         # set the prune column to false
         self._table = self._table.assign(prune=[False for i in range(self._table.shape[0])])

@@ -359,7 +359,7 @@ def _plot_acqf_one_dof(agent, acqfs, lw=1e0, **kwargs):
 
 
 def _plot_acqf_many_dofs(
-    agent, acqfs, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
+    agent, acqfs, axes=(0, 1), shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=16, **kwargs
 ):
     agent.acq_fig, agent.acq_axes = plt.subplots(
         1,
@@ -439,7 +439,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     agent.valid_ax.set_xlim(*x_dof.search_domain)
 
 
-def _plot_valid_many_dofs(agent, axes=[0, 1], shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
+def _plot_valid_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COLORMAP, size=16, gridded=None):
     agent.valid_fig, agent.valid_axes = plt.subplots(1, 2, figsize=(8, 4), constrained_layout=True)
 
     plottable_dofs = agent.dofs(active=True, read_only=False)
@@ -498,12 +498,12 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
 
     len(agent.objectives) + 1 if len(agent.objectives) > 1 else 1
 
-    hist_fig, hist_axes = plt.subplots(
+    _, hist_axes = plt.subplots(
         num_obj_plots, 1, figsize=(6, 4 * num_obj_plots), sharex=True, constrained_layout=True, dpi=200
     )
     hist_axes = np.atleast_1d(hist_axes)
 
-    unique_strategies, acqf_index, acqf_inverse = np.unique(agent.table.acqf, return_index=True, return_inverse=True)
+    unique_strategies, _, acqf_inverse = np.unique(agent.table.acqf, return_index=True, return_inverse=True)
 
     sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
 
@@ -559,7 +559,7 @@ def _plot_pareto_front(agent, obj_indices=(0, 1)):
     if len(f_objs) < 2:
         raise ValueError("Cannot plot Pareto front for agents with fewer than two fitness objectives")
 
-    fig, ax = plt.subplots(1, 1, figsize=(6, 6))
+    _, ax = plt.subplots(1, 1, figsize=(6, 6))
 
     y = agent.train_targets(fitness=True, concatenate=True)
 

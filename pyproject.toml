@@ -13,7 +13,6 @@ maintainers = [
   { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" },
 ]
 requires-python = ">=3.9"
-
 dependencies = [
   "area-detector-handlers",
   "bluesky",
@@ -30,7 +29,6 @@ dependencies = [
   "torch",
   "tiled",
 ]
-
 classifiers = [
   "Development Status :: 4 - Beta",
   "License :: OSI Approved :: BSD License",
@@ -40,24 +38,21 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Topic :: Scientific/Engineering :: Physics",
 ]
-
 dynamic = ["version"]
 
 [project.optional-dependencies]
-
 sirepo = ["sirepo-bluesky"]
-
 napari = ["napari"]
-
 gui = ["nicegui"]
-
+pre-commit = [
+  "ruff",
+  "import-linter",
+  "nbstripout",
+]
 dev = [
-  "black",
   "pytest-codecov",
   "coverage",
-  "flake8",
   "furo",
-  "isort",
   "nbstripout",
   "pre-commit",
   "pre-commit-hooks",
@@ -72,6 +67,8 @@ dev = [
   "pandoc",
   "sphinx-copybutton",
   "sphinx_rtd_theme",
+  "ruff",
+  "import-linter",
 ]
 
 
@@ -87,7 +84,6 @@ only-include = ["src/blop"]
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
 
-
 [tool.setuptools_scm]
 version_file = "src/blop/_version.py"
 
@@ -98,23 +94,37 @@ build.hooks.vcs.version-file = "src/blop/_version.py"
 [tool.hatch.version.raw-options]
 local_scheme = "no-local-version"
 
-[tool.black]
+[tool.ruff]
+src = ["src", "examples", "docs/source/tutorials"]
 line-length = 125
-include = '\.pyi?$'
-exclude = '''
-/(
-    \.git
-  | \.hg
-  | \.mypy_cache
-  | \.tox
-  | \.venv
-  | _build
-  | buck-out
-  | build
-  | dist
+lint.select = [
+    "B",       # flake8-bugbear - https://docs.astral.sh/ruff/rules/#flake8-bugbear-b
+    "C4",      # flake8-comprehensions - https://docs.astral.sh/ruff/rules/#flake8-comprehensions-c4
+    "E",       # pycodestyle errors - https://docs.astral.sh/ruff/rules/#error-e
+    "F",       # pyflakes rules - https://docs.astral.sh/ruff/rules/#pyflakes-f
+    "W",       # pycodestyle warnings - https://docs.astral.sh/ruff/rules/#warning-w
+    "I",       # isort - https://docs.astral.sh/ruff/rules/#isort-i
+    "UP",      # pyupgrade - https://docs.astral.sh/ruff/rules/#pyupgrade-up
+    "SLF",     # self - https://docs.astral.sh/ruff/settings/#lintflake8-self
+    "PLC2701", # private import - https://docs.astral.sh/ruff/rules/import-private-name/
+    "LOG015",  # root logger call - https://docs.astral.sh/ruff/rules/root-logger-call/
+    "S101",    # assert - https://docs.astral.sh/ruff/rules/assert/
+    "D",       # docstring - https://docs.astral.sh/ruff/rules/#pydocstyle-d
+]
+lint.ignore = [
+  "D",  # TODO: Add docstrings, then enforce these errors
+  "SLF001",  # TODO: Fix private member access, https://github.com/NSLS-II/blop/issues/94
+] 
+lint.preview = true # so that preview mode PLC2701, and LOG015 is enabled
 
-  # The following are specific to Black, you probably don't want those.
-  | blib2to3
-  | tests/data
-)/
-'''
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"src/blop/tests/**/*" = ["S101", "SLF001", "D"]
+# Ignore F821: undefined name '...' since the ipython profiles are dynamically loaded into the namespace
+"docs/**/*" = ["F821"]
+"examples/**/*" = ["F821"]
+
+[tool.importlinter]
+root_package = "blop"

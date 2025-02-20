@@ -43,7 +43,7 @@ plt.plot(
     ],
 )
 
-bo.data.drop(columns=[f"vstream_image"], inplace=True)
+bo.data.drop(columns=["vstream_image"], inplace=True)
 bo.data.to_hdf(f"/nsls2/data/tes/shared/config/gpo-benchmarks-230331/{int(timestamps[0])}.h5", "data")
 
 del bo

@@ -28,16 +28,15 @@ class BlueskyFlyer:
         data = {}
         yield {
             "data": data,
-            "timestamps": {key: now for key in data},
+            "timestamps": dict.fromkeys(data, now),
             "time": now,
-            "filled": {key: False for key in data},
+            "filled": dict.fromkeys(data, False),
         }
 
     def collect_asset_docs(self):
         items = list(self._asset_docs_cache)
         self._asset_docs_cache.clear()
-        for item in items:
-            yield item
+        yield from items
 
 
 class HardwareFlyer(BlueskyFlyer):
@@ -75,7 +74,7 @@ class HardwareFlyer(BlueskyFlyer):
         self.start_det(self.detector)
         ttime.sleep(1.0)
         for motor_name, field in self.motors.items():
-            for field_name, motor_obj in field.items():
+            for _, motor_obj in field.items():
                 motor_obj.velocity.put(self.velocities[motor_name])
         for motor_name, field in self.motors.items():
             for field_name, motor_obj in field.items():
@@ -117,7 +116,7 @@ class HardwareFlyer(BlueskyFlyer):
         for ind in range(len(self.watch_intensities)):
             motor_dict = {}
             for motor_name, field in self.motors.items():
-                for field_name, motor_obj in field.items():
+                for field_name, _ in field.items():
                     motor_dict.update(
                         {
                             f"{self.name}_{motor_name}_velocity": self.velocities[motor_name],
@@ -128,9 +127,9 @@ class HardwareFlyer(BlueskyFlyer):
             data.update(motor_dict)
             yield {
                 "data": data,
-                "timestamps": {key: self.watch_timestamps[ind] for key in data},
+                "timestamps": dict.fromkeys(data, self.watch_timestamps[ind]),
                 "time": self.watch_timestamps[ind],
-                "filled": {key: False for key in data},
+                "filled": dict.fromkeys(data, False),
             }
 
         # # This will produce one event with dictionaries in the <...>_parameters field.
@@ -152,7 +151,7 @@ class HardwareFlyer(BlueskyFlyer):
     def _watch_function(self, *args, **kwargs):
         watch_pos, watch_int, watch_time = self.watch_func(self.motors, self.detector)
         for motor_name, field in self.motors.items():
-            for field_name, val in field.items():
+            for field_name, _ in field.items():
                 self.watch_positions[motor_name][field_name].extend(watch_pos[motor_name][field_name])
         self.watch_intensities.extend(watch_int)
         self.watch_timestamps.extend(watch_time)

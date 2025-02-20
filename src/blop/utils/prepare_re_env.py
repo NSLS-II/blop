@@ -35,7 +35,11 @@ def re_env(db_type=DEFAULT_DB_TYPE, root_dir=DEFAULT_ROOT_DIR):
 
     _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 
-    return dict(RE=RE, db=db, bec=bec)
+    return {
+        "RE": RE,
+        "db": db,
+        "bec": bec,
+    }
 
 
 def register_handlers(db, handlers):
@@ -86,7 +90,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    kwargs_re = dict(db_type=args.db_type, root_dir=args.root_dir)
+    kwargs_re = {"db_type": args.db_type, "root_dir": args.root_dir}
     ret = re_env(**kwargs_re)
     globals().update(**ret)
 
