@@ -22,8 +22,9 @@ with open(f"{here}/config.yml") as f:
     config = yaml.safe_load(f)
 
 
-def all_acqfs(columns: list[str] = ["identifier", "type", "multitask_only", "description"]) -> pd.DataFrame:
-    acqfs = pd.DataFrame(config).T[columns]
+def all_acqfs(columns: tuple[str, ...] = ("identifier", "type", "multitask_only", "description")) -> pd.DataFrame:
+    cols = list(columns)
+    acqfs = pd.DataFrame(config).T[cols]
     acqfs.index.name = "name"
     return acqfs.sort_values(["type", "name"])
 

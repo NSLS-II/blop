@@ -805,7 +805,7 @@ class Agent(BaseAgent):
             if not acqf_identifier:
                 raise ValueError(f"Failed to parse acqf_identifier from item: {item}.")
 
-            acqf, acqf_meta = self._get_acquisition_function(identifier=acqf_identifier["name"], return_metadata=True)
+            acqf, _ = self._get_acquisition_function(identifier=acqf_identifier["name"], return_metadata=True)
             a = acqf(test_grid).detach().numpy()
 
             self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
@@ -875,10 +875,10 @@ class Agent(BaseAgent):
         self,
         output_dir: str = "./",
         iterations: int = 16,
-        per_iter_learn_kwargs_list: list[dict[str, Any]] = [
+        per_iter_learn_kwargs_list: tuple[dict[str, Any], ...] = (
             {"acqf": "qr", "n": 32},
             {"acqf": "qei", "n": 1, "iterations": 4},
-        ],
+        ),
     ):
         """Iterate over having the agent learn from scratch, and save the results to an output directory.
 
@@ -1183,8 +1183,10 @@ class Agent(BaseAgent):
         """Plot the improvement of the agent over time."""
         plotting._plot_pareto_front(self, **kwargs)
 
-    def prune(self, pruning_objs: list[Objective] = [], thresholds: list[float] = []) -> None:
+    def prune(self, pruning_objs: Optional[list[Objective]] = None, thresholds: Optional[list[float]] = None) -> None:
         """Prune low-fidelity datapoints from model fitting"""
+        pruning_objs = pruning_objs or []
+        thresholds = thresholds or []
         # set the prune column to false
         self._table = self._table.assign(prune=[False for i in range(self._table.shape[0])])
         # make sure there are models trained for all the objectives we are pruning over

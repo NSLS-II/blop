@@ -306,9 +306,10 @@ class DOF:
 
 
 class DOFList(Sequence[DOF]):
-    def __init__(self, dofs: list[DOF] = []) -> None:
+    def __init__(self, dofs: Optional[list[DOF]] = None) -> None:
+        dofs = dofs or []
         _validate_dofs(dofs)
-        self.dofs = dofs or []
+        self.dofs = dofs
 
     @property
     def names(self) -> list[str]:
@@ -323,13 +324,8 @@ class DOFList(Sequence[DOF]):
 
     def __getattr__(self, attr: str) -> Union[DOF, list[Any], torch.Tensor]:
         # This is called if we can't find the attribute in the normal way.
-<<<<<<< HEAD
         if all(hasattr(dof, attr) for dof in self.dofs):
-            if DOF_FIELD_TYPES.get(attr) in ["float", "int", "bool"]:
-=======
-        if all([hasattr(dof, attr) for dof in self.dofs]):
             if DOF_FIELD_TYPES.get(attr) in [float, int, bool]:
->>>>>>> 88d3124 (Fixed tests and a few errors)
                 return torch.tensor([getattr(dof, attr) for dof in self.dofs])
             return [getattr(dof, attr) for dof in self.dofs]
         if attr in self.names:
@@ -563,10 +559,7 @@ def _validate_continuous_dof_domains(
     if not read_only:
         if len(search_domain) != 2:
             raise ValueError(f"Bad search domain {search_domain}. The search domain must have length 2.")
-        try:
-            search_domain = (float(search_domain[0]), float(search_domain[1]))
-        except TypeError:
-            raise ValueError("If type='continuous', then 'search_domain' must be a tuple of two numbers.")
+        search_domain = (float(search_domain[0]), float(search_domain[1]))
 
         if search_domain[0] >= search_domain[1]:
             raise ValueError("The lower search bound must be strictly less than the upper search bound.")

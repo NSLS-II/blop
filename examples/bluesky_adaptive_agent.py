@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import pandas as pd
 from bluesky_adaptive.agents.base import Agent as BlueskyAdaptiveBaseAgent  # type: ignore[import-untyped]
@@ -23,7 +23,7 @@ class BlueskyAdaptiveAgent(BlueskyAdaptiveBaseAgent, BlopAgent):
         sequential: bool,
         upsample: int,
         acqf_kwargs: dict[str, Any],
-        detector_names: list[str] = [],
+        detector_names: Optional[list[str]] = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -32,7 +32,7 @@ class BlueskyAdaptiveAgent(BlueskyAdaptiveBaseAgent, BlopAgent):
         self._sequential = sequential
         self._upsample = upsample
         self._acqf_kwargs = acqf_kwargs
-        self._detector_names = list(detector_names)
+        self._detector_names = detector_names or []
 
     @property
     def detector_names(self) -> list[str]:

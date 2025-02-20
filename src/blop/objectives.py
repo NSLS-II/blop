@@ -100,7 +100,7 @@ class Objective:
         min_noise: float = DEFAULT_MIN_NOISE_LEVEL,
         max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
         units: Optional[str] = None,
-        latent_groups: dict[str, Any] = {},
+        latent_groups: Optional[dict[str, Any]] = None,
     ) -> None:
         self.name = name
         self.units = units
@@ -135,7 +135,7 @@ class Objective:
         self.weight = weight if target else None
         self.min_noise = min_noise
         self.max_noise = max_noise
-        self.latent_groups = latent_groups or []
+        self.latent_groups = latent_groups or {}
 
         if isinstance(self.target, str):
             # eventually we will be able to target other strings, as outputs of a discrete objective
@@ -278,8 +278,8 @@ class Objective:
 
 
 class ObjectiveList(Sequence[Objective]):
-    def __init__(self, objectives: list[Objective] = []) -> None:
-        self.objectives: list[Objective] = objectives
+    def __init__(self, objectives: Optional[list[Objective]] = None) -> None:
+        self.objectives: list[Objective] = objectives or []
 
     def __call__(self, *args: Any, **kwargs: Any) -> "ObjectiveList":
         return self.subset(*args, **kwargs)
@@ -290,7 +290,7 @@ class ObjectiveList(Sequence[Objective]):
 
     def __getattr__(self, attr: str) -> Union[Objective, list[Any], np.ndarray]:
         # This is called if we can't find the attribute in the normal way.
-        if all([hasattr(obj, attr) for obj in self.objectives]):
+        if all(hasattr(obj, attr) for obj in self.objectives):
             if OBJ_FIELD_TYPES.get(attr) in [float, int, bool]:
                 return np.array([getattr(obj, attr) for obj in self.objectives])
             return [getattr(obj, attr) for obj in self.objectives]
