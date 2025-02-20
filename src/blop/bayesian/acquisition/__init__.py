@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 here, this_filename = os.path.split(__file__)
 
 # TODO: Move this into the code, rather than a config file
-with open(f"{here}/config.yml", "r") as f:
+with open(f"{here}/config.yml") as f:
     config = yaml.safe_load(f)
 
 

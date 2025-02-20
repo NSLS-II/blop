@@ -1,4 +1,5 @@
-from typing import Iterable, Union
+from collections.abc import Iterable
+from typing import Union
 
 import gpytorch  # type: ignore[import-untyped]
 import numpy as np

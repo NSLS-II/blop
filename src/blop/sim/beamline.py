@@ -1,8 +1,9 @@
 import itertools
 from collections import deque
+from collections.abc import Generator, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Generator, Iterator, Optional
+from typing import Any, Optional
 
 import h5py  # type: ignore[import-untyped]
 import numpy as np

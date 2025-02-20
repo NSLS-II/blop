@@ -180,7 +180,6 @@ class Objective:
         return self.trust_domain
 
     def _transform(self, y: torch.Tensor) -> torch.Tensor:
-
         y = torch.where((y > self.domain[0]) & (y < self.domain[1]), y, np.nan)
 
         if self.transform == "log":

@@ -1,4 +1,5 @@
-from typing import Any, Generator, Mapping, Sequence
+from collections.abc import Generator, Mapping, Sequence
+from typing import Any
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp

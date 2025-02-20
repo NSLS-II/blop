@@ -4,8 +4,8 @@ import pathlib
 import time as ttime
 import warnings
 from collections import OrderedDict
-from collections.abc import Mapping
-from typing import Any, Callable, Generator, Hashable, Iterator, Optional, Sequence, Union, cast
+from collections.abc import Generator, Hashable, Iterator, Mapping, Sequence
+from typing import Any, Callable, Optional, Union, cast
 
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
