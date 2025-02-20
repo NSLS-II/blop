@@ -228,7 +228,7 @@ def generate_hardware_flyers(
 
 
 def generate_sim_flyers(population, num_between_vals, sim_id, server_name, root_dir, watch_name, run_parallel):
-    import sirepo_bluesky.sirepo_flyer as sf
+    import sirepo_bluesky.sirepo_flyer as sf  # type: ignore
 
     flyers = []
     params_to_change = []

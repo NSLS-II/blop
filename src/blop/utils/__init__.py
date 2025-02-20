@@ -1,13 +1,15 @@
-import botorch
+from typing import Union
+
+import botorch  # type: ignore[import-untyped]
 import numpy as np
-import scipy as sp
+import scipy as sp  # type: ignore[import-untyped]
 import torch
-from ortools.constraint_solver import pywrapcp, routing_enums_pb2
+from ortools.constraint_solver import pywrapcp, routing_enums_pb2  # type: ignore[import-untyped]
 
 from . import functions  # noqa
 
 
-def get_beam_stats(image, threshold=0.5):
+def get_beam_stats(image: np.ndarray, threshold: float = 0.5) -> dict[str, Union[float, np.ndarray]]:
     ny, nx = image.shape
 
     fim = image.copy()
@@ -47,11 +49,11 @@ def get_beam_stats(image, threshold=0.5):
     return stats
 
 
-def cummax(x):
+def cummax(x: np.ndarray) -> list[float]:
     return [np.nanmax(x[: i + 1]) for i in range(len(np.atleast_1d(x)))]
 
 
-def sobol_sampler(bounds, n, q=1):
+def sobol_sampler(bounds: torch.Tensor, n: int, q: int = 1) -> torch.Tensor:
     """
     Returns $n$ quasi-randomly sampled points within the bounds (a 2 by d tensor)
     and batch size $q$
@@ -59,7 +61,7 @@ def sobol_sampler(bounds, n, q=1):
     return botorch.utils.sampling.draw_sobol_samples(bounds, n=n, q=q)
 
 
-def normalized_sobol_sampler(n, d):
+def normalized_sobol_sampler(n: int, d: int) -> torch.Tensor:
     """
     Returns $n$ quasi-randomly sampled points in the [0,1]^d hypercube
     """
@@ -67,14 +69,14 @@ def normalized_sobol_sampler(n, d):
     return sobol_sampler(normalized_bounds, n=n, q=1)
 
 
-def estimate_root_indices(x):
+def estimate_root_indices(x: np.ndarray) -> np.ndarray:
     # or, indices_before_sign_changes
     i_whole = np.where(np.sign(x[1:]) != np.sign(x[:-1]))[0]
     i_part = 1 - x[i_whole + 1] / (x[i_whole + 1] - x[i_whole])
     return i_whole + i_part
 
 
-def _fast_psd_inverse(M):
+def _fast_psd_inverse(M: np.ndarray) -> np.ndarray:
     """
     About twice as fast as np.linalg.inv for large, PSD matrices.
     """
@@ -83,14 +85,14 @@ def _fast_psd_inverse(M):
     return np.where(invM, invM, invM.T)
 
 
-def mprod(*M):
+def mprod(*M: np.ndarray) -> np.ndarray:
     res = M[0]
     for m in M[1:]:
         res = np.matmul(res, m)
     return res
 
 
-def route(start_point, points, dim_weights=1):
+def route(start_point: np.ndarray, points: np.ndarray, dim_weights: Union[float, np.ndarray] = 1) -> np.ndarray:
     """
     Returns the indices of the most efficient way to visit `points`, starting from `start_point`.
     """
@@ -136,7 +138,7 @@ def route(start_point, points, dim_weights=1):
     return np.array(route_indices)[1:-1] - 1
 
 
-def get_movement_time(x, v_max, a):
+def get_movement_time(x: Union[float, np.ndarray], v_max: float, a: float) -> Union[float, np.ndarray]:
     """
     How long does it take an object to go distance $x$ with acceleration $a$ and maximum velocity $v_max$?
     That's what this function answers.

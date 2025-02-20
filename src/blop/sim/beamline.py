@@ -1,16 +1,18 @@
 import itertools
 from collections import deque
+from collections.abc import Generator, Iterator
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Optional
 
-import h5py
+import h5py  # type: ignore[import-untyped]
 import numpy as np
-import scipy as sp
-from event_model import compose_resource
-from ophyd import Component as Cpt
-from ophyd import Device, Signal
-from ophyd.sim import NullStatus, new_uid
-from ophyd.utils import make_dir_tree
+import scipy as sp  # type: ignore[import-untyped]
+from event_model import compose_resource  # type: ignore[import-untyped]
+from ophyd import Component as Cpt  # type: ignore[import-untyped]
+from ophyd import Device, Signal  # type: ignore[import-untyped]
+from ophyd.sim import NullStatus, new_uid  # type: ignore[import-untyped]
+from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
@@ -28,7 +30,9 @@ class Detector(Device):
     image_shape = Cpt(Signal, value=(300, 400), kind="normal")
     noise = Cpt(Signal, kind="normal")
 
-    def __init__(self, root_dir: str = "/tmp/blop/sim", verbose: bool = True, noise: bool = True, *args, **kwargs):
+    def __init__(
+        self, root_dir: str = "/tmp/blop/sim", verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
 
         _ = make_dir_tree(datetime.now().year, base_path=root_dir)
@@ -40,20 +44,28 @@ class Detector(Device):
         self._img_dir = None
 
         # Resource/datum docs related variables.
-        self._asset_docs_cache = deque()
-        self._resource_document = None
-        self._datum_factory = None
+        self._asset_docs_cache: deque[tuple[str, dict[str, Any]]] = deque()
+        self._resource_document: Optional[dict[str, Any]] = None
+        self._datum_factory: Optional[Any] = None
+        self._dataset: Optional[h5py.Dataset] = None
+        self._h5file_desc: Optional[h5py.File] = None
+        self._counter: Optional[Iterator[int]] = None
 
         self.noise.put(noise)
 
-    def trigger(self):
+    def trigger(self) -> NullStatus:
+        if not self._counter:
+            raise RuntimeError("Counter not initialized, make sure to call stage() first.")
+        if not self._dataset:
+            raise RuntimeError("Dataset not initialized, make sure to call stage() first.")
+        if not self._datum_factory:
+            raise RuntimeError("Datum factory not initialized, make sure to call stage() first.")
         super().trigger()
         raw_image = self.generate_beam(noise=self.noise.get())
 
         current_frame = next(self._counter)
 
         self._dataset.resize((current_frame + 1, *self.image_shape.get()))
-
         self._dataset[current_frame, :, :] = raw_image
 
         datum_document = self._datum_factory(datum_kwargs={"frame": current_frame})
@@ -69,8 +81,8 @@ class Detector(Device):
 
         return NullStatus()
 
-    def stage(self):
-        super().stage()
+    def stage(self) -> list[Any]:
+        devices = super().stage()
         date = datetime.now()
         self._assets_dir = date.strftime("%Y/%m/%d")
         data_file = f"{new_uid()}.h5"
@@ -82,6 +94,9 @@ class Detector(Device):
             resource_path=str(Path(self._assets_dir) / Path(data_file)),
             resource_kwargs={},
         )
+
+        if not self._resource_document:
+            raise RuntimeError("Resource document not initialized.")
 
         self._data_file = str(Path(self._resource_document["root"]) / Path(self._resource_document["resource_path"]))
 
@@ -100,20 +115,23 @@ class Detector(Device):
             compression="lzf",
         )
         self._counter = itertools.count()
+        return devices
 
-    def unstage(self):
-        super().unstage()
+    def unstage(self) -> list[Any]:
+        devices = super().unstage()
         del self._dataset
-        self._h5file_desc.close()
+        if self._h5file_desc:
+            self._h5file_desc.close()
         self._resource_document = None
         self._datum_factory = None
+        return devices
 
-    def collect_asset_docs(self):
+    def collect_asset_docs(self) -> Generator[tuple[str, dict[str, Any]], None, None]:
         items = list(self._asset_docs_cache)
         self._asset_docs_cache.clear()
         yield from items
 
-    def generate_beam(self, noise: bool = True):
+    def generate_beam(self, noise: bool = True) -> np.ndarray:
         nx, ny = self.image_shape.get()
 
         x = np.linspace(-10, 10, ny)
@@ -166,5 +184,5 @@ class Beamline(Device):
     ssa_lower = Cpt(Signal, value=-5.0, kind="hinted")
     ssa_upper = Cpt(Signal, value=5.0, kind="hinted")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

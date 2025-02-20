@@ -1,8 +1,15 @@
 import math
+from typing import Callable
 
 import numpy as np
 import torch
-from botorch.acquisition.analytic import LogExpectedImprovement, LogProbabilityOfImprovement, UpperConfidenceBound
+from botorch.acquisition.analytic import (  # type: ignore[import-untyped]
+    LogExpectedImprovement,
+    LogProbabilityOfImprovement,
+    UpperConfidenceBound,
+)
+from botorch.models.model import Model  # type: ignore[import-untyped]
+from torch import Tensor
 
 
 class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
@@ -17,11 +24,11 @@ class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, model, constraint, **kwargs):
+    def __init__(self, model: Model, constraint: Callable[[Tensor], Tensor], **kwargs) -> None:
         super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         *input_shape, _, _ = x.shape
         transformed_posterior = self.posterior_transform(self.model.posterior(x))
         mean = transformed_posterior.mean.reshape(input_shape)
@@ -47,11 +54,11 @@ class ConstrainedLogExpectedImprovement(LogExpectedImprovement):
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, model, constraint, **kwargs):
+    def __init__(self, model: Model, constraint: Callable[[Tensor], Tensor], **kwargs) -> None:
         super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return (super().forward(x) + self.constraint(x).log().squeeze(-1)).exp()
 
 
@@ -66,9 +73,9 @@ class ConstrainedLogProbabilityOfImprovement(LogProbabilityOfImprovement):
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, model, constraint, **kwargs):
+    def __init__(self, model: Model, constraint: Callable[[Tensor], Tensor], **kwargs) -> None:
         super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return (super().forward(x) + self.constraint(x).log().squeeze(-1)).exp()

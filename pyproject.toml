@@ -49,6 +49,8 @@ pre-commit = [
   "import-linter",
   "nbstripout",
 ]
+adaptive = ["bluesky-adaptive"]
+
 dev = [
   "pytest-codecov",
   "coverage",
@@ -69,8 +71,10 @@ dev = [
   "sphinx_rtd_theme",
   "ruff",
   "import-linter",
+  "pandas-stubs",
+  "types-PyYAML",
+  "mypy",
 ]
-
 
 [project.urls]
 Homepage = "https://github.com/NSLS-II/blop"

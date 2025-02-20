@@ -1,10 +1,19 @@
 import math
+from typing import Callable
 
 import numpy as np
 import torch
-from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy
-from botorch.acquisition.monte_carlo import qExpectedImprovement, qProbabilityOfImprovement, qUpperConfidenceBound
-from botorch.acquisition.multi_objective.monte_carlo import qNoisyExpectedHypervolumeImprovement
+from botorch.acquisition.max_value_entropy_search import qLowerBoundMaxValueEntropy  # type: ignore[import-untyped]
+from botorch.acquisition.monte_carlo import (  # type: ignore[import-untyped]
+    qExpectedImprovement,
+    qProbabilityOfImprovement,
+    qUpperConfidenceBound,
+)
+from botorch.acquisition.multi_objective.monte_carlo import (  # type: ignore[import-untyped]
+    qNoisyExpectedHypervolumeImprovement,
+)
+from botorch.models.model import Model  # type: ignore[import-untyped]
+from torch import Tensor
 
 
 class qConstrainedUpperConfidenceBound(qUpperConfidenceBound):
@@ -19,12 +28,12 @@ class qConstrainedUpperConfidenceBound(qUpperConfidenceBound):
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, constraint, beta=4, **kwargs):
+    def __init__(self, constraint: Callable[[Tensor], Tensor], beta: float = 4, **kwargs) -> None:
         super().__init__(beta=beta, **kwargs)
         self.constraint = constraint
         self.beta = torch.tensor(beta)
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         *input_shape, _, _ = x.shape
 
         transformed_posterior = self.posterior_transform(self.model.posterior(x))
@@ -51,11 +60,11 @@ class qConstrainedExpectedImprovement(qExpectedImprovement):
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, model, constraint, **kwargs):
+    def __init__(self, model: Model, constraint: Callable[[Tensor], Tensor], **kwargs) -> None:
         super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
@@ -70,11 +79,11 @@ class qConstrainedProbabilityOfImprovement(qProbabilityOfImprovement):
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, model, constraint, **kwargs):
+    def __init__(self, model: Model, constraint: Callable[[Tensor], Tensor], **kwargs) -> None:
         super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
@@ -90,11 +99,11 @@ class qConstrainedNoisyExpectedHypervolumeImprovement(qNoisyExpectedHypervolumeI
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, model, constraint, **kwargs):
+    def __init__(self, model: Model, constraint: Callable[[Tensor], Tensor], **kwargs) -> None:
         super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return super().forward(x) * self.constraint(x).squeeze(-1)
 
 
@@ -109,9 +118,9 @@ class qConstrainedLowerBoundMaxValueEntropy(qLowerBoundMaxValueEntropy):
         A callable which when evaluated on inputs returns the probability of feasibility.
     """
 
-    def __init__(self, model, constraint, **kwargs):
+    def __init__(self, model: Model, constraint: Callable[[Tensor], Tensor], **kwargs) -> None:
         super().__init__(model=model, **kwargs)
         self.constraint = constraint
 
-    def forward(self, x):
+    def forward(self, x: Tensor) -> Tensor:
         return super().forward(x) * self.constraint(x).squeeze(-1)

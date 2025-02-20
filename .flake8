@@ -11,4 +11,4 @@ exclude =
     versioneer.py,
 max-line-length = 125
 # Ignore some style 'errors' produced while formatting by 'black'
-ignore = E203, W503
+ignore = E203, W503, E704

@@ -1,29 +1,35 @@
 import os
+from typing import TYPE_CHECKING, Any, Optional
 
 import pandas as pd
 import yaml
+from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 
 from . import analytic, monte_carlo
 from .analytic import *  # noqa F401
 from .monte_carlo import *  # noqa F401
+
+if TYPE_CHECKING:
+    from ...agent import BaseAgent
 
 # from botorch.utils.transforms import normalize
 
 
 here, this_filename = os.path.split(__file__)
 
+# TODO: Move this into the code, rather than a config file
 with open(f"{here}/config.yml") as f:
     config = yaml.safe_load(f)
 
 
-def all_acqfs(columns=("identifier", "type", "multitask_only", "description")):
+def all_acqfs(columns: tuple[str, ...] = ("identifier", "type", "multitask_only", "description")) -> pd.DataFrame:
     cols = list(columns)
     acqfs = pd.DataFrame(config).T[cols]
     acqfs.index.name = "name"
     return acqfs.sort_values(["type", "name"])
 
 
-def parse_acqf_identifier(identifier, strict=True):
+def parse_acqf_identifier(identifier: str, strict: bool = True) -> Optional[dict[str, Any]]:
     for acqf_name in config.keys():
         if identifier.lower() in [acqf_name, config[acqf_name]["identifier"]]:
             return {"name": acqf_name, **config[acqf_name]}
@@ -32,9 +38,17 @@ def parse_acqf_identifier(identifier, strict=True):
     return None
 
 
-def _construct_acqf(agent, acqf_name, **acqf_kwargs):
+def _construct_acqf(agent: "BaseAgent", acqf_name: str, **acqf_kwargs: Any) -> tuple[AcquisitionFunction, dict[str, Any]]:
     """Generates an acquisition function from a supplied identifier. A list of acquisition functions and
     their identifiers can be found at `agent.all_acqfs`.
+
+    Args:
+        agent: The optimization agent
+        acqf_name: Name of the acquisition function
+        **acqf_kwargs: Additional keyword arguments for the acquisition function
+
+    Returns:
+        tuple: (acquisition_function, acquisition_function_kwargs)
     """
 
     acqf_config = config["upper_confidence_bound"]
@@ -85,7 +99,7 @@ def _construct_acqf(agent, acqf_name, **acqf_kwargs):
         acqf = monte_carlo.qConstrainedLowerBoundMaxValueEntropy(
             constraint=agent.constraint,
             model=agent.fitness_model,
-            candidate_set=agent.test_inputs(n=1024).squeeze(1),
+            candidate_set=agent.sample(n=1024).squeeze(1),
         )
 
     elif acqf_name == "monte_carlo_noisy_expected_hypervolume_improvement":

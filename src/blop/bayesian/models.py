@@ -1,12 +1,19 @@
-import botorch
-import gpytorch
+from typing import Any, Optional, Union
+
+import botorch  # type: ignore[import-untyped]
+import gpytorch  # type: ignore[import-untyped]
 import torch
-from botorch.models.gp_regression import SingleTaskGP
+from botorch.models.gp_regression import SingleTaskGP  # type: ignore[import-untyped]
 
 from . import kernels
 
 
-def train_model(model, hypers=None, max_fails=4, **kwargs):
+def train_model(
+    model: SingleTaskGP,
+    hypers: Optional[dict[str, Any]] = None,
+    max_fails: int = 4,
+    **kwargs: Any,
+) -> None:
     """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
     fails = 0
     while True:
@@ -24,7 +31,13 @@ def train_model(model, hypers=None, max_fails=4, **kwargs):
                 raise e
 
 
-def construct_single_task_model(X, y, skew_dims=None, min_noise=1e-6, max_noise=1e0):
+def construct_single_task_model(
+    X: torch.Tensor,
+    y: torch.Tensor,
+    skew_dims: Optional[list[tuple[int, ...]]] = None,
+    min_noise: float = 1e-6,
+    max_noise: float = 1e0,
+) -> "LatentGP":
     """
     Construct an untrained model for an objective.
     """
@@ -57,7 +70,14 @@ def construct_single_task_model(X, y, skew_dims=None, min_noise=1e-6, max_noise=
 
 
 class LatentGP(SingleTaskGP):
-    def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
+    def __init__(
+        self,
+        train_inputs: torch.Tensor,
+        train_targets: torch.Tensor,
+        skew_dims: Union[bool, list[tuple[int, ...]]] = True,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(train_inputs, train_targets, *args, **kwargs)
 
         self.mean_module = gpytorch.means.ConstantMean(constant_prior=gpytorch.priors.NormalPrior(loc=0, scale=1))
@@ -71,16 +91,23 @@ class LatentGP(SingleTaskGP):
             **kwargs,
         )
 
-        self.trained = False
+        self.trained: bool = False
 
 
 class LatentConstraintModel(LatentGP):
-    def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
+    def __init__(
+        self,
+        train_inputs: torch.Tensor,
+        train_targets: torch.Tensor,
+        skew_dims: Union[bool, list[tuple[int, ...]]] = True,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
 
-        self.trained = False
+        self.trained: bool = False
 
-    def fitness(self, x, n_samples=1024):
+    def fitness(self, x: torch.Tensor, n_samples: int = 1024) -> torch.Tensor:
         """
         Takes in a (..., m) dimension tensor and returns a (..., n_classes) tensor
         """
@@ -90,12 +117,19 @@ class LatentConstraintModel(LatentGP):
 
 
 class LatentDirichletClassifier(LatentGP):
-    def __init__(self, train_inputs, train_targets, skew_dims=True, *args, **kwargs):
+    def __init__(
+        self,
+        train_inputs: torch.Tensor,
+        train_targets: torch.Tensor,
+        skew_dims: Union[bool, list[tuple[int, ...]]] = True,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
 
-        self.trained = False
+        self.trained: bool = False
 
-    def probabilities(self, x, n_samples=1024):
+    def probabilities(self, x: torch.Tensor, n_samples: int = 1024) -> torch.Tensor:
         """
         Takes in a (..., m) dimension tensor and returns a (..., n_classes) tensor
         """
