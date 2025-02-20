@@ -52,7 +52,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
             [
                 torch.kron(torch.arange(self.num_outputs), torch.ones(self.num_inputs)).long(),
                 *2 * [torch.arange(self.num_inputs).repeat(self.num_outputs)],
-            ],
+            ]
         )
 
         self.skew_matrix_indices = (
