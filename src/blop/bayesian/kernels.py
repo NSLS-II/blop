@@ -56,8 +56,8 @@ class LatentKernel(gpytorch.kernels.Kernel):
             *2 * [torch.arange(self.num_inputs).repeat(self.num_outputs)],
         ]
 
-        self.skew_matrix_indices: list[torch.Tensor] = (
-            [torch.cat(skew_group_submatrix_indices, dim=1)]
+        self.skew_matrix_indices: Union[list[torch.Tensor], torch.Tensor] = (
+            torch.cat(skew_group_submatrix_indices, dim=1)
             if len(skew_group_submatrix_indices) > 0
             else [torch.tensor([]), torch.tensor([])]
         )
