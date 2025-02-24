@@ -1,19 +1,20 @@
 import argparse
 import datetime
 import json  # noqa F401
-
+from bluesky.callbacks.zmq import Publisher
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
-import databroker
-##
-
-##
+from tiled.client import from_uri, from_profile ##
+import time as ttime
+from bluesky.callbacks.tiled_writer import TiledWriter
+from nslsii import configure_base
 import matplotlib.pyplot as plt
 import numpy as np  # noqa F401
 from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
-from databroker import Broker
 from ophyd.utils import make_dir_tree
+from tiled.client.utils import handle_error
+from tiled.utils import safe_json_dump
 
 from blop.sim import HDF5Handler
 
@@ -22,36 +23,52 @@ DEFAULT_ROOT_DIR = "/tmp/sirepo-bluesky-data"
 DEFAULT_ENV_TYPE = "stepper"
 DEFAULT_USE_SIREPO = False
 
+SERVER_HOST_LOCATION = "http://localhost:8000"
 
-def re_env(db_type=DEFAULT_DB_TYPE, root_dir=DEFAULT_ROOT_DIR):
-    RE = RunEngine({})
+
+class TiledInserter:
+    def __init__(self, client):
+        self.client = client  # Store the Tiled client for later use    
+    def insert(self, name, doc):
+        ATTEMPTS = 20
+        error = None
+        for attempt in range(ATTEMPTS):
+            try:
+                self.tiled_post_document(name, doc)
+                return  # Success
+            except Exception as exc:
+                print(f"Attempt {attempt + 1} failed: {repr(exc)}")
+                error = exc
+                ttime.sleep(2)
+        raise error  # If all attempts fail  
+      
+    def tiled_post_document(self, name, doc):
+        """Handles the actual document posting to the Tiled server."""
+        link = self.client.item["links"]["self"].replace("/metadata", "/documents", 1)
+        response = self.client.context.http_client.post(
+            link, content=safe_json_dump({"name": name, "doc": doc})
+        )
+        self.handle_error(response)    
+
+    def handle_error(self, response):
+        """Handle potential errors from the Tiled server."""
+        if response.status_code != 200:
+            raise RuntimeError(f"Tiled server error: {response.status_code} {response.text}")
+    
+def re_env(db_type="default", root_dir="/default/path"):
+    # Initialize RunEngine
+    RE = RunEngine({})    # BestEffortCallback for live visualization
     bec = best_effort.BestEffortCallback()
-    RE.subscribe(bec)
+    RE.subscribe(bec)    # Setup Tiled Client
 
-    ##
-    db = Broker.named(db_type)
-    # print(" this is db_type")
-    # print(databroker.__version__)
-    # db = databroker.catalog["http://localhost:8000"]
-    # print("hi")
-    print(databroker.__version__)
- 
+    tiled_client = from_uri(SERVER_HOST_LOCATION)["local"]["raw"]
+    tiled_client.login()  # Authenticate if needed    # Instantiate TiledInserter with the client
+    tiled_inserter = TiledInserter()    # Subscribe RunEngine to TiledInserter
+    RE.subscribe(tiled_inserter.insert)    # Ensure directory structure exists
 
-    db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-    print(db.reg.config)
-    databroker.assets.utils.install_sentinels(db.config, version=2)
-
-    # try:
-    #     databroker.assets.utils.install_sentinels(db.reg.config, version=2)
-    # except Exception:
-    #     print("exception")
-    #     pass
-    RE.subscribe(db.insert)
-
-    _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
-
-    return dict(RE=RE, db=db, bec=bec)
-
+    _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)    
+    return dict(RE=RE, db=tiled_client, bec=bec)
+    
 
 def register_handlers(db, handlers):
     for handler_spec, handler_class in handlers.items():
