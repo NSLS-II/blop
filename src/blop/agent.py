@@ -5,7 +5,7 @@ import time as ttime
 import warnings
 from collections import OrderedDict
 from collections.abc import Callable, Generator, Hashable, Iterator, Mapping, Sequence
-from typing import Any, cast
+from typing import Any, cast, Optional, Union
 
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
@@ -38,7 +38,7 @@ from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 
-logger = logging.getLogger("maria")
+logger = logging.getLogger("blop")
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -138,70 +138,82 @@ class BaseAgent:
         self.train_every = train_every
         self.n_last_trained = 0
 
-    def raw_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
-        """
-        Get the raw, untransformed inputs for a DOF (or for a subset).
-        """
-        if index is None:
-            return torch.cat([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double).unsqueeze(-1)
-
     def argmax_best_f(self, weights: str = "default") -> int:
         return int(self.scalarized_fitnesses(weights=weights, constrained=True).argmax())
 
     @property
     def random_ref_point(self) -> ArrayLike:
-        train_targets = self.train_targets(active=True, fitness=True, concatenate=True)
+        train_targets = self.train_targets(active=True, fitness=True)
         if not isinstance(train_targets, torch.Tensor):
             raise RuntimeError("'random_ref_point' is not defined for multi-objective optimization.")
         return train_targets[self.argmax_best_f(weights="random")]
 
-    def train_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
-        """A two-dimensional tensor of all DOF values."""
+    def raw_inputs(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+        """
+        Get the raw, untransformed inputs for a DOF (or for a subset).
+        """
+        if index is None:
+            return torch.stack([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
+
+    def train_inputs(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+        """
+        A two-dimensional tensor of all DOF values for training on.
+        """
 
         if index is None:
-            return torch.cat([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
+            return torch.stack([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
 
         dof = self.dofs[index]
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
-
         return dof._transform(raw_inputs)
 
-    def raw_targets(self, index: str | int | None = None, **subset_kwargs) -> dict[str, torch.Tensor]:
+    def raw_targets_dict(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> dict[str, torch.Tensor]:
         """
-        Get the raw, untransformed inputs for an objective (or for a subset).
+        Get the raw, untransformed targets for an objective (or for a subset of objectives) as a dict.
         """
-        values = {}
+        if index is None:
+            return {obj.name: self.raw_targets_dict(obj.name)[obj.name] for obj in self.objectives(**subset_kwargs)}
+        key = self.objectives[index].name
+        return {key: torch.tensor(self._table.loc[:, key].values, dtype=torch.double)}
+
+    def raw_targets(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+        """
+        Get the raw, untransformed targets for an objective (or for a subset of objectives) as a tensor.
+        """
+        return torch.stack(list(self.raw_targets_dict(index=index, **subset_kwargs).values()), axis=-1)
+
+    def train_targets_dict(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> dict[str, torch.Tensor]:
+        """
+        Returns the values associated with an objective name.
+        """
+
+        targets_dict = {}
+        raw_targets_dict = self.raw_targets_dict(**subset_kwargs)
 
         for obj in self.objectives(**subset_kwargs):
-            # return torch.cat([self.raw_targets(index=obj.name) for obj in self.objectives(**subset_kwargs)], dim=-1)
-            values[obj.name] = torch.tensor(self._table.loc[:, obj.name].values, dtype=torch.double)
-
-        return values
-
-    def train_targets(self, concatenate: bool = False, **subset_kwargs) -> dict[str, torch.Tensor] | torch.Tensor:
-        """Returns the values associated with an objective name."""
-
-        targets_dict: dict[str, torch.Tensor] = {}
-        raw_targets_dict = self.raw_targets(**subset_kwargs)
-
-        for obj in self.objectives(**subset_kwargs):
-            y = raw_targets_dict[obj.name]
-
-            targets_dict[obj.name] = obj._transform(y)
+            targets_dict[obj.name] = obj._transform(raw_targets_dict[obj.name])
 
         if self.enforce_all_objectives_valid:
-            # Create mask that is True only where all objectives have valid values
-            valid_mask = ~torch.stack([values.isnan() for values in targets_dict.values()]).any(dim=0)
+            all_valid_mask = True
 
-            # Set all objectives to NaN where any objective was NaN
-            for name in targets_dict:
-                targets_dict[name] = targets_dict[name].where(valid_mask, np.nan)
+            for values in targets_dict.values():
+                all_valid_mask &= ~values.isnan()
 
-        if concatenate:
-            return torch.cat([values.unsqueeze(-1) for values in targets_dict.values()], dim=-1)
+            for name in targets_dict.keys():
+                targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
+
+        if index is not None:
+            key = self.objectives[index].name
+            return {key: targets_dict[key]}
 
         return targets_dict
+
+    def train_targets(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+        """
+        Returns the values associated with an objective name as an (n_samples, n_objective) tensor.
+        """
+        return torch.stack(list(self.train_targets_dict(index=index, **subset_kwargs).values()), axis=-1)
 
     @property
     def sample_domain(self) -> torch.Tensor:
@@ -233,11 +245,9 @@ class BaseAgent:
     @property
     def evaluated_constraints(self) -> torch.Tensor:
         constraint_objectives = self.objectives(constraint=True)
-        raw_targets_dict = self.raw_targets()
         if len(constraint_objectives):
-            return torch.cat(
-                [obj.constrain(raw_targets_dict[obj.name]).unsqueeze(-1) for obj in constraint_objectives], dim=-1
-            )
+            raw_targets_dict = self.raw_targets_dict(constraint=True)
+            return torch.stack([obj.constrain(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1)
         else:
             return torch.ones(size=(len(self._table), 0), dtype=torch.bool)
 
@@ -249,9 +259,7 @@ class BaseAgent:
         """
         fitness_objs = self.objectives(fitness=True)
         if len(fitness_objs) >= 1:
-            f = self.fitness_scalarization(weights=weights).evaluate(
-                self.train_targets(active=True, fitness=True, concatenate=True)
-            )
+            f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, fitness=True))
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
             f = torch.zeros(len(self._table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
@@ -364,7 +372,7 @@ class BaseAgent:
         skew_dims = skew_dims if skew_dims is not None else self._latent_dim_tuples(obj.name)
 
         train_inputs = self.train_inputs(active=True)
-        train_targets = self.train_targets()[obj.name].unsqueeze(-1)
+        train_targets = self.train_targets(index=obj.name)
 
         inputs_are_trusted = ~torch.isnan(train_inputs).any(dim=1)
         targets_are_trusted = ~torch.isnan(train_targets).any(dim=1)
@@ -934,7 +942,7 @@ class Agent(BaseAgent):
         Returns a mask of all points that satisfy all constraints and are Pareto efficient.
         A point is Pareto efficient if it is there is no other point that is better at every objective.
         """
-        Y = self.train_targets(active=True, fitness=True, concatenate=True)
+        Y = self.train_targets(active=True, fitness=True)
 
         if not isinstance(Y, torch.Tensor):
             raise RuntimeError(f"Expected Y to be a torch.Tensor, but got {type(Y)}.")
@@ -955,11 +963,11 @@ class Agent(BaseAgent):
 
     @property
     def min_ref_point(self) -> ArrayLike:
-        y = self.train_targets(concatenate=True)
-        if not isinstance(y, torch.Tensor):
-            raise RuntimeError(f"Expected y to be a torch.Tensor, but got {type(y)}.")
-        y = y[:, self.objectives.type == "fitness"]
-        return y[y.argmax(dim=0)].min(dim=0).values
+        Y = self.train_targets()
+        if not isinstance(Y, torch.Tensor):
+            raise RuntimeError(f"Expected y to be a torch.Tensor, but got {type(Y)}.")
+        Y = Y[:, self.objectives.type == "fitness"]
+        return Y[Y.argmax(dim=0)].min(dim=0).values
 
     @property
     def all_objectives_valid(self) -> torch.Tensor:
@@ -1200,7 +1208,7 @@ class Agent(BaseAgent):
             if not obj.model:
                 raise RuntimeError(f"Expected {obj} to have a constructed model.")
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(obj.model.likelihood, obj.model)
-            train_targets = self.train_targets()
+            train_targets = self.train_targets_dict()
             if not isinstance(train_targets, dict):
                 raise TypeError("Expected train_targets to return a dict")
             target_tensor = train_targets[obj.name].unsqueeze(-1)
