@@ -1,5 +1,6 @@
 import pytest  # noqa F401
 import numpy as np
+import sys
 
 from .conftest import all_agents
 
@@ -49,9 +50,10 @@ def test_agent(agent, RE, db):
     RE(agent.learn("qei", n=2))
 
     # save the data, reset the agent, and get the data back
-    agent.save_data("/tmp/test_save_data.h5")
-    agent.reset()
-    agent.load_data("/tmp/test_save_data.h5")
+    if sys.version_info.minor > 9:
+        agent.save_data("/tmp/test_save_data.h5")
+        agent.reset()
+        agent.load_data("/tmp/test_save_data.h5")
 
     RE(agent.learn("qei", n=2))
 

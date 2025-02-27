@@ -1003,7 +1003,7 @@ class Agent(BaseAgent):
 
         return acquisition._construct_acqf(self, acqf_name=identifier, return_metadata=return_metadata)
 
-    def save_data(self, path: str = "./data.h5"):
+    def save_data(self, path: str):
         """
         Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future agent.
