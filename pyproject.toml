@@ -28,6 +28,7 @@ dependencies = [
   "tables",
   "torch",
   "tiled",
+  "xrt",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
