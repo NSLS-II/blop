@@ -30,7 +30,9 @@ import xrt.runner as xrtrun
 limits = [[-0.6, 0.6], [-0.45, 0.45]]
 
 
-def build_histRGB(lb, gb, limits=None, isScreen=False, shape=[256, 256]):
+def build_histRGB(lb, gb, limits=None, isScreen=False, shape=None):
+    if shape is None:
+        shape = [256, 256]
     good = (lb.state == 1) | (lb.state == 2)
     if isScreen:
         x, y, z = lb.x[good], lb.z[good], lb.y[good]

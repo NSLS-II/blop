@@ -20,7 +20,7 @@ from xrt_beamline import Beamline
 
 plt.ion()
 
-kwargs_re = dict(db_type="temp", root_dir=pre.DEFAULT_ROOT_DIR)
+kwargs_re = {"db_type": "temp", "root_dir": pre.DEFAULT_ROOT_DIR}
 ret = pre.re_env(**kwargs_re)
 
 RE = ret["RE"]
