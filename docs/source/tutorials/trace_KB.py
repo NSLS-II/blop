@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 
 __author__ = "Konstantin Klementiev", "Roman Chernikov"
@@ -11,36 +10,27 @@ Created with xrtQook
 
 """
 
+import os
+import sys
+
 import numpy as np
-import sys, os
 
-# sys.path.append(r"/home/rchernikov/anaconda3/envs/blop312/lib/python3.12/site-packages")
-# os.environ['LD_PRELOAD']='/usr/lib/x86_64-linux-gnu/libstdc++.so.6'
-# os.environ['LD_PRELOAD']='/usr/lib64/libstdc++.so.6'
 os.environ["QT_QPA_PLATFORM"] = "xcb"
-# os.environ['PYOPENGL_PLATFORM'] = 'glx'
-# os.environ['SDL_VIDEO_X11_FORCE_EGL'] = '1'
 sys.path.append("/home/rcherniko/github/xrt")
-# print("0")
-import xrt.backends.raycing.sources as rsources
+import time
 
-# print("")
-import xrt.backends.raycing.screens as rscreens
-import xrt.backends.raycing.materials as rmats
-import xrt.backends.raycing.oes as roes
-import xrt.backends.raycing.apertures as rapts
-import xrt.backends.raycing.run as rrun
 import xrt.backends.raycing as raycing
+import xrt.backends.raycing.oes as roes
+import xrt.backends.raycing.run as rrun
+import xrt.backends.raycing.screens as rscreens
+import xrt.backends.raycing.sources as rsources
 import xrt.plotter as xrtplot
 import xrt.runner as xrtrun
-import time
-# print("00")
 
 limits = [[-0.6, 0.6], [-0.45, 0.45]]
 
 
 def build_histRGB(lb, gb, limits=None, isScreen=False, shape=[256, 256]):
-    # print(lb.x, lb.y, lb.z, lb.state)
     good = (lb.state == 1) | (lb.state == 2)
     if isScreen:
         x, y, z = lb.x[good], lb.z[good], lb.y[good]
@@ -56,7 +46,7 @@ def build_histRGB(lb, gb, limits=None, isScreen=False, shape=[256, 256]):
     if goodlen > 0:
         beamLimits = [limits[1], limits[0]] or None
         flux = gb.Jss[good] + gb.Jpp[good]
-        hist2d, yedges, xedges = np.histogram2d(y, x, bins=[shape[1], shape[0]], range=beamLimits, weights=flux)
+        hist2d, _, _ = np.histogram2d(y, x, bins=[shape[1], shape[0]], range=beamLimits, weights=flux)
         hist2dRGB = None
     return hist2d, hist2dRGB, limits
 
@@ -68,18 +58,13 @@ def build_beamline():
         bl=beamLine, center=[0, 0, 0], nrays=25000, energies=(9000, 100), distE="normal", dx=0.2, dz=0.1, dxprime=0.00015
     )
 
-    # beamLine.toroidMirror01.R=38245.71081889952
-    # beamLine.toroidMirror02.R=21035.140950394736
-
     beamLine.toroidMirror01 = roes.ToroidMirror(
         bl=beamLine,
         center=[0, 10000, 0],
         pitch=r"5deg",
         limPhysX=[-20.0, 20.0],
         limPhysY=[-150.0, 150.0],
-        # R=55000,
         R=38245,
-        # R=[10000, 2000],
         r=100000000.0,
     )
     print(f"{beamLine.toroidMirror01.R=}")
@@ -93,15 +78,12 @@ def build_beamline():
         rotationSequence=r"RyRxRz",
         limPhysX=[-20, 20],
         limPhysY=[-150, 150],
-        # R=25000,
         R=21035,
-        # R=[11000, 1000],
         r=100000000.0,
     )
     print(f"{beamLine.toroidMirror02.R=}")
 
     beamLine.screen01 = rscreens.Screen(bl=beamLine, center=[164.87347936545572, 11935, 343.73164815693235])
-    # center=[r"auto", 11935, r"auto"])
 
     return beamLine
 
@@ -126,7 +108,7 @@ def run_process(beamLine):
         "toroidMirror02beamLocal01": toroidMirror02beamLocal01,
         "screen01beamLocal01": screen01beamLocal01,
     }
-    print("Tracing takes {:.3f}ms".format(1000 * (time.time() - time0)))
+    print(f"Tracing takes {1000 * (time.time() - time0):.3f}ms")
     beamLine.prepare_flow()
     return outDict
 
@@ -150,11 +132,8 @@ def define_plots():
 
 
 def main():
-    # print("1")
     beamLine = build_beamline()
-    # print("2")
     beamLine.glow()
-    # print("3")
     E0 = list(beamLine.geometricSource01.energies)[0]
     beamLine.alignE = E0
     plots = define_plots()
