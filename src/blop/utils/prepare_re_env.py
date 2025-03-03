@@ -6,17 +6,16 @@ import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
 
 from tiled.client import from_uri, from_profile ##
-import time as ttime
 from bluesky.callbacks.tiled_writer import TiledWriter
-
 import matplotlib.pyplot as plt
 import numpy as np  # noqa F401
 from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
 from ophyd.utils import make_dir_tree
-from tiled.client.utils import handle_error
-from tiled.utils import safe_json_dump
+
+
+from bluesky.callbacks.tiled_writer import TiledWriter
 
 from blop.sim import HDF5Handler
 
@@ -42,9 +41,6 @@ def re_env(db_type="default", root_dir="/default/path"):
 
     _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
     return {"RE": RE, "db": tiled_client, "bec": bec}
-
-    _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)    
-    return dict(RE=RE, db=tiled_client, bec=bec)
     
 
 def register_handlers(db, handlers):
