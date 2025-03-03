@@ -44,6 +44,7 @@ dynamic = ["version"]
 sirepo = ["sirepo-bluesky"]
 napari = ["napari"]
 gui = ["nicegui"]
+xrt = ["xrt"]
 pre-commit = [
   "ruff",
   "import-linter",
@@ -76,8 +77,6 @@ dev = [
   "types-PyYAML",
   "mypy",
 ]
-
-docs = ["all", "xrt"]
 
 [project.urls]
 Homepage = "https://github.com/NSLS-II/blop"
