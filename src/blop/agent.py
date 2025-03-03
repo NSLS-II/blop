@@ -22,7 +22,6 @@ from botorch.acquisition.objective import ScalarizedPosteriorTransform
 from botorch.models.deterministic import GenericDeterministicModel
 from botorch.models.model_list_gp_regression import ModelListGP
 from botorch.models.transforms.input import Normalize
-from databroker import Broker
 from numpy.typing import ArrayLike
 from ophyd import Signal
 
@@ -36,6 +35,8 @@ from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
+
+from bluesky.callbacks.tiled_writer import TiledWriter
 
 logger = logging.getLogger("maria")
 
@@ -667,7 +668,7 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker = None,
+        db: TiledWriter = None,
         detectors: Sequence[Signal] = None,
         acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
@@ -698,8 +699,8 @@ class Agent(BaseAgent):
             A function to digest the output of the acquisition, taking a DataFrame as an argument.
         digestion_kwargs :
             Some kwargs for the digestion function.
-        db : optional
-            A databroker instance.
+        db : optional                                            
+            A TiledWriter instance.
         verbose : bool
             To be verbose or not.
         tolerate_acquisition_errors : bool
@@ -919,7 +920,7 @@ class Agent(BaseAgent):
         """
 
         if self.db is None:
-            raise ValueError("Cannot run acquistion without databroker instance!")
+            raise ValueError("Cannot run acquistion without TiledWriter instance!")
 
         acquisition_dofs = self.dofs(active=True, read_only=False)
         for dof in acquisition_dofs:
@@ -935,7 +936,8 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            products = self.digestion(self.db[uid].table(fill=True), **self.digestion_kwargs)
+    
+            products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
