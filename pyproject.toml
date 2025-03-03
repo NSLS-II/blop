@@ -28,7 +28,6 @@ dependencies = [
   "tables",
   "torch",
   "tiled",
-  "xrt",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -51,6 +50,7 @@ pre-commit = [
   "nbstripout",
 ]
 adaptive = ["bluesky-adaptive"]
+xrt = ["xrt"]
 
 dev = [
   "pytest-codecov",
