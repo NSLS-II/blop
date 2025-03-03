@@ -1,4 +1,4 @@
-from typing import Any, Optional, Union
+from typing import Any
 
 import botorch  # type: ignore[import-untyped]
 import gpytorch  # type: ignore[import-untyped]
@@ -10,7 +10,7 @@ from . import kernels
 
 def train_model(
     model: SingleTaskGP,
-    hypers: Optional[dict[str, Any]] = None,
+    hypers: dict[str, Any] | None = None,
     max_fails: int = 4,
     **kwargs: Any,
 ) -> None:
@@ -34,7 +34,7 @@ def train_model(
 def construct_single_task_model(
     X: torch.Tensor,
     y: torch.Tensor,
-    skew_dims: Optional[list[tuple[int, ...]]] = None,
+    skew_dims: list[tuple[int, ...]] | None = None,
     min_noise: float = 1e-6,
     max_noise: float = 1e0,
 ) -> "LatentGP":
@@ -74,7 +74,7 @@ class LatentGP(SingleTaskGP):
         self,
         train_inputs: torch.Tensor,
         train_targets: torch.Tensor,
-        skew_dims: Union[bool, list[tuple[int, ...]]] = True,
+        skew_dims: bool | list[tuple[int, ...]] = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -99,7 +99,7 @@ class LatentConstraintModel(LatentGP):
         self,
         train_inputs: torch.Tensor,
         train_targets: torch.Tensor,
-        skew_dims: Union[bool, list[tuple[int, ...]]] = True,
+        skew_dims: bool | list[tuple[int, ...]] = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:
@@ -121,7 +121,7 @@ class LatentDirichletClassifier(LatentGP):
         self,
         train_inputs: torch.Tensor,
         train_targets: torch.Tensor,
-        skew_dims: Union[bool, list[tuple[int, ...]]] = True,
+        skew_dims: bool | list[tuple[int, ...]] = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:

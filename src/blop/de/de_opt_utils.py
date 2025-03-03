@@ -193,7 +193,7 @@ def generate_hardware_flyers(
             max_velocity=max_velocity,
             min_velocity=min_velocity,
         )
-        for motor_name, vel, dist in zip(motors, velocities, dists):
+        for motor_name, vel, dist in zip(motors, velocities, dists, strict=False):
             velocities_dict[motor_name] = vel
             distances_dict[motor_name] = dist
         velocities_list.append(velocities_dict)
@@ -201,7 +201,7 @@ def generate_hardware_flyers(
 
     # Validation
     times_list = []
-    for dist, vel in zip(distances_list, velocities_list):
+    for dist, vel in zip(distances_list, velocities_list, strict=False):
         times_dict = {}
         for motor_name in motors.keys():
             if vel[motor_name] == 0:
@@ -211,7 +211,7 @@ def generate_hardware_flyers(
             times_dict[motor_name] = time_
         times_list.append(times_dict)
 
-    for param, vel, time_ in zip(population, velocities_list, times_list):
+    for param, vel, time_ in zip(population, velocities_list, times_list, strict=False):
         hf = HardwareFlyer(
             params_to_change=param,
             velocities=vel,

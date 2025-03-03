@@ -4,7 +4,7 @@ import warnings
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, fields
 from operator import attrgetter
-from typing import Any, Literal, Optional, Union, cast, overload
+from typing import Any, Literal, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -86,15 +86,15 @@ class DOF:
     name: str = ""
     description: str = ""
     type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous"
-    search_domain: Union[tuple[float, float], set[int], set[str], set[bool]] = (-np.inf, np.inf)
-    trust_domain: Optional[Union[tuple[float, float], set[int], set[str], set[bool]]] = None
+    search_domain: tuple[float, float] | set[int] | set[str] | set[bool] = (-np.inf, np.inf)
+    trust_domain: tuple[float, float] | set[int] | set[str] | set[bool] | None = None
     active: bool = True
     read_only: bool = False
-    transform: Optional[Literal["log", "logit", "arctanh"]] = None
-    device: Optional[Signal] = None
+    transform: Literal["log", "logit", "arctanh"] | None = None
+    device: Signal | None = None
     tags: list[str] = field(default_factory=list)
     travel_expense: float = 1
-    units: Optional[str] = None
+    units: str | None = None
 
     def __repr__(self) -> str:
         nodef_f_vals = ((f.name, attrgetter(f.name)(self)) for f in fields(self))
@@ -163,8 +163,8 @@ class DOF:
                     center = float(self._untransform(torch.mean(transformed)))
                     self.device = Signal(name=self.name, value=center)
         else:
-            discrete_search_domain = cast(Union[set[str], set[int]], self._search_domain)
-            discrete_trust_domain = cast(Union[set[str], set[int]], self._trust_domain)
+            discrete_search_domain = cast(set[str] | set[int], self._search_domain)
+            discrete_trust_domain = cast(set[str] | set[int], self._trust_domain)
 
             _validate_discrete_dof_domains(search_domain=discrete_search_domain, trust_domain=discrete_trust_domain)
 
@@ -191,7 +191,7 @@ class DOF:
         self.device.kind = "hinted"
 
     @property
-    def _search_domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
+    def _search_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
         Compute the search domain of the DOF.
         """
@@ -205,14 +205,14 @@ class DOF:
             return self.search_domain
 
     @property
-    def _trust_domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
+    def _trust_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
         If trust_domain is None, then we return the total domain.
         """
         return self.trust_domain or self.domain
 
     @property
-    def domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
+    def domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
         The total domain; the user can't control this. This is what we fall back on as the trust_domain if none is supplied.
         If the DOF is continuous:
@@ -306,7 +306,7 @@ class DOF:
 
 
 class DOFList(Sequence[DOF]):
-    def __init__(self, dofs: Optional[list[DOF]] = None) -> None:
+    def __init__(self, dofs: list[DOF] | None = None) -> None:
         dofs = dofs or []
         _validate_dofs(dofs)
         self.dofs = dofs
@@ -322,7 +322,7 @@ class DOFList(Sequence[DOF]):
     def __call__(self, *args: Any, **kwargs: Any) -> "DOFList":
         return self.subset(*args, **kwargs)
 
-    def __getattr__(self, attr: str) -> Union[DOF, list[Any], torch.Tensor]:
+    def __getattr__(self, attr: str) -> DOF | list[Any] | torch.Tensor:
         # This is called if we can't find the attribute in the normal way.
         if all(hasattr(dof, attr) for dof in self.dofs):
             if DOF_FIELD_TYPES.get(attr) in [float, int, bool]:
@@ -365,7 +365,7 @@ class DOFList(Sequence[DOF]):
     def __repr__(self) -> str:
         return self.summary.T.__repr__()
 
-    def _repr_html_(self) -> Optional[str]:
+    def _repr_html_(self) -> str | None:
         return self.summary.T._repr_html_()  # type: ignore
 
     def transform(self, X: torch.Tensor) -> torch.Tensor:
@@ -429,10 +429,10 @@ class DOFList(Sequence[DOF]):
     @staticmethod
     def _test_dof(
         dof: DOF,
-        type: Optional[Literal["continuous", "binary", "ordinal", "categorical"]] = None,
-        active: Optional[bool] = None,
-        read_only: Optional[bool] = None,
-        tag: Optional[str] = None,
+        type: Literal["continuous", "binary", "ordinal", "categorical"] | None = None,
+        active: bool | None = None,
+        read_only: bool | None = None,
+        tag: str | None = None,
     ) -> bool:
         if type is not None:
             if dof.type != type:
@@ -450,10 +450,10 @@ class DOFList(Sequence[DOF]):
 
     def subset(
         self,
-        type: Optional[Literal["continuous", "binary", "ordinal", "categorical"]] = None,
-        active: Optional[bool] = None,
-        read_only: Optional[bool] = None,
-        tag: Optional[str] = None,
+        type: Literal["continuous", "binary", "ordinal", "categorical"] | None = None,
+        active: bool | None = None,
+        read_only: bool | None = None,
+        tag: str | None = None,
     ) -> "DOFList":
         return DOFList(
             [dof for dof in self.dofs if self._test_dof(dof, type=type, active=active, read_only=read_only, tag=tag)]
@@ -489,7 +489,7 @@ class BrownianMotion(SignalRO):
     Read-only degree of freedom simulating brownian motion
     """
 
-    def __init__(self, name: Optional[str] = None, theta: float = 0.95, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, name: str | None = None, theta: float = 0.95, *args: Any, **kwargs: Any) -> None:
         name = name if name is not None else str(uuid.uuid4())
 
         super().__init__(*args, name=name, **kwargs)
@@ -577,9 +577,7 @@ def _validate_continuous_dof_domains(
             raise ValueError(f"The trust domain {trust_domain} must be a subset of the domain {domain}.")
 
 
-def _validate_discrete_dof_domains(
-    search_domain: Union[set[int], set[str]], trust_domain: Union[set[int], set[str]]
-) -> None:
+def _validate_discrete_dof_domains(search_domain: set[int] | set[str], trust_domain: set[int] | set[str]) -> None:
     """
     Check that all the domains are kosher by enforcing that:
     search_domain \\subseteq trust_domain
