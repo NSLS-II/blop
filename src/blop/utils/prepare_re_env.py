@@ -5,7 +5,6 @@ from bluesky.callbacks.zmq import Publisher
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
 from tiled.client import from_uri, from_profile ##
-import time as ttime
 from bluesky.callbacks.tiled_writer import TiledWriter
 import matplotlib.pyplot as plt
 import numpy as np  # noqa F401
@@ -13,8 +12,9 @@ from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
 from ophyd.utils import make_dir_tree
-from tiled.client.utils import handle_error
-from tiled.utils import safe_json_dump
+
+
+from bluesky.callbacks.tiled_writer import TiledWriter
 
 from blop.sim import HDF5Handler
 
@@ -32,6 +32,8 @@ tiled_writer = TiledWriter(tiled_client)
 
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
+#initializing the tiled server
+tiled_client = from_uri(SERVER_HOST_LOCATION)
 
 def re_env(db_type="default", root_dir="/default/path"):
     RE = RunEngine({})

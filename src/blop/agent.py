@@ -25,6 +25,7 @@ from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
 from botorch.posteriors.posterior import Posterior  # type: ignore[import-untyped]
 from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
+from botorch.models.deterministic import GenericDeterministicModel
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
 
@@ -38,6 +39,9 @@ from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 
 logger = logging.getLogger("blop")
+from bluesky.callbacks.tiled_writer import TiledWriter
+
+
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -586,8 +590,8 @@ class Agent(BaseAgent):
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
         tiled: TiledWriter | None = None,
-        detectors: Sequence[Signal] = None,
-        acquisition_plan=default_acquisition_plan,
+        detectors: Sequence[Signal] | None = None,
+        acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
         digestion_kwargs: dict | None = None,
         verbose: bool = False,
@@ -608,17 +612,32 @@ class Agent(BaseAgent):
             The degrees of freedom that the agent can control, which determine the output of the model.
         objectives : Sequence[Objective]
             The objectives which the agent will try to optimize.
+        acquisition_plan : Callable, optional
+            A plan that samples the beamline for some given inputs, by default default_acquisition_plan.
+            Called directly in Agent, used only by ``__name__`` in BlueskyAdaptiveAgent.
+            Default: ``default_acquisition_plan``
+        digestion : Callable, optional
+            A function to digest the output of the acquisition, taking a DataFrame as an argument,
+            by default default_digestion_function
+            Default: ``default_digestion_function``
+        digestion_kwargs : dict, optional
+            Some kwargs for the digestion function, by default {}
+            Default: False
+        verbose : bool, optional
+            To be verbose or not, by default False
+            Default: False
+        enforce_all_objectives_valid : bool, optional
+            Whether the agent should exclude from fitting points with one or more invalid objectives.
+            Default: True
+        exclude_pruned : bool, optional
+            Whether to exclude from fitting points that have been pruned after running agent.prune().
+            Default: True
+        model_inactive_objectives : bool, optional
+            Whether the agent should update models for outcomes that affect inactive objectives.
+            Default: False
+        tolerate_acquisition_errors : bool, optional
         detectors : iterable of ophyd objects
             Detectors to trigger during acquisition.
-        acquisition_plan : optional
-            A plan that samples the beamline for some given inputs.
-        digestion :
-            A function to digest the output of the acquisition, taking a DataFrame as an argument.
-        digestion_kwargs :
-            Some kwargs for the digestion function.
-        verbose : bool
-            To be verbose or not.
-        tolerate_acquisition_errors : bool
             Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
             Default: False
         tiled : optional
