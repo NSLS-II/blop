@@ -77,6 +77,8 @@ dev = [
   "mypy",
 ]
 
+docs = ["all", "xrt"]
+
 [project.urls]
 Homepage = "https://github.com/NSLS-II/blop"
 Documentation = "https://nsls-ii.github.io/blop"
