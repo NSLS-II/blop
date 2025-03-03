@@ -12,7 +12,7 @@ authors = [
 maintainers = [
   { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" },
 ]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "area-detector-handlers",
   "bluesky",
@@ -21,7 +21,7 @@ dependencies = [
   "gpytorch",
   "h5py",
   "matplotlib",
-  "numpy<2",
+  "numpy",
   "ophyd",
   "ortools",
   "scipy",
