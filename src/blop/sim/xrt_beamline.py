@@ -17,9 +17,7 @@ from ophyd.utils import make_dir_tree
 
 from blop.sim.handlers import ExternalFileReference
 from blop.utils import get_beam_stats
-
-sys.path.append("trace_KB.py")
-from trace_KB import build_beamline, build_histRGB, run_process
+from blop.sim.trace_KB import build_beamline, build_histRGB, run_process
 
 TEST = False
 
