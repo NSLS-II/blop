@@ -50,6 +50,7 @@ pre-commit = [
   "nbstripout",
 ]
 adaptive = ["bluesky-adaptive"]
+xrt = ["xrt"]
 
 dev = [
   "pytest-codecov",
