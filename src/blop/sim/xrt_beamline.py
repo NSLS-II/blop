@@ -15,7 +15,7 @@ from ophyd.sim import NullStatus, new_uid
 from ophyd.utils import make_dir_tree
 
 from blop.sim.handlers import ExternalFileReference
-from blop.sim.trace_KB import build_beamline, build_histRGB, run_process
+from blop.sim.xrt_kb_model import build_beamline, build_histRGB, run_process
 from blop.utils import get_beam_stats
 
 TEST = False
