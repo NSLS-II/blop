@@ -1,5 +1,4 @@
 from collections.abc import Iterable
-from typing import Union
 
 import gpytorch  # type: ignore[import-untyped]
 import numpy as np
@@ -14,7 +13,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
     def __init__(
         self,
         num_inputs: int = 1,
-        skew_dims: Union[bool, Iterable[tuple[int, ...]]] = True,
+        skew_dims: bool | Iterable[tuple[int, ...]] = True,
         priors: bool = True,
         scale_output: bool = True,
         **kwargs,
@@ -109,7 +108,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
         return self.raw_lengthscales_constraint.transform(self.raw_lengthscales)
 
     @lengthscales.setter
-    def lengthscales(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
+    def lengthscales(self, value: torch.Tensor | float | np.ndarray) -> None:
         self._set_lengthscales(value)
 
     @property
@@ -117,7 +116,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
         return self.raw_skew_entries_constraint.transform(self.raw_skew_entries)
 
     @skew_entries.setter
-    def skew_entries(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
+    def skew_entries(self, value: torch.Tensor | float | np.ndarray) -> None:
         self._set_skew_entries(value)
 
     @property
@@ -125,20 +124,20 @@ class LatentKernel(gpytorch.kernels.Kernel):
         return self.raw_outputscale_constraint.transform(self.raw_outputscale)
 
     @outputscale.setter
-    def outputscale(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
+    def outputscale(self, value: torch.Tensor | float | np.ndarray) -> None:
         self._set_outputscale(value)
 
-    def _set_lengthscales(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
+    def _set_lengthscales(self, value: torch.Tensor | float | np.ndarray) -> None:
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_lengthscales)
         self.initialize(raw_lengthscales=self.raw_lengthscales_constraint.inverse_transform(value))
 
-    def _set_skew_entries(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
+    def _set_skew_entries(self, value: torch.Tensor | float | np.ndarray) -> None:
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_skew_entries)
         self.initialize(raw_skew_entries=self.raw_skew_entries_constraint.inverse_transform(value))
 
-    def _set_outputscale(self, value: Union[torch.Tensor, float, np.ndarray]) -> None:
+    def _set_outputscale(self, value: torch.Tensor | float | np.ndarray) -> None:
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_outputscale)
         self.initialize(raw_outputscale=self.raw_outputscale_constraint.inverse_transform(value))

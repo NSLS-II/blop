@@ -3,7 +3,7 @@ from collections import deque
 from collections.abc import Generator, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import h5py  # type: ignore[import-untyped]
 import numpy as np
@@ -45,11 +45,11 @@ class Detector(Device):
 
         # Resource/datum docs related variables.
         self._asset_docs_cache: deque[tuple[str, dict[str, Any]]] = deque()
-        self._resource_document: Optional[dict[str, Any]] = None
-        self._datum_factory: Optional[Any] = None
-        self._dataset: Optional[h5py.Dataset] = None
-        self._h5file_desc: Optional[h5py.File] = None
-        self._counter: Optional[Iterator[int]] = None
+        self._resource_document: dict[str, Any] | None = None
+        self._datum_factory: Any | None = None
+        self._dataset: h5py.Dataset | None = None
+        self._h5file_desc: h5py.File | None = None
+        self._counter: Iterator[int] | None = None
 
         self.noise.put(noise)
 

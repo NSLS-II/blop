@@ -1,5 +1,5 @@
 from collections.abc import Iterable, Sequence
-from typing import Any, Literal, Optional, Union, overload
+from typing import Any, Literal, overload
 
 import numpy as np
 import pandas as pd
@@ -42,7 +42,7 @@ def _validate_obj_transform(transform: str) -> None:
         raise ValueError(f"'transform' must be one of {TRANSFORM_DOMAINS}")
 
 
-def _validate_continuous_domains(trust_domain: Optional[tuple[float, float]], domain: Optional[tuple[float, float]]) -> None:
+def _validate_continuous_domains(trust_domain: tuple[float, float] | None, domain: tuple[float, float] | None) -> None:
     """
     A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
 
@@ -91,16 +91,16 @@ class Objective:
         name: str,
         description: str = "",
         type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous",
-        target: Optional[Union[float, str]] = None,
-        constraint: Optional[Union[tuple[float, float], set[Any]]] = None,
-        transform: Optional[Literal["log", "logit", "arctanh"]] = None,
+        target: float | str | None = None,
+        constraint: tuple[float, float] | set[Any] | None = None,
+        transform: Literal["log", "logit", "arctanh"] | None = None,
         weight: float = 1.0,
         active: bool = True,
-        trust_domain: Optional[tuple[float, float]] = None,
+        trust_domain: tuple[float, float] | None = None,
         min_noise: float = DEFAULT_MIN_NOISE_LEVEL,
         max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
-        units: Optional[str] = None,
-        latent_groups: Optional[dict[str, Any]] = None,
+        units: str | None = None,
+        latent_groups: dict[str, Any] | None = None,
     ) -> None:
         self.name = name
         self.units = units
@@ -111,9 +111,9 @@ class Objective:
         # TODO: These are currently set outside of the class, in agent.py.
         #       We should move them inside the class, and make them private.
         #       Or reconsider the design of the class.
-        self._model: Optional[Model] = None
-        self.validity_conjugate_model: Optional[Model] = None
-        self.validity_constraint: Optional[Model] = None
+        self._model: Model | None = None
+        self.validity_conjugate_model: Model | None = None
+        self.validity_constraint: Model | None = None
 
         if not target and not constraint:
             raise ValueError("You must supply either a 'target' or a 'constraint'.")
@@ -238,7 +238,7 @@ class Objective:
         return self.model.likelihood.noise.item() if self.model else np.nan
 
     @property
-    def snr(self) -> Optional[int]:
+    def snr(self) -> int | None:
         return np.round(1 / self.model.likelihood.noise.sqrt().item(), 3) if self.model else None
 
     @property
@@ -273,12 +273,12 @@ class Objective:
         raise NotImplementedError("Pseudofitness is not implemented for this objective.")
 
     @property
-    def model(self) -> Optional[Model]:
+    def model(self) -> Model | None:
         return self._model.eval() if self._model else None
 
 
 class ObjectiveList(Sequence[Objective]):
-    def __init__(self, objectives: Optional[list[Objective]] = None) -> None:
+    def __init__(self, objectives: list[Objective] | None = None) -> None:
         self.objectives: list[Objective] = objectives or []
 
     def __call__(self, *args: Any, **kwargs: Any) -> "ObjectiveList":
@@ -288,7 +288,7 @@ class ObjectiveList(Sequence[Objective]):
     def names(self) -> list[str]:
         return [obj.name for obj in self.objectives]
 
-    def __getattr__(self, attr: str) -> Union[Objective, list[Any], np.ndarray]:
+    def __getattr__(self, attr: str) -> Objective | list[Any] | np.ndarray:
         # This is called if we can't find the attribute in the normal way.
         if all(hasattr(obj, attr) for obj in self.objectives):
             if OBJ_FIELD_TYPES.get(attr) in [float, int, bool]:
@@ -352,7 +352,7 @@ class ObjectiveList(Sequence[Objective]):
 
     @staticmethod
     def _test_obj(
-        obj: Objective, active: Optional[bool] = None, fitness: Optional[bool] = None, constraint: Optional[bool] = None
+        obj: Objective, active: bool | None = None, fitness: bool | None = None, constraint: bool | None = None
     ) -> bool:
         if active:
             if obj.active != active:

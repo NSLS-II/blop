@@ -1,5 +1,5 @@
 import os
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 import yaml
@@ -29,7 +29,7 @@ def all_acqfs(columns: tuple[str, ...] = ("identifier", "type", "multitask_only"
     return acqfs.sort_values(["type", "name"])
 
 
-def parse_acqf_identifier(identifier: str, strict: bool = True) -> Optional[dict[str, Any]]:
+def parse_acqf_identifier(identifier: str, strict: bool = True) -> dict[str, Any] | None:
     for acqf_name in config.keys():
         if identifier.lower() in [acqf_name, config[acqf_name]["identifier"]]:
             return {"name": acqf_name, **config[acqf_name]}

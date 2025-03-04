@@ -1,5 +1,3 @@
-from typing import Union
-
 import botorch  # type: ignore[import-untyped]
 import numpy as np
 import scipy as sp  # type: ignore[import-untyped]
@@ -9,7 +7,7 @@ from ortools.constraint_solver import pywrapcp, routing_enums_pb2  # type: ignor
 from . import functions  # noqa
 
 
-def get_beam_stats(image: np.ndarray, threshold: float = 0.5) -> dict[str, Union[float, np.ndarray]]:
+def get_beam_stats(image: np.ndarray, threshold: float = 0.5) -> dict[str, float | np.ndarray]:
     ny, nx = image.shape
 
     fim = image.copy()
@@ -92,7 +90,7 @@ def mprod(*M: np.ndarray) -> np.ndarray:
     return res
 
 
-def route(start_point: np.ndarray, points: np.ndarray, dim_weights: Union[float, np.ndarray] = 1) -> np.ndarray:
+def route(start_point: np.ndarray, points: np.ndarray, dim_weights: float | np.ndarray = 1) -> np.ndarray:
     """
     Returns the indices of the most efficient way to visit `points`, starting from `start_point`.
     """
@@ -138,7 +136,7 @@ def route(start_point: np.ndarray, points: np.ndarray, dim_weights: Union[float,
     return np.array(route_indices)[1:-1] - 1
 
 
-def get_movement_time(x: Union[float, np.ndarray], v_max: float, a: float) -> Union[float, np.ndarray]:
+def get_movement_time(x: float | np.ndarray, v_max: float, a: float) -> float | np.ndarray:
     """
     How long does it take an object to go distance $x$ with acceleration $a$ and maximum velocity $v_max$?
     That's what this function answers.

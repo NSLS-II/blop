@@ -1,5 +1,5 @@
-from collections.abc import Sequence
-from typing import Any, Callable, Optional
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import pandas as pd
 from bluesky_adaptive.agents.base import Agent as BlueskyAdaptiveBaseAgent  # type: ignore[import-untyped]
@@ -23,7 +23,7 @@ class BlueskyAdaptiveAgent(BlueskyAdaptiveBaseAgent, BlopAgent):
         sequential: bool,
         upsample: int,
         acqf_kwargs: dict[str, Any],
-        detector_names: Optional[list[str]] = None,
+        detector_names: list[str] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -116,9 +116,9 @@ class BlueskyAdaptiveAgent(BlueskyAdaptiveBaseAgent, BlopAgent):
         points: dict[str, list[ArrayLike]] = default_result.pop("points")
         acqf_obj: list[ArrayLike] = default_result.pop("acqf_obj")
         # Turn dict of list of points into list of consistently sized points
-        points: list[tuple[ArrayLike]] = list(zip(*[value for _, value in points.items()]))
+        points: list[tuple[ArrayLike]] = list(zip(*[value for _, value in points.items()], strict=False))
         dicts = []
-        for point, obj in zip(points, acqf_obj):
+        for point, obj in zip(points, acqf_obj, strict=False):
             d = default_result.copy()
             d["point"] = point
             d["acqf_obj"] = obj
@@ -126,8 +126,8 @@ class BlueskyAdaptiveAgent(BlueskyAdaptiveBaseAgent, BlopAgent):
         return points, dicts
 
     def tell(self, x: dict[str, ArrayLike], y: dict[str, ArrayLike]):
-        x = {key: x_i for x_i, key in zip(x, self.dofs.names)}
-        y = {key: y_i for y_i, key in zip(y, self.objectives.names)}
+        x = {key: x_i for x_i, key in zip(x, self.dofs.names, strict=False)}
+        y = {key: y_i for y_i, key in zip(y, self.objectives.names, strict=False)}
         super().tell(data={**x, **y})
         return {**x, **y}
 

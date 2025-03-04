@@ -4,8 +4,8 @@ import pathlib
 import time as ttime
 import warnings
 from collections import OrderedDict
-from collections.abc import Generator, Hashable, Iterator, Mapping, Sequence
-from typing import Any, Callable, Optional, Union, cast
+from collections.abc import Callable, Generator, Hashable, Iterator, Mapping, Sequence
+from typing import Any, cast
 
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
@@ -72,7 +72,7 @@ class BaseAgent:
         objectives: Sequence[Objective],
         acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
-        digestion_kwargs: Optional[dict] = None,
+        digestion_kwargs: dict | None = None,
         verbose: bool = False,
         enforce_all_objectives_valid: bool = True,
         exclude_pruned: bool = True,
@@ -138,7 +138,7 @@ class BaseAgent:
         self.train_every = train_every
         self.n_last_trained = 0
 
-    def raw_inputs(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+    def raw_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
         Get the raw, untransformed inputs for a DOF (or for a subset).
         """
@@ -156,7 +156,7 @@ class BaseAgent:
             raise RuntimeError("'random_ref_point' is not defined for multi-objective optimization.")
         return train_targets[self.argmax_best_f(weights="random")]
 
-    def train_inputs(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+    def train_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """A two-dimensional tensor of all DOF values."""
 
         if index is None:
@@ -167,7 +167,7 @@ class BaseAgent:
 
         return dof._transform(raw_inputs)
 
-    def raw_targets(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> dict[str, torch.Tensor]:
+    def raw_targets(self, index: str | int | None = None, **subset_kwargs) -> dict[str, torch.Tensor]:
         """
         Get the raw, untransformed inputs for an objective (or for a subset).
         """
@@ -179,7 +179,7 @@ class BaseAgent:
 
         return values
 
-    def train_targets(self, concatenate: bool = False, **subset_kwargs) -> Union[dict[str, torch.Tensor], torch.Tensor]:
+    def train_targets(self, concatenate: bool = False, **subset_kwargs) -> dict[str, torch.Tensor] | torch.Tensor:
         """Returns the values associated with an objective name."""
 
         targets_dict: dict[str, torch.Tensor] = {}
@@ -212,7 +212,7 @@ class BaseAgent:
         """
         return self.dofs(active=True).transform(self.dofs(active=True).search_domain.T).clone()
 
-    def _latent_dim_tuples(self, obj_index: Union[str, int]) -> list[tuple[int, ...]]:
+    def _latent_dim_tuples(self, obj_index: str | int) -> list[tuple[int, ...]]:
         """
         For the objective indexed by 'obj_index', return a list of tuples, where each tuple represents
         a group of DOFs to fit a latent representation to.
@@ -220,7 +220,7 @@ class BaseAgent:
 
         obj = self.objectives[obj_index]
 
-        latent_group_index: dict[str, Union[str, int]] = {}
+        latent_group_index: dict[str, str | int] = {}
         for dof in self.dofs(active=True):
             latent_group_index[dof.name] = dof.name
             for group_index, latent_group in enumerate(obj.latent_groups):
@@ -264,7 +264,7 @@ class BaseAgent:
     def best_f(self, weights: str = "default") -> float:
         return float(self.scalarized_fitnesses(weights=weights, constrained=True).max())
 
-    def fitness_scalarization(self, weights: Union[str, torch.Tensor] = "default") -> ScalarizedPosteriorTransform:
+    def fitness_scalarization(self, weights: str | torch.Tensor = "default") -> ScalarizedPosteriorTransform:
         active_fitness_objectives = self.objectives(active=True, fitness=True)
         if len(active_fitness_objectives) == 0:
             return ScalarizedPosteriorTransform(weights=torch.tensor([1.0], dtype=torch.double))
@@ -356,7 +356,7 @@ class BaseAgent:
 
         return Normalize(d=len(self.dofs(active=True)))
 
-    def _construct_model(self, obj, skew_dims: Optional[list[tuple[int, ...]]] = None) -> None:
+    def _construct_model(self, obj, skew_dims: list[tuple[int, ...]] | None = None) -> None:
         """
         Construct an untrained model for an objective.
         """
@@ -404,7 +404,7 @@ class BaseAgent:
 
     def update_models(
         self,
-        train: Optional[bool] = None,
+        train: bool | None = None,
     ) -> None:
         objectives_to_model = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
         for obj in objectives_to_model:
@@ -432,13 +432,13 @@ class BaseAgent:
 
     def tell(
         self,
-        data: Optional[Mapping] = {},
-        x: Optional[Mapping] = {},
-        y: Optional[Mapping] = {},
-        metadata: Optional[Mapping] = {},
+        data: Mapping | None = {},
+        x: Mapping | None = {},
+        y: Mapping | None = {},
+        metadata: Mapping | None = {},
         append: bool = True,
         update_models: bool = True,
-        train: Optional[bool] = None,
+        train: bool | None = None,
     ) -> None:
         """
         Inform the agent about new inputs and targets for the model.
@@ -595,11 +595,11 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Optional[Broker] = None,
-        detectors: Optional[Sequence[Signal]] = None,
+        db: Broker | None = None,
+        detectors: Sequence[Signal] | None = None,
         acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
-        digestion_kwargs: Optional[dict] = None,
+        digestion_kwargs: dict | None = None,
         verbose: bool = False,
         enforce_all_objectives_valid: bool = True,
         exclude_pruned: bool = True,
@@ -710,9 +710,9 @@ class Agent(BaseAgent):
         n: int = 1,
         iterations: int = 1,
         upsample: int = 1,
-        train: Optional[bool] = None,
+        train: bool | None = None,
         append: bool = True,
-        hypers: Optional[str] = None,
+        hypers: str | None = None,
         route: bool = True,
         **acqf_kwargs,
     ) -> Generator[Msg, None, None]:
@@ -1005,7 +1005,7 @@ class Agent(BaseAgent):
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
         self._table.to_hdf(path, key="table")
 
-    def forget(self, last: Optional[int] = None, index: Optional[pd.Index] = None, train: bool = True):
+    def forget(self, last: int | None = None, index: pd.Index | None = None, train: bool = True):
         """
         Make the agent forget some data.
 
@@ -1096,7 +1096,7 @@ class Agent(BaseAgent):
         return acquisition.all_acqfs()
 
     @property
-    def best(self) -> Union[pd.DataFrame, pd.Series]:
+    def best(self) -> pd.DataFrame | pd.Series:
         """Returns all data for the best point."""
         return self._table.loc[self.argmax_best_f()]
 
@@ -1183,7 +1183,7 @@ class Agent(BaseAgent):
         """Plot the improvement of the agent over time."""
         plotting._plot_pareto_front(self, **kwargs)
 
-    def prune(self, pruning_objs: Optional[list[Objective]] = None, thresholds: Optional[list[float]] = None) -> None:
+    def prune(self, pruning_objs: list[Objective] | None = None, thresholds: list[float] | None = None) -> None:
         """Prune low-fidelity datapoints from model fitting"""
         pruning_objs = pruning_objs or []
         thresholds = thresholds or []
