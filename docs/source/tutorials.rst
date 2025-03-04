@@ -9,4 +9,4 @@ Tutorials
    tutorials/pareto-fronts.ipynb
    tutorials/passive-dofs.ipynb
    tutorials/kb-mirrors.ipynb
-   tutorials/xrt_blop_demo.ipynb
+   tutorials/xrt-blop-demo.ipynb
