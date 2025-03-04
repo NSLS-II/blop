@@ -2,6 +2,29 @@
 Release History
 ===============
 
+v0.7.3 (2025-03-04)
+-------------------
+## What's Changed
+* Fix documentation CI error - v3 is deprecated by @jennmald in https://github.com/NSLS-II/blop/pull/84
+* Fix fitness and constraint plots by @jennmald in https://github.com/NSLS-II/blop/pull/80
+* Refactor: Make agent default compatible with Bluesky Adaptive by @maffettone in https://github.com/NSLS-II/blop/pull/86
+* Ruff linter support; Removal of black, flake8, and isort by @thomashopkins32 in https://github.com/NSLS-II/blop/pull/95
+* Add type hints by @thomashopkins32 in https://github.com/NSLS-II/blop/pull/87
+* Moved prepare_re_env.py back into package by @thomashopkins32 in https://github.com/NSLS-II/blop/pull/100
+* Remove python 3.9 support by @thomashopkins32 in https://github.com/NSLS-II/blop/pull/101
+* Add XRT demo to blop tutorials by @jennmald in https://github.com/NSLS-II/blop/pull/102
+
+## New Contributors
+* @jennmald made their first contribution in https://github.com/NSLS-II/blop/pull/84
+* @maffettone made their first contribution in https://github.com/NSLS-II/blop/pull/86
+* @thomashopkins32 made their first contribution in https://github.com/NSLS-II/blop/pull/95
+
+**Full Changelog**: https://github.com/NSLS-II/blop/compare/v0.7.2...v0.7.3
+
+v0.7.2 (2025-01-31)
+-------------------
+- Renamed package in pypi to blop
+
 v0.7.1 (2024-09-26)
 -------------------
 - Add simulated hardware.
