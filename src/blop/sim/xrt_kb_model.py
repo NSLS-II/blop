@@ -10,12 +10,9 @@ Created with xrtQook
 
 """
 
-import os
-import sys
-
-import numpy as np
 import time
 
+import numpy as np
 import xrt.backends.raycing as raycing
 import xrt.backends.raycing.oes as roes
 import xrt.backends.raycing.run as rrun
