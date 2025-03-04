@@ -2,6 +2,11 @@
 Release History
 ===============
 
+v0.7.4 (2025-03-04)
+-------------------
+* Add missing files for documentation
+* Fix trigger condition for releases on PyPI and documentation
+
 v0.7.3 (2025-03-04)
 -------------------
 What's Changed
