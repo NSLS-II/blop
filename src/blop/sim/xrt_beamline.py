@@ -1,5 +1,4 @@
 import itertools
-import sys
 import time
 from collections import deque
 from datetime import datetime
@@ -16,8 +15,8 @@ from ophyd.sim import NullStatus, new_uid
 from ophyd.utils import make_dir_tree
 
 from blop.sim.handlers import ExternalFileReference
-from blop.utils import get_beam_stats
 from blop.sim.trace_KB import build_beamline, build_histRGB, run_process
+from blop.utils import get_beam_stats
 
 TEST = False
 

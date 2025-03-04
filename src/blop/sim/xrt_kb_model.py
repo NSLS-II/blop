@@ -14,9 +14,6 @@ import os
 import sys
 
 import numpy as np
-
-os.environ["QT_QPA_PLATFORM"] = "xcb"
-sys.path.append("/home/rcherniko/github/xrt")
 import time
 
 import xrt.backends.raycing as raycing
