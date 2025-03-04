@@ -10,8 +10,6 @@ Created with xrtQook
 
 """
 
-import time
-
 import numpy as np
 import xrt.backends.raycing as raycing
 import xrt.backends.raycing.oes as roes
@@ -63,7 +61,6 @@ def build_beamline():
         R=38245,
         r=100000000.0,
     )
-    print(f"{beamLine.toroidMirror01.R=}")
 
     beamLine.toroidMirror02 = roes.ToroidMirror(
         bl=beamLine,
@@ -77,7 +74,6 @@ def build_beamline():
         R=21035,
         r=100000000.0,
     )
-    print(f"{beamLine.toroidMirror02.R=}")
 
     beamLine.screen01 = rscreens.Screen(bl=beamLine, center=[164.87347936545572, 11935, 343.73164815693235])
 
@@ -85,7 +81,6 @@ def build_beamline():
 
 
 def run_process(beamLine):
-    time0 = time.time()
     geometricSource01beamGlobal01 = beamLine.geometricSource01.shine()
 
     toroidMirror01beamGlobal01, toroidMirror01beamLocal01 = beamLine.toroidMirror01.reflect(
@@ -104,7 +99,6 @@ def run_process(beamLine):
         "toroidMirror02beamLocal01": toroidMirror02beamLocal01,
         "screen01beamLocal01": screen01beamLocal01,
     }
-    print(f"Tracing takes {1000 * (time.time() - time0):.3f}ms")
     beamLine.prepare_flow()
     return outDict
 
