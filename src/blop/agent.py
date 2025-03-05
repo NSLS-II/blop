@@ -5,7 +5,7 @@ import time as ttime
 import warnings
 from collections import OrderedDict
 from collections.abc import Callable, Generator, Hashable, Iterator, Mapping, Sequence
-from typing import Any, cast, Optional, Union
+from typing import Any, cast
 
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
@@ -148,7 +148,7 @@ class BaseAgent:
             raise RuntimeError("'random_ref_point' is not defined for multi-objective optimization.")
         return train_targets[self.argmax_best_f(weights="random")]
 
-    def raw_inputs(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+    def raw_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
         Get the raw, untransformed inputs for a DOF (or for a subset).
         """
@@ -156,7 +156,7 @@ class BaseAgent:
             return torch.stack([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
         return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
 
-    def train_inputs(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+    def train_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
         A two-dimensional tensor of all DOF values for training on.
         """
@@ -168,7 +168,7 @@ class BaseAgent:
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
         return dof._transform(raw_inputs)
 
-    def raw_targets_dict(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> dict[str, torch.Tensor]:
+    def raw_targets_dict(self, index: str | int | None = None, **subset_kwargs) -> dict[str, torch.Tensor]:
         """
         Get the raw, untransformed targets for an objective (or for a subset of objectives) as a dict.
         """
@@ -177,13 +177,13 @@ class BaseAgent:
         key = self.objectives[index].name
         return {key: torch.tensor(self._table.loc[:, key].values, dtype=torch.double)}
 
-    def raw_targets(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+    def raw_targets(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
         Get the raw, untransformed targets for an objective (or for a subset of objectives) as a tensor.
         """
         return torch.stack(list(self.raw_targets_dict(index=index, **subset_kwargs).values()), axis=-1)
 
-    def train_targets_dict(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> dict[str, torch.Tensor]:
+    def train_targets_dict(self, index: str | int | None = None, **subset_kwargs) -> dict[str, torch.Tensor]:
         """
         Returns the values associated with an objective name.
         """
@@ -205,7 +205,7 @@ class BaseAgent:
 
         return targets_dict
 
-    def train_targets(self, index: Optional[Union[str, int]] = None, **subset_kwargs) -> torch.Tensor:
+    def train_targets(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
         Returns the values associated with an objective name as an (n_samples, n_objective) tensor.
         """

@@ -2,7 +2,7 @@ import logging
 import time as ttime
 import uuid
 from collections.abc import Iterable, Sequence
-from typing import Any, Literal, Optional, Union, cast, overload
+from typing import Any, Literal, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -89,16 +89,16 @@ class DOF:
         name: str = None,
         description: str = "",
         type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous",
-        search_domain: Union[tuple[float, float], set[int], set[str], set[bool]] = (-np.inf, np.inf),
-        trust_domain: Optional[Union[tuple[float, float], set[int], set[str], set[bool]]] = None,
-        domain: Optional[Union[tuple[float, float], set[int], set[str], set[bool]]] = None,
+        search_domain: tuple[float, float] | set[int] | set[str] | set[bool] = (-np.inf, np.inf),
+        trust_domain: tuple[float, float] | set[int] | set[str] | set[bool] | None = None,
+        domain: tuple[float, float] | set[int] | set[str] | set[bool] | None = None,
         active: bool = True,
         read_only: bool = False,
-        transform: Optional[Literal["log", "logit", "arctanh"]] = None,
-        device: Optional[Signal] = None,
+        transform: Literal["log", "logit", "arctanh"] | None = None,
+        device: Signal | None = None,
         tags: list[str] = None,
         travel_expense: float = 1,
-        units: Optional[str] = None,
+        units: str | None = None,
     ):
         # these should be set first, as they are just variables
         self.name = name
@@ -184,7 +184,7 @@ class DOF:
         return f"{self.__class__.__name__}({filling})"
 
     @property
-    def search_domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
+    def search_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
         A writable DOF always has a search domain, and a read-only DOF will return its current value.
         """
@@ -198,21 +198,21 @@ class DOF:
             return self._search_domain
 
     @search_domain.setter
-    def search_domain(self, value: Union[tuple[float, float], set[int], set[str], set[bool]]):
+    def search_domain(self, value: tuple[float, float] | set[int] | set[str] | set[bool]):
         """
         Make sure that the search domain is within the trust domain before setting it.
         """
         value = validate_set(value, type=self.type)
         trust_domain = self.trust_domain
         if is_subset(value, trust_domain, type=self.type, proper=False):
-            self._search_domain = cast(Union[tuple[float, float], set[int], set[str], set[bool]], value)
+            self._search_domain = cast(tuple[float, float] | set[int] | set[str] | set[bool], value)
         else:
             raise ValueError(
                 f"Cannot set search domain to {value} as it is not a subset of the trust domain {trust_domain}."
             )
 
     @property
-    def trust_domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
+    def trust_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
         If _trust_domain is None, then we trust the entire domain (so we return the domain).
         """
@@ -235,7 +235,7 @@ class DOF:
                 # The search domain must stay a subset of the trust domain, so set it as the intersection.
                 self.search_domain = intersection(self.search_domain, value)
 
-        self._trust_domain = cast(Union[tuple[float, float], set[int], set[str], set[bool]], value)
+        self._trust_domain = cast(tuple[float, float] | set[int] | set[str] | set[bool], value)
 
     @property
     def domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:

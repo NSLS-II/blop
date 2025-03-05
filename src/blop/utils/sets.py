@@ -1,9 +1,9 @@
-from typing import Union, cast
+from typing import cast
 
 import numpy as np
 
 
-def validate_set(s, type="continuous") -> Union[set, tuple[float, float]]:
+def validate_set(s, type="continuous") -> set | tuple[float, float]:
     """
     Check
     """
@@ -12,7 +12,7 @@ def validate_set(s, type="continuous") -> Union[set, tuple[float, float]]:
             try:
                 x1, x2 = float(s[0]), float(s[1])
                 if x1 <= x2:
-                    return cast(Union[tuple[float, float]], (x1, x2))
+                    return cast(tuple[float, float], (x1, x2))
             except Exception:
                 pass
         raise ValueError(
