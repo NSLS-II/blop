@@ -8,6 +8,7 @@ def validate_set(s, type="continuous") -> set | tuple[float, float]:
     Check
     """
     if type == "continuous":
+        s = cast(tuple[float, float], s)
         if len(s) == 2:
             try:
                 x1, x2 = float(s[0]), float(s[1])
@@ -19,7 +20,8 @@ def validate_set(s, type="continuous") -> set | tuple[float, float]:
             f"Invalid continuous set {s}; valid continuous sets it must be a tuple of two numbers x1, x2 such that x2 >= x1"
         )
     else:
-        return set(s)
+        s = cast(set, s)
+        return s
 
 
 def element_of(x, s, type: str = "continuous") -> bool:
@@ -28,8 +30,10 @@ def element_of(x, s, type: str = "continuous") -> bool:
     """
     validate_set(s, type=type)
     if type == "continuous":
+        s = cast(tuple[float, float], s)
         return (x >= s[0]) & (x <= s[1])
     else:
+        s = cast(set, s)
         return np.isin(list(x), list(s))
 
 
@@ -40,6 +44,8 @@ def is_subset(s1, s2, type: str = "continuous", proper: bool = False) -> bool:
     validate_set(s1, type=type)
     validate_set(s2, type=type)
     if type == "continuous":
+        s1 = cast(tuple[float, float], s1)
+        s2 = cast(tuple[float, float], s2)
         if proper:
             if (s1[0] > s2[0]) and (s1[1] < s2[1]):
                 return True
@@ -48,6 +54,8 @@ def is_subset(s1, s2, type: str = "continuous", proper: bool = False) -> bool:
                 return True
         return False
     else:
+        s1 = cast(set, s1)
+        s2 = cast(set, s2)
         return np.isin(list(s1), list(s2)).all()
 
 
@@ -58,11 +66,15 @@ def union(s1, s2, type: str = "continuous") -> tuple:
     validate_set(s1, type=type)
     validate_set(s2, type=type)
     if type == "continuous":
+        s1 = cast(tuple[float, float], s1)
+        s2 = cast(tuple[float, float], s2)
         new_min, new_max = min(s1[0], s2[0]), max(s1[1], s2[1])
         if new_min <= new_max:
             return (new_min, new_max)
         return None
     else:
+        s1 = cast(set, s1)
+        s2 = cast(set, s2)
         return s1 | s2
 
 
@@ -73,9 +85,13 @@ def intersection(s1, s2, type: str = "continuous") -> tuple:
     validate_set(s1, type=type)
     validate_set(s2, type=type)
     if type == "continuous":
+        s1 = cast(tuple[float, float], s1)
+        s2 = cast(tuple[float, float], s2)
         new_min, new_max = max(s1[0], s2[0]), min(s1[1], s2[1])
         if new_min <= new_max:
             return (new_min, new_max)
         return None
     else:
+        s1 = cast(set, s1)
+        s2 = cast(set, s2)
         return s1 & s2

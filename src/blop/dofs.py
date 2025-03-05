@@ -235,7 +235,7 @@ class DOF:
                 # The search domain must stay a subset of the trust domain, so set it as the intersection.
                 self.search_domain = intersection(self.search_domain, value)
 
-        self._trust_domain = cast(tuple[float, float] | set[int] | set[str] | set[bool], value)
+        self._trust_domain = value
 
     @property
     def domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
@@ -307,12 +307,6 @@ class DOF:
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
-            # if attr in ["search_domain", "trust_domain", "domain"]:
-            #     if (self.type == "continuous") and not self.read_only and value is not None:
-            #         if attr in ["search_domain", "trust_domain"]:
-            #             value = f"[{value[0]:.02e}, {value[1]:.02e}]"
-            #         else:
-            #             value = f"({value[0]:.02e}, {value[1]:.02e})"
             series[attr] = value if value is not None else ""
         return series
 
