@@ -44,7 +44,7 @@ def re_env(db_type="default", root_dir="/default/path"):
 
 def register_handlers(db, handlers):
     for handler_spec, handler_class in handlers.items():
-        db.reg.register_handler(handler_spec, handler_class, overwrite=True)
+        tiled_client.reg.register_handler(handler_spec, handler_class, overwrite=True)
 
 
 if __name__ == "__main__":
