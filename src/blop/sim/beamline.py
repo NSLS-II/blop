@@ -15,6 +15,10 @@ from ophyd.utils import make_dir_tree
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
+from event_model import StreamRange, compose_stream_resource
+
+
+from ophyd import Kind
 
 DECTECTOR_STORAGE = "/tmp/blop/sim"
 
@@ -75,6 +79,14 @@ class Detector(Device):
         super().trigger()
 
         return NullStatus()
+    
+    def _generate_file_path(self, date_template="%Y/%m/%d"):
+        date = datetime.datetime.now()
+        assets_dir = date.strftime(date_template)
+        data_file = f"{new_uid()}.h5"
+
+        return Path(self._root_dir) / Path(assets_dir) / Path(data_file)
+
 
     def _generate_file_path(self, date_template="%Y/%m/%d"):
         date = datetime.datetime.now()
@@ -121,10 +133,19 @@ class Detector(Device):
         )
         self._counter = itertools.count()
 
+    def unstage(self) -> list[Any]:
+        devices = super().unstage()
+        del self._dataset
+        if self._h5file_desc:
+            self._h5file_desc.close()
+        self._resource_document = None
+        self._datum_factory = None
+        return devices
+    
     def describe(self):
         res = super().describe()
         res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
+            {"shape": self.image_shape.get(), "dtype_numpy": "<i8"}
         )
         return res
 
