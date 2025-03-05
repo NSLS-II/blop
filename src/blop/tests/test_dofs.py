@@ -26,5 +26,4 @@ def test_dof_types():
     )
 
     dofs = DOFList([dof1, dof2, dof3, dof4])  # noqa
-
-    print(dofs)
+    dofs.__repr__()

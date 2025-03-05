@@ -195,13 +195,9 @@ class BaseAgent:
             targets_dict[obj.name] = obj._transform(raw_targets_dict[obj.name])
 
         if self.enforce_all_objectives_valid:
-            all_valid_mask = True
-
-            for values in targets_dict.values():
-                all_valid_mask &= ~values.isnan()
-
-            for name in targets_dict.keys():
-                targets_dict[name] = targets_dict[name].where(all_valid_mask, np.nan)
+            any_invalid_mask = torch.stack([values.isnan() for values in targets_dict.values()]).any(dim=0)
+            for name in targets_dict:
+                targets_dict[name] = targets_dict[name].where(~any_invalid_mask, np.nan)
 
         if index is not None:
             key = self.objectives[index].name

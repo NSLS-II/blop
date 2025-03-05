@@ -2,7 +2,7 @@ import logging
 import time as ttime
 import uuid
 from collections.abc import Iterable, Sequence
-from typing import Any, Literal, Optional, Union, overload
+from typing import Any, Literal, Optional, Union, cast, overload
 
 import numpy as np
 import pandas as pd
@@ -113,7 +113,7 @@ class DOF:
         self.units = units
 
         # Either name or device must be provided
-        if (name is not None) ^ (device is not None):
+        if (not self.name) != (not self.device):
             if self.device:
                 self.name = self.device.name
         else:
@@ -183,8 +183,6 @@ class DOF:
         filling = ", ".join([f"{k}={repr(v)}" for k, v in self.summary.to_dict().items()])
         return f"{self.__class__.__name__}({filling})"
 
-    # Some post-processing. This is specific to dataclasses
-
     @property
     def search_domain(self) -> Union[tuple[float, float], set[int], set[str], set[bool]]:
         """
@@ -200,14 +198,14 @@ class DOF:
             return self._search_domain
 
     @search_domain.setter
-    def search_domain(self, value):
+    def search_domain(self, value: Union[tuple[float, float], set[int], set[str], set[bool]]):
         """
         Make sure that the search domain is within the trust domain before setting it.
         """
         value = validate_set(value, type=self.type)
         trust_domain = self.trust_domain
         if is_subset(value, trust_domain, type=self.type, proper=False):
-            self._search_domain = value
+            self._search_domain = cast(Union[tuple[float, float], set[int], set[str], set[bool]], value)
         else:
             raise ValueError(
                 f"Cannot set search domain to {value} as it is not a subset of the trust domain {trust_domain}."
@@ -237,7 +235,7 @@ class DOF:
                 # The search domain must stay a subset of the trust domain, so set it as the intersection.
                 self.search_domain = intersection(self.search_domain, value)
 
-        self._trust_domain = value
+        self._trust_domain = cast(Union[tuple[float, float], set[int], set[str], set[bool]], value)
 
     @property
     def domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:

@@ -1,6 +1,5 @@
 import pytest  # noqa F401
 import numpy as np
-import sys
 
 from .conftest import all_agents
 
@@ -50,10 +49,9 @@ def test_agent(agent, RE, db):
     RE(agent.learn("qei", n=2))
 
     # save the data, reset the agent, and get the data back
-    if sys.version_info.minor > 9:
-        agent.save_data("/tmp/test_save_data.h5")
-        agent.reset()
-        agent.load_data("/tmp/test_save_data.h5")
+    agent.save_data("/tmp/test_save_data.h5")
+    agent.reset()
+    agent.load_data("/tmp/test_save_data.h5")
 
     RE(agent.learn("qei", n=2))
 
@@ -66,7 +64,6 @@ def test_agent(agent, RE, db):
 
 @pytest.mark.parametrize("agent", all_agents, indirect=True)
 def test_benchmark(agent, RE, db):
-    if sys.version_info.minor > 9:
-        agent.db = db
-        per_iter_learn_kwargs_list = [{"acqf": "qr", "n": 32}, {"acqf": "qei", "n": 2, "iterations": 2}]
-        RE(agent.benchmark(output_dir="/tmp/blop", iterations=1, per_iter_learn_kwargs_list=per_iter_learn_kwargs_list))
+    agent.db = db
+    per_iter_learn_kwargs_list = [{"acqf": "qr", "n": 32}, {"acqf": "qei", "n": 2, "iterations": 2}]
+    RE(agent.benchmark(output_dir="/tmp/blop", iterations=1, per_iter_learn_kwargs_list=per_iter_learn_kwargs_list))
