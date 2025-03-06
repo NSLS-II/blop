@@ -1,15 +1,17 @@
+import logging
 import time as ttime
 import uuid
-import warnings
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field, fields
-from operator import attrgetter
 from typing import Any, Literal, cast, overload
 
 import numpy as np
 import pandas as pd
 import torch
 from ophyd import Signal, SignalRO  # type: ignore[import-untyped]
+
+from .utils.sets import element_of, intersection, is_subset, validate_set
+
+logger = logging.getLogger("blop")
 
 DOF_FIELD_TYPES: dict[str, type] = {
     "description": str,
@@ -33,7 +35,6 @@ class ReadOnlyError(Exception):
     pass
 
 
-@dataclass
 class DOF:
     """A degree of freedom (DOF), to be used by an agent.
 
@@ -83,56 +84,57 @@ class DOF:
         Default: None
     """
 
-    name: str = ""
-    description: str = ""
-    type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous"
-    search_domain: tuple[float, float] | set[int] | set[str] | set[bool] = (-np.inf, np.inf)
-    trust_domain: tuple[float, float] | set[int] | set[str] | set[bool] | None = None
-    active: bool = True
-    read_only: bool = False
-    transform: Literal["log", "logit", "arctanh"] | None = None
-    device: Signal | None = None
-    tags: list[str] = field(default_factory=list)
-    travel_expense: float = 1
-    units: str | None = None
+    def __init__(
+        self,
+        name: str = None,
+        description: str = "",
+        type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous",
+        search_domain: tuple[float, float] | set[int] | set[str] | set[bool] = (-np.inf, np.inf),
+        trust_domain: tuple[float, float] | set[int] | set[str] | set[bool] | None = None,
+        domain: tuple[float, float] | set[int] | set[str] | set[bool] | None = None,
+        active: bool = True,
+        read_only: bool = False,
+        transform: Literal["log", "logit", "arctanh"] | None = None,
+        device: Signal | None = None,
+        tags: list[str] = None,
+        travel_expense: float = 1,
+        units: str | None = None,
+    ):
+        # these should be set first, as they are just variables
+        self.name = name
+        self.description = description
+        self.type = type
+        self.active = active
+        self.read_only = read_only
+        self.transform = transform
+        self.device = device
+        self.tags = tags or []
+        self.travel_expense = travel_expense
+        self.units = units
 
-    def __repr__(self) -> str:
-        nodef_f_vals = ((f.name, attrgetter(f.name)(self)) for f in fields(self))
-
-        nodef_f_repr = []
-        for name, value in nodef_f_vals:
-            if (name == "search_domain") and (self.type == "continuous"):
-                search_min, search_max = self.search_domain
-                nodef_f_repr.append(f"search_domain=({search_min:.03e}, {search_max:.03e})")
-            else:
-                nodef_f_repr.append(f"{name}={value}")
-
-        return f"{self.__class__.__name__}({', '.join(nodef_f_repr)})"
-
-    # Some post-processing. This is specific to dataclasses
-    def __post_init__(self) -> None:
         # Either name or device must be provided
         if (not self.name) != (not self.device):
             if self.device:
                 self.name = self.device.name
         else:
-            raise ValueError("You must specify exactly one of 'name' or 'device'. Not both.")
+            raise ValueError("You must specify exactly one of 'name' or 'device'.")
+
         if self.read_only:
             if not self.type:
                 if isinstance(self.readback, float):
                     self.type = "continuous"
                 else:
                     self.type = "categorical"
-                warnings.warn(f"No type was specified for DOF {self.name}. Assuming type={self.type}.", stacklevel=2)
+                logger.warning(f"No type was specified for DOF '{self.name}'. Assuming type={self.type}.")
         else:
-            if not self.search_domain:
+            if not search_domain:
                 raise ValueError("You must specify the search domain if read_only=False.")
             # if there is no type, infer it from the search_domain
             if not self.type:
-                if isinstance(self.search_domain, tuple):
+                if isinstance(search_domain, tuple):
                     self.type = "continuous"
-                elif isinstance(self.search_domain, set):
-                    if len(self.search_domain) == 2:
+                elif isinstance(search_domain, set):
+                    if len(search_domain) == 2:
                         self.type = "binary"
                     else:
                         self.type = "categorical"
@@ -143,39 +145,26 @@ class DOF:
             raise ValueError(f"Invalid DOF type '{self.type}'. 'type' must be one of {DOF_TYPES}.")
 
         if self.type == "continuous":
+            self.trust_domain = trust_domain
+            self.search_domain = search_domain
+
             if not self.read_only:
-                continuous_search_domain = cast(tuple[float, float], self.search_domain)
-                continuous_trust_domain = cast(tuple[float, float], self.trust_domain)
-                continuous_domain = cast(tuple[float, float], self.domain)
-
-                _validate_continuous_dof_domains(
-                    search_domain=continuous_search_domain,
-                    trust_domain=continuous_trust_domain,
-                    domain=continuous_domain,
-                    read_only=self.read_only,
-                )
-
-                self.search_domain = (float(continuous_search_domain[0]), float(continuous_search_domain[1]))
-
                 if not self.device:
-                    search_tensor = torch.tensor(continuous_search_domain, dtype=torch.float)
+                    search_tensor = torch.tensor(search_domain, dtype=torch.float)
                     transformed = self._transform(search_tensor)
                     center = float(self._untransform(torch.mean(transformed)))
                     self.device = Signal(name=self.name, value=center)
+
         else:
-            discrete_search_domain = cast(set[str] | set[int], self._search_domain)
-            discrete_trust_domain = cast(set[str] | set[int], self._trust_domain)
+            if search_domain is None:
+                raise ValueError("You must supply a search domain for binary, ordinal, or categorical DOFs.")
 
-            _validate_discrete_dof_domains(search_domain=discrete_search_domain, trust_domain=discrete_trust_domain)
+            self._domain = domain or trust_domain or search_domain
+            self._trust_domain = trust_domain or search_domain
+            self._search_domain = search_domain
 
-            if self.type == "binary":
-                if not self.search_domain:
-                    self.search_domain = {False, True}
-                if len(self.search_domain) != 2:
-                    raise ValueError("A binary DOF must have a domain of 2.")
-            else:
-                if not self.search_domain:
-                    raise ValueError("Discrete domain must be supplied for ordinal and categorical degrees of freedom.")
+            if not is_subset(self.search_domain, self.trust_domain, type=self.type):
+                raise ValueError(f"The search domain must be a subset of trust domain for DOF '{self.name}'.")
 
             self.device = Signal(name=self.name, value=list(self.search_domain)[0])
 
@@ -190,10 +179,14 @@ class DOF:
         # all dof degrees of freedom are hinted
         self.device.kind = "hinted"
 
+    def __repr__(self) -> str:
+        filling = ", ".join([f"{k}={repr(v)}" for k, v in self.summary.to_dict().items()])
+        return f"{self.__class__.__name__}({filling})"
+
     @property
-    def _search_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
+    def search_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
-        Compute the search domain of the DOF.
+        A writable DOF always has a search domain, and a read-only DOF will return its current value.
         """
         if self.read_only:
             value = self.readback
@@ -202,19 +195,53 @@ class DOF:
             else:
                 return {value}
         else:
-            return self.search_domain
+            return self._search_domain
+
+    @search_domain.setter
+    def search_domain(self, value: tuple[float, float] | set[int] | set[str] | set[bool]):
+        """
+        Make sure that the search domain is within the trust domain before setting it.
+        """
+        value = validate_set(value, type=self.type)
+        trust_domain = self.trust_domain
+        if is_subset(value, trust_domain, type=self.type, proper=False):
+            self._search_domain = cast(tuple[float, float] | set[int] | set[str] | set[bool], value)
+        else:
+            raise ValueError(
+                f"Cannot set search domain to {value} as it is not a subset of the trust domain {trust_domain}."
+            )
 
     @property
-    def _trust_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
+    def trust_domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
-        If trust_domain is None, then we return the total domain.
+        If _trust_domain is None, then we trust the entire domain (so we return the domain).
         """
-        return self.trust_domain or self.domain
+        return self._trust_domain or self.domain
+
+    @trust_domain.setter
+    def trust_domain(self, value):
+        """
+        Make sure that the trust domain is a subset of the domain before setting it.
+        """
+        if value is not None:
+            value = validate_set(value, type=self.type)
+            domain = self.domain
+            search_domain = self.search_domain
+
+            if not is_subset(value, domain, type=self.type, proper=False):
+                raise ValueError(f"Cannot set trust domain to {value} as it is not a subset of the domain {domain}.")
+
+            if not is_subset(search_domain, value):
+                # The search domain must stay a subset of the trust domain, so set it as the intersection.
+                self.search_domain = intersection(self.search_domain, value)
+
+        self._trust_domain = value
 
     @property
     def domain(self) -> tuple[float, float] | set[int] | set[str] | set[bool]:
         """
-        The total domain; the user can't control this. This is what we fall back on as the trust_domain if none is supplied.
+        The total domain, determined by the DOF type and transform; the user can't control this.
+        This is what we fall back on as the trust_domain if None is supplied.
         If the DOF is continuous:
             If there is a transform, return the domain of the transform
             Else, return (-inf, inf)
@@ -228,15 +255,14 @@ class DOF:
             else:
                 return TRANSFORM_DOMAINS[self.transform]
         else:
-            return self.trust_domain or self.search_domain
+            return self._domain
 
     def _transform(self, x: torch.Tensor, normalize: bool = True) -> torch.Tensor:
         if self.type != "continuous":
             raise ValueError("Cannot transform non-continuous DOFs.")
 
         # Since the DOF is continuous, we can safely assume the domains are tuples
-        domain = cast(tuple[float, float], self.domain)
-        x = torch.where((x > domain[0]) & (x < domain[1]), x, torch.nan)
+        x = torch.where(element_of(x, self.trust_domain), x, torch.nan)
 
         if self.transform == "log":
             x = torch.log(x)
@@ -281,12 +307,6 @@ class DOF:
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
-            if attr in ["search_domain", "trust_domain", "domain"]:
-                if (self.type == "continuous") and not self.read_only and value is not None:
-                    if attr in ["search_domain", "trust_domain"]:
-                        value = f"[{value[0]:.02e}, {value[1]:.02e}]"
-                    else:
-                        value = f"({value[0]:.02e}, {value[1]:.02e})"
             series[attr] = value if value is not None else ""
         return series
 
@@ -413,14 +433,14 @@ class DOFList(Sequence[DOF]):
         """
         Returns a (n_dof, 2) array of domain.
         """
-        return torch.tensor([dof._search_domain for dof in self.dofs])
+        return torch.tensor([dof.search_domain for dof in self.dofs])
 
     @property
     def trust_domain(self) -> torch.Tensor:
         """
         Returns a (n_dof, 2) array of domain.
         """
-        return torch.tensor([dof._trust_domain for dof in self.dofs])
+        return torch.tensor([dof.trust_domain for dof in self.dofs])
 
     def add(self, dof: DOF) -> None:
         _validate_dofs([*self.dofs, dof])
@@ -545,42 +565,3 @@ def _validate_dofs(dofs: Sequence[DOF]) -> Sequence[DOF]:
         raise ValueError(f"Duplicate name(s) in supplied dofs: {duplicate_dof_names}")
 
     return list(dofs)
-
-
-def _validate_continuous_dof_domains(
-    search_domain: tuple[float, float], trust_domain: tuple[float, float], domain: tuple[float, float], read_only: bool
-) -> None:
-    """
-    A DOF MUST have a search domain, and it MIGHT have a trust domain or a transform domain
-
-    Check that all the domains are kosher by enforcing that:
-    search_domain \\subseteq trust_domain \\subseteq domain
-    """
-    if not read_only:
-        if len(search_domain) != 2:
-            raise ValueError(f"Bad search domain {search_domain}. The search domain must have length 2.")
-        search_domain = (float(search_domain[0]), float(search_domain[1]))
-
-        if search_domain[0] >= search_domain[1]:
-            raise ValueError("The lower search bound must be strictly less than the upper search bound.")
-
-        if domain is not None:
-            if (search_domain[0] <= domain[0]) or (search_domain[1] >= domain[1]):
-                raise ValueError(f"The search domain {search_domain} must be a strict subset of the domain {domain}.")
-
-        if trust_domain is not None:
-            if (search_domain[0] < trust_domain[0]) or (search_domain[1] > trust_domain[1]):
-                raise ValueError(f"The search domain {search_domain} must be a subset of the trust domain {trust_domain}.")
-
-    if (trust_domain is not None) and (domain is not None):
-        if (trust_domain[0] < domain[0]) or (trust_domain[1] > domain[1]):
-            raise ValueError(f"The trust domain {trust_domain} must be a subset of the domain {domain}.")
-
-
-def _validate_discrete_dof_domains(search_domain: set[int] | set[str], trust_domain: set[int] | set[str]) -> None:
-    """
-    Check that all the domains are kosher by enforcing that:
-    search_domain \\subseteq trust_domain
-    """
-    if not trust_domain.issuperset(search_domain):
-        raise ValueError(f"The trust domain {trust_domain} not a superset of the search domain {search_domain}.")

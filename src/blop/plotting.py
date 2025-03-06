@@ -33,7 +33,7 @@ def _plot_fitness_objs_one_dof(agent, size=16, lw=1e0):
     test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(fitness_objs):
-        obj_values = agent.train_targets()[obj.name].numpy()
+        obj_values = agent.train_targets(index=obj.name).numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
@@ -84,7 +84,7 @@ def _plot_constraint_objs_one_dof(agent, size=16, lw=1e0):
         val_ax = agent.obj_axes[obj_index, 0]
         con_ax = agent.obj_axes[obj_index, 1]
 
-        obj_values = agent.train_targets()[obj.name].numpy()
+        obj_values = agent.train_targets(index=obj.name).numpy()
 
         color = DEFAULT_COLOR_LIST[obj_index]
 
@@ -158,7 +158,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
     model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(agent.objectives):
-        targets = agent.train_targets()[obj.name]
+        targets = agent.train_targets(index=obj.name)[:, 0]
 
         values = obj._untransform(targets)
         # mask does not generate properly when values is a tensor (returns values of 0 instead of booleans)
@@ -286,7 +286,7 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
                 constraint_ax, ax=agent.obj_axes[obj_index, 3], location="bottom", aspect=32, shrink=0.8
             )
 
-            constraint_cbar.set_label(f"{obj.label_with_units} constraint")
+            constraint_cbar.set_label(f"{obj.name} constraint")
 
         col_names = [
             f"{obj.description} samples",
@@ -561,7 +561,7 @@ def _plot_pareto_front(agent, obj_indices=(0, 1)):
 
     _, ax = plt.subplots(1, 1, figsize=(6, 6))
 
-    y = agent.train_targets(fitness=True, concatenate=True)
+    y = agent.train_targets(fitness=True)
 
     pareto_mask = agent.pareto_mask
     constraint = agent.evaluated_constraints.all(axis=-1)
