@@ -775,6 +775,7 @@ class Agent(BaseAgent):
         self._train_all_models()
 
     def redigest(self):
+        print(self._table)
         self._table = self.digestion(self._table, **self.digestion_kwargs)
 
     def sample(self, n: int = DEFAULT_MAX_SAMPLES, normalize: bool = False, method: str = "quasi-random") -> torch.Tensor:
@@ -938,7 +939,8 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-    
+            print(self.db[uid]['primary','internal','events'].read())
+            print(*self.digestion_kwargs.items())
             products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:

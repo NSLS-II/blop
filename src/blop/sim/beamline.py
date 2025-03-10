@@ -87,16 +87,7 @@ class Detector(Device):
 
     def stage(self):
         super().stage()
-        #date = datetime.now()
-        #self._assets_dir = date.strftime("%Y/%m/%d")
-
-        # self._resource_document, self._datum_factory, _ = compose_resource(
-        #     start={"uid": "needed for compose_resource() but will be discarded"},
-        #     spec="hdf5", #made this lowercase
-        #     root=self._root_dir,
-        #     resource_path=str(Path(self._assets_dir) / Path(data_file)),
-        #     resource_kwargs={},
-        # )
+  
         self._asset_docs_cache.clear()
         full_path = self._generate_file_path()
         image_shape = self.image_shape.get()
