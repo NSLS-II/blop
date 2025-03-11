@@ -1139,11 +1139,13 @@ class Agent(BaseAgent):
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
-
-        if len(self.dofs(active=True, read_only=False)) == 1:
+        plottable_dofs = self.dofs(active=True, read_only=False)
+        if len(plottable_dofs) == 1:
             plotting._plot_objs_one_dof(self, **kwargs)
+        if len(plottable_dofs) == 2:
+            plotting._plot_objs_many_dofs(self, gridded=True, axes=axes, **kwargs)
         else:
-            plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)
+            plotting._plot_objs_many_dofs(self, gridded=False, axes=axes, **kwargs)
 
     def plot_acquisition(self, acqf: str = "ei", axes: tuple[int, int] = (0, 1), **kwargs) -> None:
         """Plot an acquisition function over test inputs sampling the limits of the parameter space.

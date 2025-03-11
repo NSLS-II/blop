@@ -89,15 +89,20 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
         agent.obj_axes[obj_index, 2].set_ylabel("validity probability")
 
 
-def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COLORMAP, gridded=None, size=32, grid_zoom=1):
+def _plot_objs_many_dofs(
+    agent,
+    axes: tuple[int] = (0, 1),
+    gridded: bool = False,
+    n: int = 1024,
+    cmap: str = DEFAULT_COLORMAP,
+    size: float = 16,
+    grid_zoom: float = 1,
+):
     """
     Axes represents which active, non-read-only axes to plot with
     """
 
     plottable_dofs = agent.dofs(active=True, read_only=False)
-
-    if gridded is None:
-        gridded = len(plottable_dofs) == 2
 
     agent.obj_fig, agent.obj_axes = plt.subplots(
         len(agent.objectives),
@@ -116,147 +121,159 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
 
     # test_inputs has shape (*input_shape, 1, n_active_dofs)
     # test_x and test_y should be squeezeable
-    test_inputs = agent.sample(method="grid") if gridded else agent.sample(n=1024)
+    test_inputs = agent.sample(n=n, method="grid") if gridded else agent.sample(n=n)
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    model_inputs = agent.dofs(active=True).transform(test_inputs)
+    test_model_inputs = agent.dofs(active=True).transform(test_inputs)
 
     for obj_index, obj in enumerate(agent.objectives):
         targets = agent.train_targets(index=obj.name)[:, 0]
 
-        values = obj._untransform(targets)
+        values = obj._untransform(targets).numpy()
         # mask does not generate properly when values is a tensor (returns values of 0 instead of booleans)
-        values = np.array(values)
+        # values = np.array(values)
+
+        # print(values)
 
         val_vmin, val_vmax = np.nanquantile(values, q=[0.01, 0.99])
         val_norm = (
             mpl.colors.LogNorm(val_vmin, val_vmax) if obj.transform == "log" else mpl.colors.Normalize(val_vmin, val_vmax)
         )
 
-        obj_vmin, obj_vmax = np.nanquantile(targets, q=[0.01, 0.99])
-        obj_norm = mpl.colors.Normalize(obj_vmin, obj_vmax)
+        # obj_vmin, obj_vmax = np.nanquantile(targets, q=[0.01, 0.99])
+        # obj_norm = mpl.colors.Normalize(obj_vmin, obj_vmax)
 
         # mask for nan values, uses unfilled o marker
         mask = np.isnan(values)
 
-        val_ax = agent.obj_axes[obj_index, 0].scatter(
+        values_ax = agent.obj_axes[obj_index, 0].scatter(
             x_values[~mask], y_values[~mask], c=values[~mask], s=size, norm=val_norm, cmap=cmap
         )
         agent.obj_axes[obj_index, 0].scatter(x_values[mask], y_values[mask], marker="o", ec="k", fc="w", s=size)
 
         # mean and sigma will have shape (*input_shape,)
-        test_posterior = obj.model.posterior(model_inputs)
-        test_mean = test_posterior.mean[..., 0, 0].detach().squeeze().numpy()
-        test_sigma = test_posterior.variance.sqrt()[..., 0, 0].detach().squeeze().numpy()
+        test_posterior = obj.model.posterior(test_model_inputs)
+        test_mean = test_posterior.mean[..., 0, 0].detach().squeeze()
+        test_sigma = test_posterior.variance.sqrt()[..., 0, 0].detach().squeeze()
 
-        # test_values = obj.fitness_inverse(test_mean) if obj.kind == "fitness" else test_mean
-
-        test_constraint = None
-        if obj.constraint is None:
-            # test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
-            test_constraint = agent.constraint(model_inputs).squeeze().numpy()
+        if obj.constraint is not None:
+            test_constraint_prob = obj.constraint_probability(test_model_inputs)[..., 0]
         else:
-            test_constraint = obj.constraint_probability(model_inputs).detach().squeeze().numpy()
+            test_constraint_prob = torch.ones((len(test_x), len(test_y))) if gridded else torch.ones(len(test_x))
 
-        fitness_ax = None
-        fit_err_ax = None
+        if not obj.all_valid:
+            test_valid_prob = obj.validity_probability(test_model_inputs)[..., 0]
+        else:
+            test_valid_prob = torch.ones((len(test_x), len(test_y))) if gridded else torch.ones(len(test_x))
 
         if gridded:
-            # _ = agent.obj_axes[obj_index, 1].pcolormesh(
-            #     test_x,
-            #     test_y,
-            #     test_values,
-            #     shading=shading,
-            #     cmap=cmap,
-            #     norm=val_norm,
-            # )
-            if obj.constraint is None:
-                fitness_ax = agent.obj_axes[obj_index, 1].pcolormesh(
-                    test_x,
-                    test_y,
-                    test_mean,
-                    shading=shading,
-                    norm=obj_norm,
-                    cmap=cmap,
-                )
-                fit_err_ax = agent.obj_axes[obj_index, 2].pcolormesh(
-                    test_x,
-                    test_y,
-                    test_sigma,
-                    shading=shading,
-                    norm=mpl.colors.LogNorm(),
-                    cmap=cmap,
-                )
-
-            if test_constraint is not None:
-                constraint_ax = agent.obj_axes[obj_index, 3].pcolormesh(
-                    test_x,
-                    test_y,
-                    test_constraint,
-                    shading=shading,
-                    cmap=cmap,
-                    # norm=mpl.colors.LogNorm(),
-                )
-
-        else:
-            # _ = agent.obj_axes[obj_index, 1].scatter(
-            #     test_x,
-            #     test_y,
-            #     c=test_values,
-            #     s=size,
-            #     norm=val_norm,
-            #     cmap=cmap,
-            # )
-            if obj.constraint is not None:
-                fitness_ax = agent.obj_axes[obj_index, 1].scatter(
-                    test_x,
-                    test_y,
-                    c=test_mean,
-                    s=size,
-                    norm=obj_norm,
-                    cmap=cmap,
-                )
-                fit_err_ax = agent.obj_axes[obj_index, 2].scatter(
-                    test_x,
-                    test_y,
-                    c=test_sigma,
-                    s=size,
-                    cmap=cmap,
-                    norm=mpl.colors.LogNorm(),
-                )
-
-            if test_constraint is not None:
-                constraint_ax = agent.obj_axes[obj_index, 3].scatter(
-                    test_x,
-                    test_y,
-                    c=test_constraint,
-                    s=size,
-                    cmap=cmap,
-                    norm=mpl.colors.LogNorm(),
-                )
-
-        val_cbar = agent.obj_fig.colorbar(val_ax, ax=agent.obj_axes[obj_index, 0], location="bottom", aspect=32, shrink=0.8)
-        val_cbar.set_label(f"{obj.units or ''}")
-
-        if obj.constraint is None:
-            _ = agent.obj_fig.colorbar(fitness_ax, ax=agent.obj_axes[obj_index, 1], location="bottom", aspect=32, shrink=0.8)
-            _ = agent.obj_fig.colorbar(fit_err_ax, ax=agent.obj_axes[obj_index, 2], location="bottom", aspect=32, shrink=0.8)
-
-            # obj_cbar.set_label(f"{obj.label}")
-            # err_cbar.set_label(f"{obj.label}")
-
-        if test_constraint is not None:
-            constraint_cbar = agent.obj_fig.colorbar(
-                constraint_ax, ax=agent.obj_axes[obj_index, 3], location="bottom", aspect=32, shrink=0.95
+            post_mean_ax = agent.obj_axes[obj_index, 1].pcolormesh(
+                test_x,
+                test_y,
+                obj._untransform(test_mean),
+                shading="nearest",
+                norm=val_norm,
+                cmap=cmap,
+            )
+            post_sigma_ax = agent.obj_axes[obj_index, 2].pcolormesh(
+                test_x,
+                test_y,
+                test_sigma,
+                shading="nearest",
+                cmap=cmap,
+                norm=mpl.colors.LogNorm(),
             )
 
-            constraint_cbar.set_label(f"{obj.name} constraint")
+            constraint_prob_ax = agent.obj_axes[obj_index, 3].pcolormesh(
+                test_x,
+                test_y,
+                test_constraint_prob,
+                shading="nearest",
+                cmap=cmap,
+            )
+
+            valid_prob_ax = agent.obj_axes[obj_index, 4].pcolormesh(
+                test_x,
+                test_y,
+                test_valid_prob,
+                shading="nearest",
+                cmap=cmap,
+            )
+
+        else:
+            post_mean_ax = agent.obj_axes[obj_index, 1].scatter(
+                test_x,
+                test_y,
+                c=obj._untransform(test_mean),
+                s=size,
+                norm=val_norm,
+                cmap=cmap,
+            )
+            post_sigma_ax = agent.obj_axes[obj_index, 2].scatter(
+                test_x,
+                test_y,
+                c=test_sigma,
+                s=size,
+                cmap=cmap,
+                norm=mpl.colors.LogNorm(),
+            )
+
+            constraint_prob_ax = agent.obj_axes[obj_index, 3].scatter(
+                test_x,
+                test_y,
+                c=test_constraint_prob,
+                s=size,
+                cmap=cmap,
+            )
+
+            valid_prob_ax = agent.obj_axes[obj_index, 4].scatter(
+                test_x,
+                test_y,
+                c=test_valid_prob,
+                s=size,
+                cmap=cmap,
+            )
+
+        cbars = {}
+        cbars["values"] = agent.obj_fig.colorbar(
+            values_ax, ax=agent.obj_axes[obj_index, 0], location="bottom", aspect=32, shrink=0.8
+        )
+        # cbars["values"].set_label(f"{obj.units or ''}")
+        cbars["post_mean"] = agent.obj_fig.colorbar(
+            post_mean_ax, ax=agent.obj_axes[obj_index, 1], location="bottom", aspect=32, shrink=0.8
+        )
+        cbars["post_sigma"] = agent.obj_fig.colorbar(
+            post_sigma_ax, ax=agent.obj_axes[obj_index, 2], location="bottom", aspect=32, shrink=0.8
+        )
+        cbars["constraint"] = agent.obj_fig.colorbar(
+            constraint_prob_ax, ax=agent.obj_axes[obj_index, 3], location="bottom", aspect=32, shrink=0.95
+        )
+        cbars["validity"] = agent.obj_fig.colorbar(
+            valid_prob_ax, ax=agent.obj_axes[obj_index, 4], location="bottom", aspect=32, shrink=0.95
+        )
+        # constraint_cbar.set_label(f"{obj.name} constraint")
+
+        for cbar_name, cbar in cbars.items():
+            cbar.ax.minorticks_off()
+            # cbar.ax.xaxis.set_major_formatter(FuncFormatter(lambda x, pos: locale.format_string('%.1f', x)))
+            # cbar.set_ticklabels(cbar.ax.get_xticklabels(), rotation=30, horizontalalignment='right', fontsize='x-small')
+
+            vmin = cbars[cbar_name].norm.vmin
+            vmax = cbars[cbar_name].norm.vmax
+
+            if isinstance(cbar.norm, mpl.colors.LogNorm):
+                ticks = np.geomspace(vmin, vmax, 3)
+            else:
+                ticks = np.linspace(vmin, vmax, 3)
+
+            cbar.set_ticks(ticks)
+            cbar.set_ticklabels([f"{x:.01e}" for x in cbar.get_ticks()])
 
         col_names = [
             f"{obj.description} samples",
-            "prediction mean",
-            "prediction std. dev.",
+            "post. mean",
+            "post. rel. std. dev.",
             "constraint",
             "validity",
         ]
@@ -283,9 +300,12 @@ def _plot_objs_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_COL
                 rotation=90,
             )
 
+    for ax in agent.obj_axes[:, 0]:
+        ax.set_ylabel(y_dof.label_with_units)
+
     for ax in agent.obj_axes.ravel():
         ax.set_xlabel(x_dof.label_with_units)
-        ax.set_ylabel(y_dof.label_with_units)
+
         ax.set_xlim(*x_dof.search_domain)
         ax.set_ylim(*y_dof.search_domain)
         if x_dof.transform == "log":
