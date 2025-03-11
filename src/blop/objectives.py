@@ -113,7 +113,7 @@ class Objective:
         #       Or reconsider the design of the class.
         self._model: Model | None = None
         self.validity_conjugate_model: Model | None = None
-        self.validity_constraint: Model | None = None
+        self.validity_probability: Model | None = None
 
         if not target and not constraint:
             raise ValueError("You must supply either a 'target' or a 'constraint'.")
@@ -168,8 +168,8 @@ class Objective:
             log_p += self.constraint_probability(x).log()
 
         # if the validity constaint is non-trivial
-        if self.validity_conjugate_model and self.validity_constraint:
-            log_p += self.validity_constraint(x).log()
+        if self.validity_conjugate_model and self.validity_probability:
+            log_p += self.validity_probability(x).log()
 
         return log_p
 
@@ -180,7 +180,7 @@ class Objective:
         return self.trust_domain
 
     def _transform(self, y: torch.Tensor) -> torch.Tensor:
-        y = torch.where((y > self.domain[0]) & (y < self.domain[1]), y, np.nan)
+        y = torch.where((y >= self.domain[0]) & (y <= self.domain[1]), y, np.nan)
 
         if self.transform == "log":
             y = y.log()
@@ -189,15 +189,9 @@ class Objective:
         elif self.transform == "arctanh":
             y = torch.arctanh(y)
 
-        if self.target == "min":
-            y = -y
-
         return y
 
     def _untransform(self, y: torch.Tensor) -> torch.Tensor:
-        if self.target == "min":
-            y = -y
-
         if self.transform == "log":
             y = y.exp()
         elif self.transform == "logit":
@@ -276,6 +270,10 @@ class Objective:
     def model(self) -> Model | None:
         return self._model.eval() if self._model else None
 
+    @property
+    def sign(self) -> int:
+        return (-1 if self.target == "min" else 1) if self.target is not None else 0
+
 
 class ObjectiveList(Sequence[Objective]):
     def __init__(self, objectives: list[Objective] | None = None) -> None:
@@ -287,6 +285,10 @@ class ObjectiveList(Sequence[Objective]):
     @property
     def names(self) -> list[str]:
         return [obj.name for obj in self.objectives]
+
+    @property
+    def signs(self) -> torch.Tensor:
+        return torch.tensor([obj.sign for obj in self.objectives])
 
     def __getattr__(self, attr: str) -> Objective | list[Any] | np.ndarray:
         # This is called if we can't find the attribute in the normal way.

@@ -281,7 +281,7 @@ class BaseAgent:
             weights *= len(active_fitness_objectives) / weights.sum()
         elif not isinstance(weights, torch.Tensor):
             raise ValueError(f"'weights' must be a Tensor or one of ['default', 'equal', 'random'], and not {weights}.")
-        return ScalarizedPosteriorTransform(weights=weights)
+        return ScalarizedPosteriorTransform(weights=weights * active_fitness_objectives.signs)
 
     @property
     def fitness_model(self) -> Model:
@@ -387,7 +387,7 @@ class BaseAgent:
 
         if trusted.all():
             obj.validity_conjugate_model = None
-            obj.validity_constraint = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
+            obj.validity_probability = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
 
         else:
             dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
@@ -402,7 +402,7 @@ class BaseAgent:
                 input_transform=self.input_normalization,
             )
 
-            obj.validity_constraint = GenericDeterministicModel(
+            obj.validity_probability = GenericDeterministicModel(
                 f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
             )
 
@@ -1040,8 +1040,8 @@ class Agent(BaseAgent):
             if not obj.model:
                 raise RuntimeError(f"Expected {obj} to have a constructed model.")
             obj.model.load_state_dict(hypers[obj.name])
-        if self.validity_constraint:
-            self.validity_constraint.load_state_dict(hypers["validity_constraint"])
+        if self.validity_probability:
+            self.validity_probability.load_state_dict(hypers["validity_probability"])
 
     @property
     def hypers(self) -> dict[str, dict[str, dict[str, torch.Tensor]]]:
@@ -1139,11 +1139,9 @@ class Agent(BaseAgent):
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
+
         if len(self.dofs(active=True, read_only=False)) == 1:
-            if len(self.objectives(active=True, fitness=True)) > 0:
-                plotting._plot_fitness_objs_one_dof(self, **kwargs)
-            if len(self.objectives(active=True, constraint=True)) > 0:
-                plotting._plot_constraint_objs_one_dof(self, **kwargs)
+            plotting._plot_objs_one_dof(self, **kwargs)
         else:
             plotting._plot_objs_many_dofs(self, axes=axes, **kwargs)
 
