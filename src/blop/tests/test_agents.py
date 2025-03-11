@@ -23,8 +23,11 @@ def test_agent(agent, RE, db):
 
     # test refreshing
     RE(agent.learn("qei", n=2))
-    agent.dofs.activate()
+
+    # test turning on the dummy DOF
+    agent.dofs.dummy.activate()
     RE(agent.learn("qei", n=2))
+    agent.dofs.dummy.deactivate()
 
     # test forgetting
     RE(agent.learn("qr", n=4))
