@@ -1140,9 +1140,12 @@ class Agent(BaseAgent):
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
         plottable_dofs = self.dofs(active=True, read_only=False)
-        if len(plottable_dofs) == 1:
+        logger.debug(f"Plotting agent with DOFs {self.dofs} and objectives {self.objectives}")
+        if len(plottable_dofs) == 0:
+            raise ValueError("To plot agent objectives, at least one writeable DOF must be active.")
+        elif len(plottable_dofs) == 1:
             plotting._plot_objs_one_dof(self, **kwargs)
-        if len(plottable_dofs) == 2:
+        elif len(plottable_dofs) == 2:
             plotting._plot_objs_many_dofs(self, gridded=True, axes=axes, **kwargs)
         else:
             plotting._plot_objs_many_dofs(self, gridded=False, axes=axes, **kwargs)

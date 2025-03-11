@@ -1,5 +1,6 @@
 # content of conftest.py
 import asyncio
+import logging
 
 import databroker  # type: ignore[import-untyped]
 import numpy as np
@@ -12,6 +13,9 @@ from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
 from blop.sim import HDF5Handler
+
+logger = logging.getLogger("blop")
+logger.setLevel(logging.DEBUG)
 
 
 @pytest.fixture(scope="function")
