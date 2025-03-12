@@ -397,7 +397,6 @@ class BaseAgent:
 
         if trusted.all():
             obj.validity_conjugate_model = None
-            # obj.validity_probability = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
 
         else:
             dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
@@ -411,10 +410,6 @@ class BaseAgent:
                 likelihood=dirichlet_likelihood,
                 input_transform=self.input_normalization,
             )
-
-            # obj.validity_probability = GenericDeterministicModel(
-            #     f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
-            # )
 
     def update_models(
         self,
@@ -521,8 +516,6 @@ class BaseAgent:
             finding one points and constructing a fantasy posterior about its value to generate the next point.
         """
 
-        self.update_models()
-
         acqf_config = parse_acqf_identifier(acqf)
         if acqf_config is None:
             raise ValueError(f"'{acqf}' is an invalid acquisition function.")
@@ -546,14 +539,10 @@ class BaseAgent:
                     f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
                 )
 
-            # # if the model for any active objective mismatches the active dofs, reconstruct and train it
-            # for obj in active_objs:
-            #     if hasattr(obj, "model_dofs") and obj.model_dofs != set(active_dofs.names):
-            #         self._construct_model(obj)
-            #         train_model(obj.model)
-
             if acqf_config["type"] == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
+
+            self.update_models()
 
             # we may pick up some more kwargs
             acqf, acqf_kwargs = _construct_acqf(self, acqf_name=acqf_config["name"], **acqf_kwargs)
@@ -576,8 +565,6 @@ class BaseAgent:
             # this includes both RO and non-RO DOFs.
             # and is in the transformed model space
             candidates = self.dofs(active=True).untransform(candidates)
-
-        # p = self.posterior(candidates) if hasattr(self, "model") else None
 
         active_dofs = self.dofs(active=True)
 
