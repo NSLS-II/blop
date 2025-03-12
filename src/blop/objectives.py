@@ -114,7 +114,6 @@ class Objective:
         #       Or reconsider the design of the class.
         self._model: Model | None = None
         self.validity_conjugate_model: Model | None = None
-        self.validity_probability: Model | None = None
 
         if not target and not constraint:
             raise ValueError("You must supply either a 'target' or a 'constraint'.")
@@ -295,6 +294,12 @@ class Objective:
 
         return p.detach()
 
+    def validity_probability(self, x: torch.Tensor) -> torch.Tensor:
+        if hasattr(self, "validity_conjugate_model"):
+            return self.validity_conjugate_model.probabilities(x)[..., -1]
+
+        return torch.ones(x.shape[:-1])
+
     def pseudofitness(self, x: torch.Tensor) -> torch.Tensor:
         """
         When the optimization problem consists only of constraints, the
@@ -414,7 +419,7 @@ class ObjectiveList(Sequence[Objective]):
         Transform the experiment space to the model space.
         """
         if Y.shape[-1] != len(self):
-            raise ValueError(f"Cannot transform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
+            raise ValueError(f"Cannot transform points with shape {Y.shape} using Objectives with dimension {len(self)}.")
 
         return torch.cat([obj._transform(Y[..., i]).unsqueeze(-1) for i, obj in enumerate(self.objectives)], dim=-1)
 
@@ -423,6 +428,6 @@ class ObjectiveList(Sequence[Objective]):
         Transform the model space to the experiment space.
         """
         if Y.shape[-1] != len(self):
-            raise ValueError(f"Cannot untransform points with shape {Y.shape} using DOFs with dimension {len(self)}.")
+            raise ValueError(f"Cannot untransform points with shape {Y.shape} using Objectives with dimension {len(self)}.")
 
         return torch.cat([obj._untransform(Y[..., i]).unsqueeze(-1) for i, obj in enumerate(self.objectives)], dim=-1)

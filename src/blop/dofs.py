@@ -392,21 +392,25 @@ class DOFList(Sequence[DOF]):
         """
         Transform X to the transformed unit hypercube.
         """
-        if X.shape[-1] != len(self):
-            raise ValueError(f"Cannot transform points with shape {X.shape} using DOFs with dimension {len(self)}.")
+        active_dofs = self(active=True)
+        if X.shape[-1] != len(active_dofs):
+            raise ValueError(
+                f"Cannot transform points with shape {X.shape} using DOFs with active dimension {len(active_dofs)}."
+            )
 
-        return torch.cat([dof._transform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(self.dofs)], dim=-1)
+        return torch.cat([dof._transform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(active_dofs)], dim=-1)
 
     def untransform(self, X: torch.Tensor) -> torch.Tensor:
         """
         Transform the transformed unit hypercube to the search domain.
         """
-        if X.shape[-1] != len(self):
-            raise ValueError(f"Cannot untransform points with shape {X.shape} using DOFs with dimension {len(self)}.")
+        active_dofs = self(active=True)
+        if X.shape[-1] != len(active_dofs):
+            raise ValueError(
+                f"Cannot untransform points with shape {X.shape} using DOFs with active dimension {len(active_dofs)}."
+            )
 
-        return torch.cat(
-            [dof._untransform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(self.subset(active=True))], dim=-1
-        )
+        return torch.cat([dof._untransform(X[..., i]).unsqueeze(-1) for i, dof in enumerate(active_dofs)], dim=-1)
 
     @property
     def readback(self) -> list[Any]:

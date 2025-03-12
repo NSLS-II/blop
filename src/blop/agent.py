@@ -19,7 +19,6 @@ import torch
 from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
-from botorch.models.deterministic import GenericDeterministicModel  # type: ignore[import-untyped]
 from botorch.models.model import Model  # type: ignore[import-untyped]
 from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[import-untyped]
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
@@ -154,7 +153,11 @@ class BaseAgent:
         """
         if index is None:
             return torch.stack([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-        return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
+
+        key = self.dofs[index].name
+        if key in self._table.columns:
+            return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
+        return torch.ones(0)
 
     def train_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
@@ -175,7 +178,9 @@ class BaseAgent:
         if index is None:
             return {obj.name: self.raw_targets_dict(obj.name)[obj.name] for obj in self.objectives(**subset_kwargs)}
         key = self.objectives[index].name
-        return {key: torch.tensor(self._table.loc[:, key].values, dtype=torch.double)}
+        if key in self._table.columns:
+            return {key: torch.tensor(self._table.loc[:, key].values, dtype=torch.double)}
+        return {key: torch.tensor([], dtype=torch.double)}
 
     def raw_targets(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
@@ -318,24 +323,29 @@ class BaseAgent:
 
         active_dofs = self.dofs(active=True)
 
-        if method == "quasi-random":
-            X = utils.normalized_sobol_sampler(n, d=len(active_dofs))
-
-        elif method == "random":
-            X = torch.rand(size=(n, 1, len(active_dofs)))
-
-        elif method == "grid":
+        if method == "grid":
             read_only_tensor = cast(torch.Tensor, active_dofs.read_only)
             n_side_if_settable = int(np.power(n, 1 / torch.sum(~read_only_tensor)))
-            sides = [
-                torch.linspace(0, 1, n_side_if_settable) if not dof.read_only else torch.zeros(1) for dof in active_dofs
-            ]
-            X = torch.cat([x.unsqueeze(-1) for x in torch.meshgrid(sides, indexing="ij")], dim=-1).unsqueeze(-2).double()
+            grid_sides = []
+            for dof in active_dofs:
+                if dof.read_only:
+                    grid_sides.append(dof._transform(torch.tensor([dof.readback], dtype=torch.double)))
+                else:
+                    grid_side_bins = torch.linspace(0, 1, n_side_if_settable + 1, dtype=torch.double)
+                    grid_sides.append((grid_side_bins[:-1] + grid_side_bins[1:]) / 2)
+
+            tX = torch.cat([x.unsqueeze(-1) for x in torch.meshgrid(grid_sides, indexing="ij")], dim=-1).unsqueeze(-2)
+
+        elif method == "quasi-random":
+            tX = utils.normalized_sobol_sampler(n, d=len(active_dofs))
+
+        elif method == "random":
+            tX = torch.rand(size=(n, 1, len(active_dofs)))
 
         else:
             raise ValueError("'method' argument must be one of ['quasi-random', 'random', 'grid'].")
 
-        return X.double() if normalize else self.dofs(active=True).untransform(X).double()
+        return tX.double() if normalize else self.dofs.untransform(tX.double())
 
     # @property
     def pruned_mask(self) -> torch.Tensor:
@@ -387,7 +397,7 @@ class BaseAgent:
 
         if trusted.all():
             obj.validity_conjugate_model = None
-            obj.validity_probability = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
+            # obj.validity_probability = GenericDeterministicModel(f=lambda x: torch.ones(size=x.size())[..., -1])
 
         else:
             dirichlet_likelihood = gpytorch.likelihoods.DirichletClassificationLikelihood(
@@ -402,37 +412,48 @@ class BaseAgent:
                 input_transform=self.input_normalization,
             )
 
-            obj.validity_probability = GenericDeterministicModel(
-                f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
-            )
+            # obj.validity_probability = GenericDeterministicModel(
+            #     f=lambda x: obj.validity_conjugate_model.probabilities(x)[..., -1]
+            # )
 
     def update_models(
         self,
-        train: bool | None = None,
+        force_train: bool = False,
     ) -> None:
+        """
+        We don't want to retrain the models on every call of everything, but if they are out of sync with
+        the DOFs then we should.
+        """
+
+        active_dofs = self.dofs(active=True)
         objectives_to_model = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
+
         for obj in objectives_to_model:
+            # do we need to update the model for this objective?
+            n_trainable_points = sum(~self.train_targets(obj.name).isnan())
+
+            # if we don't have enough points
+            if n_trainable_points < 4:
+                continue
+
+            # if the current model matches the active dofs
+            if getattr(obj, "model_dofs", {}) == set(active_dofs.names):
+                # then we can use the current hyperparameters and just update the data
+                cached_hypers = obj.model.state_dict() if obj.model else None
+
+                logger.debug(f'{getattr(obj, "model_dofs", {}) = }')
+                logger.debug(f"{set(active_dofs.names) = }")
+                # if there aren't enough extra points to train yet
+                if n_trainable_points // self.train_every == len(obj.model.train_targets) // self.train_every:
+                    if not force_train:
+                        self._construct_model(obj)
+                        train_model(obj.model, hypers=cached_hypers)
+                        continue
+
             t0 = ttime.monotonic()
-
-            cached_hypers = obj.model.state_dict() if obj.model else None
-            n_before_tell = obj.n_valid
             self._construct_model(obj)
-            if not obj.model:
-                raise RuntimeError(f"Expected {obj} to have a constructed model.")
-            n_after_tell = obj.n_valid
-
-            if train is None:
-                train = int(n_after_tell / self.train_every) > int(n_before_tell / self.train_every)
-
-            if len(obj.model.train_targets) >= 4:
-                if train:
-                    t0 = ttime.monotonic()
-                    train_model(obj.model)
-                    if self.verbose:
-                        logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
-
-                else:
-                    train_model(obj.model, hypers=cached_hypers)
+            train_model(obj.model)
+            logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
 
     def tell(
         self,
@@ -442,7 +463,7 @@ class BaseAgent:
         metadata: Mapping | None = {},
         append: bool = True,
         update_models: bool = True,
-        train: bool | None = None,
+        force_train: bool = False,
     ) -> None:
         """
         Inform the agent about new inputs and targets for the model.
@@ -481,8 +502,6 @@ class BaseAgent:
         new_table = pd.DataFrame(data)
         self._table = pd.concat([self._table, new_table]) if append else new_table
         self._table.index = pd.Index(np.arange(len(self._table)))
-        if update_models:
-            self.update_models(train=train)
 
     def ask(
         self, acqf: str = "qei", n: int = 1, route: bool = True, sequential: bool = True, upsample: int = 1, **acqf_kwargs
@@ -501,6 +520,8 @@ class BaseAgent:
             Whether to generate points sequentially (as opposed to in parallel). Sequential generation involves
             finding one points and constructing a fantasy posterior about its value to generate the next point.
         """
+
+        self.update_models()
 
         acqf_config = parse_acqf_identifier(acqf)
         if acqf_config is None:
@@ -525,11 +546,11 @@ class BaseAgent:
                     f"Can't construct non-trivial acquisition function '{acqf}' as the agent is not initialized."
                 )
 
-            # if the model for any active objective mismatches the active dofs, reconstrut and train it
-            for obj in active_objs:
-                if hasattr(obj, "model_dofs") and obj.model_dofs != set(active_dofs.names):
-                    self._construct_model(obj)
-                    train_model(obj.model)
+            # # if the model for any active objective mismatches the active dofs, reconstruct and train it
+            # for obj in active_objs:
+            #     if hasattr(obj, "model_dofs") and obj.model_dofs != set(active_dofs.names):
+            #         self._construct_model(obj)
+            #         train_model(obj.model)
 
             if acqf_config["type"] == "analytic" and n > 1:
                 raise ValueError("Can't generate multiple design points for analytic acquisition functions.")
@@ -714,7 +735,7 @@ class Agent(BaseAgent):
         n: int = 1,
         iterations: int = 1,
         upsample: int = 1,
-        train: bool | None = None,
+        force_train: bool | None = None,
         append: bool = True,
         hypers: str | None = None,
         route: bool = True,
@@ -768,7 +789,7 @@ class Agent(BaseAgent):
                 metadata = {
                     key: new_table.loc[:, key].tolist() for key in new_table.columns if (key not in x) and (key not in y)
                 }
-                self.tell(x=x, y=y, metadata=metadata, append=append, train=train)
+                self.tell(x=x, y=y, metadata=metadata, append=append, force_train=force_train)
 
     def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = 2**16):
         """
@@ -1139,6 +1160,8 @@ class Agent(BaseAgent):
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
+        self.update_models()
+
         plottable_dofs = self.dofs(active=True, read_only=False)
         logger.debug(f"Plotting agent with DOFs {self.dofs} and objectives {self.objectives}")
         if len(plottable_dofs) == 0:
@@ -1160,6 +1183,8 @@ class Agent(BaseAgent):
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
+        self.update_models()
+
         if len(self.dofs(active=True, read_only=False)) == 1:
             plotting._plot_acqf_one_dof(self, acqfs=np.atleast_1d(acqf), **kwargs)
         else:
@@ -1173,6 +1198,8 @@ class Agent(BaseAgent):
         axes :
             A tuple specifying which DOFs to plot as a function of. Can be either an int or the name of DOFs.
         """
+        self.update_models()
+
         if len(self.dofs(active=True, read_only=False)) == 1:
             plotting._plot_valid_one_dof(self, **kwargs)
         else:

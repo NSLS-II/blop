@@ -33,7 +33,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
     x_values = agent.table.loc[:, x_dof.device.name].values
 
     test_inputs = agent.sample(n=256, method="grid")
-    test_model_inputs = agent.dofs(active=True).transform(test_inputs)
+    test_model_inputs = agent.dofs.transform(test_inputs)
     test_x = test_inputs[..., 0].detach().numpy()
 
     for obj_index, obj in enumerate(agent.objectives):
@@ -63,14 +63,14 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
             agent.obj_axes[obj_index, 0].set_ylabel(obj.label_with_units)
 
         if obj.constraint is not None:
-            test_constraint_prob = obj.constraint_probability(test_model_inputs).detach()
+            test_constraint_prob = obj.constraint_probability(test_model_inputs).detach().squeeze()
         else:
             test_constraint_prob = torch.ones(test_x.shape)
 
         agent.obj_axes[obj_index, 1].plot(test_x.ravel(), test_constraint_prob.ravel(), lw=lw, color=color)
 
         if obj.validity_conjugate_model and obj.validity_probability:
-            test_valid_prob = obj.validity_probability(test_model_inputs).detach()
+            test_valid_prob = obj.validity_probability(test_model_inputs).detach().squeeze()
         else:
             test_valid_prob = torch.ones(test_x.shape)
 
@@ -125,7 +125,7 @@ def _plot_objs_many_dofs(
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
 
-    test_model_inputs = agent.dofs(active=True).transform(test_inputs)
+    test_model_inputs = agent.dofs.transform(test_inputs)
 
     for obj_index, obj in enumerate(agent.objectives):
         targets = agent.train_targets(index=obj.name)[:, 0]
@@ -158,12 +158,12 @@ def _plot_objs_many_dofs(
         test_sigma = test_posterior.variance.sqrt()[..., 0, 0].detach().squeeze()
 
         if obj.constraint is not None:
-            test_constraint_prob = obj.constraint_probability(test_model_inputs)[..., 0]
+            test_constraint_prob = obj.constraint_probability(test_model_inputs)[..., 0].squeeze()
         else:
             test_constraint_prob = torch.ones((len(test_x), len(test_y))) if gridded else torch.ones(len(test_x))
 
         if not obj.all_valid:
-            test_valid_prob = obj.validity_probability(test_model_inputs)[..., 0]
+            test_valid_prob = obj.validity_probability(test_model_inputs)[..., 0].squeeze()
         else:
             test_valid_prob = torch.ones((len(test_x), len(test_y))) if gridded else torch.ones(len(test_x))
 
@@ -271,9 +271,9 @@ def _plot_objs_many_dofs(
             cbar.set_ticklabels([f"{x:.01e}" for x in cbar.get_ticks()])
 
         col_names = [
-            f"{obj.description} samples",
+            "samples",
             "post. mean",
-            "post. rel. std. dev.",
+            "post. raw std. dev.",
             "constraint",
             "validity",
         ]
@@ -285,20 +285,20 @@ def _plot_objs_many_dofs(
                 col_names[column_index],
             )
 
-    if len(agent.objectives) > 1:
-        for row_index, ax in enumerate(agent.obj_axes[:, 0]):
-            ax.annotate(
-                agent.objectives[row_index].name,
-                xy=(0, 0.5),
-                xytext=(-ax.yaxis.labelpad - pad, 0),
-                color="k",
-                xycoords=ax.yaxis.label,
-                textcoords="offset points",
-                size="large",
-                ha="right",
-                va="center",
-                rotation=90,
-            )
+    # if len(agent.objectives) > 1:
+    for row_index, ax in enumerate(agent.obj_axes[:, 0]):
+        ax.annotate(
+            agent.objectives[row_index].name,
+            xy=(0, 0.5),
+            xytext=(-ax.yaxis.labelpad - pad, 0),
+            color="k",
+            xycoords=ax.yaxis.label,
+            textcoords="offset points",
+            size="large",
+            ha="right",
+            va="center",
+            rotation=90,
+        )
 
     for ax in agent.obj_axes[:, 0]:
         ax.set_ylabel(y_dof.label_with_units)

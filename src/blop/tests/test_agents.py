@@ -21,7 +21,6 @@ def test_agent(agent, RE, db):
     print(agent.dofs)
     print(agent.objectives)
 
-    # test refreshing
     RE(agent.learn("qei", n=2))
 
     # test turning on the dummy DOF
