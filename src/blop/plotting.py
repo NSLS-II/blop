@@ -96,7 +96,6 @@ def _plot_objs_many_dofs(
     n: int = 1024,
     cmap: str = DEFAULT_COLORMAP,
     size: float = 16,
-    grid_zoom: float = 1,
 ):
     """
     Axes represents which active, non-read-only axes to plot with

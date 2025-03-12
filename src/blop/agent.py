@@ -457,7 +457,6 @@ class BaseAgent:
         y: Mapping | None = {},
         metadata: Mapping | None = {},
         append: bool = True,
-        update_models: bool = True,
         force_train: bool = False,
     ) -> None:
         """
@@ -493,10 +492,12 @@ class BaseAgent:
         if len(unique_field_lengths) > 1:
             raise ValueError("All supplies values must be the same length!")
 
-        # TODO: This is an innefficient approach to caching data. Keep a list, make table at update model time.
+        # TODO: This is an inefficient approach to caching data. Keep a list, make table at update model time.
         new_table = pd.DataFrame(data)
         self._table = pd.concat([self._table, new_table]) if append else new_table
         self._table.index = pd.Index(np.arange(len(self._table)))
+
+        self.update_models(force_train=force_train)
 
     def ask(
         self, acqf: str = "qei", n: int = 1, route: bool = True, sequential: bool = True, upsample: int = 1, **acqf_kwargs
@@ -722,7 +723,7 @@ class Agent(BaseAgent):
         n: int = 1,
         iterations: int = 1,
         upsample: int = 1,
-        force_train: bool | None = None,
+        force_train: bool = False,
         append: bool = True,
         hypers: str | None = None,
         route: bool = True,
