@@ -334,7 +334,7 @@ class BaseAgent:
                     grid_side_bins = torch.linspace(0, 1, n_side_if_settable + 1, dtype=torch.double)
                     grid_sides.append((grid_side_bins[:-1] + grid_side_bins[1:]) / 2)
 
-            tX = torch.cat([x.unsqueeze(-1) for x in torch.meshgrid(grid_sides, indexing="ij")], dim=-1).unsqueeze(-2)
+            tX = torch.stack(torch.meshgrid(grid_sides, indexing="ij"), dim=-1).unsqueeze(-2)
 
         elif method == "quasi-random":
             tX = utils.normalized_sobol_sampler(n, d=len(active_dofs))
@@ -428,7 +428,7 @@ class BaseAgent:
             n_trainable_points = sum(~self.train_targets(obj.name).isnan())
 
             # if we don't have enough points
-            if n_trainable_points < 4:
+            if n_trainable_points < obj.min_points_to_train:
                 continue
 
             # if the current model matches the active dofs

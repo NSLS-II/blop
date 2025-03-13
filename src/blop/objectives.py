@@ -102,6 +102,7 @@ class Objective:
         max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
         units: str | None = None,
         latent_groups: dict[str, Any] | None = None,
+        min_points_to_train: int = 4,
     ) -> None:
         self.name = name
         self.units = units
@@ -136,6 +137,7 @@ class Objective:
         self.min_noise = min_noise
         self.max_noise = max_noise
         self.latent_groups = latent_groups or {}
+        self.min_points_to_train = min_points_to_train
 
         if isinstance(self.target, str):
             # eventually we will be able to target other strings, as outputs of a discrete objective
@@ -204,7 +206,7 @@ class Objective:
 
     @property
     def all_valid(self) -> bool:
-        return not (self.validity_conjugate_model and self.validity_probability)
+        return not getattr(self, "validity_conjugate_model", None)
 
     def log_total_constraint(self, x: torch.Tensor) -> torch.Tensor:
         log_p = torch.zeros(x.shape[:-1])

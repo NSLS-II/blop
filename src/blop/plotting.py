@@ -27,8 +27,6 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
 
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
 
-    print(agent.obj_axes.shape)
-
     x_dof = agent.dofs(active=True)[0]
     x_values = agent.table.loc[:, x_dof.device.name].values
 
@@ -131,17 +129,11 @@ def _plot_objs_many_dofs(
 
         values = obj._untransform(targets).numpy()
         # mask does not generate properly when values is a tensor (returns values of 0 instead of booleans)
-        # values = np.array(values)
-
-        # print(values)
 
         val_vmin, val_vmax = np.nanquantile(values, q=[0.01, 0.99])
         val_norm = (
             mpl.colors.LogNorm(val_vmin, val_vmax) if obj.transform == "log" else mpl.colors.Normalize(val_vmin, val_vmax)
         )
-
-        # obj_vmin, obj_vmax = np.nanquantile(targets, q=[0.01, 0.99])
-        # obj_norm = mpl.colors.Normalize(obj_vmin, obj_vmax)
 
         # mask for nan values, uses unfilled o marker
         mask = np.isnan(values)
@@ -284,7 +276,6 @@ def _plot_objs_many_dofs(
                 col_names[column_index],
             )
 
-    # if len(agent.objectives) > 1:
     for row_index, ax in enumerate(agent.obj_axes[:, 0]):
         ax.annotate(
             agent.objectives[row_index].name,
