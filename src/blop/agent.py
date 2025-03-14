@@ -939,8 +939,9 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            print(self.db[uid]['primary','internal','events'].read())
-            print(*self.digestion_kwargs.items())
+            ## this code is making sure that is something is needing "bl_det_images" the code will be able to run (this should get fixed to not require this if)
+            # if("image_key" in **self.digestion_kwargs.key()):
+            #     products = self.digestion(self.db[uid]['primary','external','bl_det_image'].read(), **self.digestion_kwargs)
             products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:

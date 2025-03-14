@@ -24,7 +24,7 @@ DEFAULT_USE_SIREPO = False
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
 #initializing the tiled server
-tiled_client = from_uri(SERVER_HOST_LOCATION)
+tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
 
 tiled_writer = TiledWriter(tiled_client)
     
@@ -34,7 +34,7 @@ def re_env(db_type="default", root_dir="/default/path"):
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)   
 
-    tiled_client.login()
+    #tiled_client.login()
 
     RE.subscribe(tiled_writer) 
 
