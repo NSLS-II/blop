@@ -11,7 +11,7 @@ def test_agent(agent, RE, db):
     """
 
     agent.db = db
-    RE(agent.learn("qr", n=64))
+    RE(agent.learn("qr", n=32))
 
     best = agent.best
     assert [dof.name in best for dof in agent.dofs]
@@ -21,10 +21,12 @@ def test_agent(agent, RE, db):
     print(agent.dofs)
     print(agent.objectives)
 
-    # test refreshing
     RE(agent.learn("qei", n=2))
-    agent.dofs.activate()
+
+    # test turning on the dummy DOF
+    agent.dofs.dummy.activate()
     RE(agent.learn("qei", n=2))
+    agent.dofs.dummy.deactivate()
 
     # test forgetting
     RE(agent.learn("qr", n=4))

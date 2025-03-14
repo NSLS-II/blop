@@ -20,21 +20,19 @@ def validate_set(s, type="continuous") -> set | tuple[float, float]:
             f"Invalid continuous set {s}; valid continuous sets it must be a tuple of two numbers x1, x2 such that x2 >= x1"
         )
     else:
-        s = cast(set, s)
-        return s
+        return cast(set, s)
 
 
 def element_of(x, s, type: str = "continuous") -> bool:
     """
     Check if x is an element of s.
     """
-    validate_set(s, type=type)
+    valid_set = validate_set(s, type=type)
     if type == "continuous":
-        s = cast(tuple[float, float], s)
-        return (x >= s[0]) & (x <= s[1])
+        valid_set = cast(tuple[float, float], valid_set)
+        return (x >= valid_set[0]) & (x <= valid_set[1])
     else:
-        s = cast(set, s)
-        return np.isin(list(x), list(s))
+        return np.isin(list(x), list(cast(set, valid_set)))
 
 
 def is_subset(s1, s2, type: str = "continuous", proper: bool = False) -> bool:

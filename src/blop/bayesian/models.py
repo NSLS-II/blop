@@ -129,7 +129,7 @@ class LatentDirichletClassifier(LatentGP):
 
         self.trained: bool = False
 
-    def probabilities(self, x: torch.Tensor, n_samples: int = 1024) -> torch.Tensor:
+    def probabilities(self, x: torch.Tensor, n_samples: int = 256) -> torch.Tensor:
         """
         Takes in a (..., m) dimension tensor and returns a (..., n_classes) tensor
         """
