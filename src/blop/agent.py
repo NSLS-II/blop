@@ -860,11 +860,9 @@ class Agent(BaseAgent):
                 logger.info(f"running iteration {i + 1} / {iterations}")
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
-                print(f"{res=}") #
                 new_table = yield from self.acquire(res["points"])
                 
                 new_table.loc[:, "acqf"] = res["acqf_name"]
-
                 x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
                 y = {key: new_table.loc[:, key].tolist() for key in self.objectives.names}
                 metadata = {
@@ -939,10 +937,12 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            ## this code is making sure that is something is needing "bl_det_images" the code will be able to run (this should get fixed to not require this if)
-            # if("image_key" in **self.digestion_kwargs.key()):
-            #     products = self.digestion(self.db[uid]['primary','external','bl_det_image'].read(), **self.digestion_kwargs)
-            products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
+
+            if("image_key" in self.digestion_kwargs):
+                test = pd.DataFrame({"bl_det_image": list(self.db[uid]['primary','external','bl_det_image'].read())})
+                products = self.digestion(test, **self.digestion_kwargs)
+            else:
+                products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
