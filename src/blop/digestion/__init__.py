@@ -8,6 +8,7 @@ def default_digestion_function(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def beam_stats_digestion(df: pd.DataFrame, image_key, **kwargs) -> pd.DataFrame:
+    #df = pd.concat([df, df[image_key].apply(lambda img: pd.Series(get_beam_stats(img, **kwargs)))], axis=1)
     for index, entry in df.iterrows():
         stats = get_beam_stats(entry.loc[image_key].astype(dtype = np.float64), **kwargs)
     

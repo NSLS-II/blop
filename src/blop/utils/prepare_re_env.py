@@ -23,6 +23,12 @@ DEFAULT_ENV_TYPE = "stepper"
 DEFAULT_USE_SIREPO = False
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
+from tiled.server import SimpleTiledServer
+from tiled.client import from_uri
+
+# server = SimpleTiledServer()
+# client = from_uri(server.uri)
+
 #initializing the tiled server
 tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
 
@@ -33,8 +39,6 @@ def re_env(db_type="default", root_dir="/default/path"):
     RE = RunEngine({})   
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)   
-
-    #tiled_client.login()
 
     RE.subscribe(tiled_writer) 
 

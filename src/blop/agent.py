@@ -929,7 +929,6 @@ class Agent(BaseAgent):
                 raise ValueError(f"Cannot acquire points; missing values for {dof.name}.")
 
         n = len(points[dof.name])
-
         try:
             uid = yield from self.acquisition_plan(
                 acquisition_dofs,
@@ -939,8 +938,10 @@ class Agent(BaseAgent):
             )
 
             if("image_key" in self.digestion_kwargs):
-                test = pd.DataFrame({"bl_det_image": list(self.db[uid]['primary','external','bl_det_image'].read())})
-                products = self.digestion(test, **self.digestion_kwargs)
+                run = self.db[uid]['primary','internal','events'].read()
+                run["bl_det_image"] = list(self.db[uid]['primary','external','bl_det_image'].read().astype(float))
+                print(run)
+                products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
             else:
                 products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
