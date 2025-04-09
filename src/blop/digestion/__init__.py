@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from ..utils import get_beam_stats
 
 

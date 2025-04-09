@@ -17,6 +17,7 @@ from ophyd.utils import make_dir_tree
 
 from bluesky.callbacks.tiled_writer import TiledWriter
 
+
 from blop.sim import HDF5Handler
 
 DEFAULT_DB_TYPE = "local"
@@ -89,7 +90,7 @@ if __name__ == "__main__":
         "--file",
         dest="file",
         default="",
-    )
+    )                                                                
 
     args = parser.parse_args()
     kwargs_re = {"db_type": args.db_type, "root_dir": args.root_dir}
