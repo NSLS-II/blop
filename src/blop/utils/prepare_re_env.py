@@ -15,6 +15,7 @@ from ophyd.utils import make_dir_tree
 
 from bluesky.callbacks.tiled_writer import TiledWriter
 
+
 from blop.sim import HDF5Handler
 
 DEFAULT_DB_TYPE = "local"
@@ -22,12 +23,6 @@ DEFAULT_ROOT_DIR = "/tmp/sirepo-bluesky-data"
 DEFAULT_ENV_TYPE = "stepper"
 DEFAULT_USE_SIREPO = False
 SERVER_HOST_LOCATION = "http://localhost:8000"
-
-from tiled.server import SimpleTiledServer
-from tiled.client import from_uri
-
-# server = SimpleTiledServer()
-# client = from_uri(server.uri)
 
 #initializing the tiled server
 tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
@@ -58,7 +53,7 @@ if __name__ == "__main__":
         "--db-type",
         dest="db_type",
         default=DEFAULT_DB_TYPE,
-        help="Type of databroker ('local', 'temp', etc.)",
+        help="Type of tiledWriter ('local', 'temp', etc.)",
     )
     parser.add_argument(
         "-r",
@@ -91,7 +86,7 @@ if __name__ == "__main__":
         "--file",
         dest="file",
         default="",
-    )
+    )                                                                
 
     args = parser.parse_args()
     kwargs_re = dict(db_type=args.db_type, root_dir=args.root_dir)

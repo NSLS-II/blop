@@ -354,7 +354,7 @@ class BaseAgent:
             A dict of hyperparameters for the model to assume a priori, instead of training.
         """
 
-c        if not data:
+        if not data:
             if not x and y:
                 raise ValueError("Must supply either x and y, or data.")
             data = {**x, **y, **metadata}
@@ -939,12 +939,10 @@ class Agent(BaseAgent):
 
             if("image_key" in self.digestion_kwargs):
                 run = self.db[uid]['primary','internal','events'].read()
-                print(run)
                 run["bl_det_image"] = list(self.db[uid]['primary','external','bl_det_image'].read().astype(float))
-                print(run)
+                print(run["bl_det_image"])
                 products = self.digestion(run, **self.digestion_kwargs)
             else:
-                print(self.db[uid]['primary','internal','events'].read())
                 products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
