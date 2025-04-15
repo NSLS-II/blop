@@ -1,6 +1,7 @@
-from typing import Any, cast, Sequence
+from collections.abc import Sequence
+from typing import Any, cast
 
-from ax import Runner, Experiment, Metric, Trial, Arm
+from ax import Arm, Experiment, Metric, Runner, Trial
 from bluesky import RunEngine
 from bluesky.plans import list_scan
 from bluesky.protocols import HasName, Movable, NamedMovable, Readable
@@ -15,13 +16,15 @@ class BlopExperiment(Experiment):
     def _validate_search_space(self, movables: Sequence[NamedMovable]):
         """Validates that the parameters are compatible with the `Movable`s."""
         parameter_names = set(self.search_space.parameters.keys())
-        for m, p in zip(movables, self.search_space.parameters.values()):
+        for m, p in zip(movables, self.search_space.parameters.values(), strict=False):
             if m.name != p.name:
                 if m.name not in parameter_names:
                     raise ValueError(f"The movable name {m.name} is not a parameter in the search space.")
-                raise ValueError(f"The moveable name {m.name} is in the search space, but the order is not correct. "
-                                 "The order of movables must match the order of the parameters in the search space "
-                                 "so we can unpack the arm correctly.")
+                raise ValueError(
+                    f"The moveable name {m.name} is in the search space, but the order is not correct. "
+                    "The order of movables must match the order of the parameters in the search space "
+                    "so we can unpack the arm correctly."
+                )
 
     def _validate_optimization_config(self, readables: Sequence[Readable], movables: Sequence[NamedMovable]):
         """Validates that the objectives are compatible with the `Readable`s."""
@@ -34,7 +37,8 @@ class BlopExperiment(Experiment):
         # Check that each metric's parameters reference a `Readable` or `Movable`
         metric_param_names = {p for m in cast(Sequence[BlopMetric], metrics) for p in m.param_names}
         unmatched_parameters = {
-            p for p in metric_param_names 
+            p
+            for p in metric_param_names
             if not any(r.name in p for r in readables) and not any(m.name in p for m in movables)
         }
         if unmatched_parameters:
@@ -53,7 +57,7 @@ class BlopRunner(Runner):
     def _unpack_arm(self, arm: Arm) -> list[Movable | list[Any]]:
         """Unpacks the arm's parameters into the format of the `list_scan` plan."""
         unpacked = []
-        for m, p in zip(self._movables, arm.parameters.values()):
+        for m, p in zip(self._movables, arm.parameters.values(), strict=True):
             unpacked.append(m)
             unpacked.append([p])
         return unpacked
