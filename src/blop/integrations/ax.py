@@ -1,10 +1,13 @@
+from abc import abstractmethod
 from collections.abc import Sequence
 from typing import Any, cast
 
-from ax import Arm, Experiment, Metric, Runner, Trial
+from ax import Arm, Data, Experiment, Metric, Runner, Trial
 from bluesky import RunEngine
 from bluesky.plans import list_scan
 from bluesky.protocols import HasName, Movable, NamedMovable, Readable
+from databroker import Broker
+from tiled.client.container import Container
 
 
 class BlopExperiment(Experiment):
@@ -63,7 +66,11 @@ class BlopRunner(Runner):
         return unpacked
 
     def run(self, trial: Trial, **kwargs):
-        self._RE(list_scan(self._readables, *self._unpack_arm(trial.arm)))
+        # TODO: Can probably do a yield from here instead and move the RunEngine call
+        # to the outermost part of execution.
+        # RE(trial.run()) or something like that.
+        uid = self._RE(list_scan(self._readables, *self._unpack_arm(trial.arm)))
+        return {"uid": uid}
 
 
 class BlopMetric(Metric):
@@ -77,8 +84,9 @@ class BlopMetric(Metric):
 
 
 class TiledMetric(BlopMetric):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, tiled_client: Container, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._tiled_client = tiled_client
 
     def fetch_trial_data(self, trial: Trial, **kwargs):
         # TODO: Call tiled to get the data back
@@ -86,9 +94,28 @@ class TiledMetric(BlopMetric):
 
 
 class DatabrokerMetric(BlopMetric):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, broker: Broker, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._broker = broker
 
-    def fetch_trial_data(self, trial: Trial, **kwargs):
-        # TODO: Call databroker to get the data back
-        ...
+    @abstractmethod
+    def compute(self, *args, **kwargs) -> float: ...
+
+    def fetch_trial_data(self, trial: Trial, **kwargs) -> Data:
+        records = []
+        uid = trial.run_metadata["uid"]
+
+        for arm_name, arm in trial.arms_by_name.items():
+            params = arm.parameters
+
+            records.append(
+                {
+                    "arm_name": arm_name,
+                    "metric_name": self.name,
+                    "mean": self.compute(**params),
+                    "sem": 0.0,
+                }
+            )
+
+        uid = trial.run_metadata["uid"]
+        return self._broker[uid].table(fill=True)
