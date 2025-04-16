@@ -1,8 +1,11 @@
-from abc import abstractmethod
-from collections.abc import Sequence
+from abc import ABC, abstractmethod
+from collections.abc import Callable, Sequence
 from typing import Any, cast
 
+import pandas as pd
 from ax import Arm, Data, Experiment, Metric, Runner, Trial
+from ax.core.base_trial import BaseTrial
+from ax.utils.common.result import Ok, Result
 from bluesky import RunEngine
 from bluesky.plans import list_scan
 from bluesky.protocols import HasName, Movable, NamedMovable, Readable
@@ -72,15 +75,49 @@ class BlopRunner(Runner):
         uid = self._RE(list_scan(self._readables, *self._unpack_arm(trial.arm)))
         return {"uid": uid}
 
+    def clone(self) -> "BlopRunner":
+        """Create a copy of this Runner."""
+        return BlopRunner(RE=self._RE, readables=self._readables, movables=self._movables)
 
-class BlopMetric(Metric):
-    def __init__(self, param_names: Sequence[str | HasName], *args, **kwargs):
+
+class BlopMetric(Metric, ABC):
+    def __init__(
+        self,
+        param_names: Sequence[str | HasName],
+        compute_fn: Callable[[pd.DataFrame], tuple[float, float | None]],
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self._param_names: frozenset[str] = frozenset(p.name if isinstance(p, HasName) else p for p in param_names)
+        self._compute_fn = compute_fn
 
     @property
     def param_names(self) -> frozenset[str]:
         return self._param_names
+
+    @abstractmethod
+    def unpack_trial(self, trial: BaseTrial) -> pd.DataFrame:
+        """Unpacks the trial data into a dictionary of parameters."""
+        ...
+
+    def fetch_trial_data(self, trial: BaseTrial, **kwargs) -> Result[Data, Exception]:
+        df = self.unpack_trial(trial)
+        records = []
+
+        mean, sem = self._compute_fn(df)
+        for arm_name, _ in trial.arms_by_name.items():
+            records.append(
+                {
+                    "arm_name": arm_name,
+                    "metric_name": self.name,
+                    "trial_index": trial.index,
+                    "mean": mean,
+                    "sem": sem,
+                }
+            )
+
+        return Ok(value=Data(df=pd.DataFrame.from_records(records)))
 
 
 class TiledMetric(BlopMetric):
@@ -88,34 +125,43 @@ class TiledMetric(BlopMetric):
         super().__init__(*args, **kwargs)
         self._tiled_client = tiled_client
 
-    def fetch_trial_data(self, trial: Trial, **kwargs):
-        # TODO: Call tiled to get the data back
-        ...
+    def unpack_trial(self, trial: BaseTrial) -> list[Any]:
+        # TODO: Implement this
+        # uid = trial.run_metadata["uid"]
+        raise NotImplementedError("TiledMetric is not implemented yet.")
 
 
 class DatabrokerMetric(BlopMetric):
     def __init__(self, broker: Broker, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._broker = broker
+        # Need to save these so we can clone the metric easily
+        self._args = args
+        self._kwargs = kwargs
 
-    @abstractmethod
-    def compute(self, *args, **kwargs) -> float: ...
+    def unpack_trial(self, trial: BaseTrial) -> pd.DataFrame:
+        """Unpacks the trial using the databroker client.
 
-    def fetch_trial_data(self, trial: Trial, **kwargs) -> Data:
-        records = []
+        Parameters
+        ----------
+        trial: BaseTrial
+            The trial to unpack.
+
+        Returns
+        -------
+        dict[str, Any]
+            Keyword arguments used to compute the mean and sem of the metric.
+
+        Examples
+        --------
+        >>> metric = DatabrokerMetric(broker)
+        >>> metric.unpack_trial(trial)
+        {'param1': pd.Series([...]), 'param2': pd.Series([...]), ...}
+        """
         uid = trial.run_metadata["uid"]
+        # TODO: Why is [0] needed here?
+        df: pd.DataFrame = self._broker[uid][0].table(fill=True)
+        return df.loc[:, self.param_names]
 
-        for arm_name, arm in trial.arms_by_name.items():
-            params = arm.parameters
-
-            records.append(
-                {
-                    "arm_name": arm_name,
-                    "metric_name": self.name,
-                    "mean": self.compute(**params),
-                    "sem": 0.0,
-                }
-            )
-
-        uid = trial.run_metadata["uid"]
-        return self._broker[uid].table(fill=True)
+    def clone(self) -> "DatabrokerMetric":
+        return DatabrokerMetric(*self._args, broker=self._broker, **self._kwargs)
