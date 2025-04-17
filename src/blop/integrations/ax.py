@@ -3,14 +3,17 @@ from collections.abc import Callable, Sequence
 from typing import Any, cast
 
 import pandas as pd
-from ax import Arm, Data, Experiment, Metric, Runner, Trial
+from ax import Arm, Experiment, Runner, Trial
 from ax.core.base_trial import BaseTrial
 from ax.utils.common.result import Ok, Result
+from ax.core.map_metric import MapMetric
+from ax.core.map_data import MapData
 from bluesky import RunEngine
 from bluesky.plans import list_scan
 from bluesky.protocols import HasName, Movable, NamedMovable, Readable
 from databroker import Broker
 from tiled.client.container import Container
+from numpy.typing import NDArray
 
 
 class BlopExperiment(Experiment):
@@ -80,55 +83,43 @@ class BlopRunner(Runner):
         return BlopRunner(RE=self._RE, readables=self._readables, movables=self._movables)
 
 
-class BlopMetric(Metric, ABC):
-    def __init__(
-        self,
-        param_names: Sequence[str | HasName],
-        compute_fn: Callable[[pd.DataFrame], tuple[float, float | None]],
-        *args,
-        **kwargs,
-    ):
+class BlopMetric(MapMetric, ABC):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._param_names: frozenset[str] = frozenset(p.name if isinstance(p, HasName) else p for p in param_names)
-        self._compute_fn = compute_fn
-
-    @property
-    def param_names(self) -> frozenset[str]:
-        return self._param_names
 
     @abstractmethod
     def unpack_trial(self, trial: BaseTrial) -> pd.DataFrame:
-        """Unpacks the trial data into a dictionary of parameters."""
+        """Unpacks the trial data into a DataFrame where each row is the result of a single evaluation of an arm."""
         ...
 
-    def fetch_trial_data(self, trial: BaseTrial, **kwargs) -> Result[Data, Exception]:
+    def fetch_trial_data(self, trial: BaseTrial, **kwargs) -> Result[MapData, Exception]:
+        # Unpack the trial data into a dataframe where each row is
+        # the result of a single evaluation of an arm.
         df = self.unpack_trial(trial)
-        records = []
 
-        mean, sem = self._compute_fn(df)
-        for arm_name, _ in trial.arms_by_name.items():
-            records.append(
-                {
-                    "arm_name": arm_name,
-                    "metric_name": self.name,
-                    "trial_index": trial.index,
-                    "mean": mean,
-                    "sem": sem,
-                }
-            )
+        # Create a dataframe that includes the arm name, metric name, and trial index
+        df["arm_name"] = [arm_name for arm_name in trial.arms_by_name.keys()]
+        df["metric_name"] = self.name
+        df["trial_index"] = trial.index
 
-        return Ok(value=Data(df=pd.DataFrame.from_records(records)))
+        return Ok(value=MapData(df=df))
 
 
 class TiledMetric(BlopMetric):
     def __init__(self, tiled_client: Container, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._tiled_client = tiled_client
+        # Need to save these so we can clone the metric easily
+        self._args = args
+        self._kwargs = kwargs
 
     def unpack_trial(self, trial: BaseTrial) -> list[Any]:
         # TODO: Implement this
         # uid = trial.run_metadata["uid"]
         raise NotImplementedError("TiledMetric is not implemented yet.")
+
+    def clone(self) -> "TiledMetric":
+        return self.__class__(self._tiled_client, *self._args, **self._kwargs)
 
 
 class DatabrokerMetric(BlopMetric):
@@ -149,19 +140,13 @@ class DatabrokerMetric(BlopMetric):
 
         Returns
         -------
-        dict[str, Any]
-            Keyword arguments used to compute the mean and sem of the metric.
-
-        Examples
-        --------
-        >>> metric = DatabrokerMetric(broker)
-        >>> metric.unpack_trial(trial)
-        {'param1': pd.Series([...]), 'param2': pd.Series([...]), ...}
+        pd.DataFrame
+            The trial data.
         """
         uid = trial.run_metadata["uid"]
         # TODO: Why is [0] needed here?
         df: pd.DataFrame = self._broker[uid][0].table(fill=True)
-        return df.loc[:, self.param_names]
+        return df
 
     def clone(self) -> "DatabrokerMetric":
-        return DatabrokerMetric(*self._args, broker=self._broker, **self._kwargs)
+        return self.__class__(self._broker, *self._args, **self._kwargs)
