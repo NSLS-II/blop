@@ -1,92 +1,53 @@
-from ax import (
-    ComparisonOp,
-    Models,
-    Objective,
-    OptimizationConfig,
-    OutcomeConstraint,
-    ParameterType,
-    RangeParameter,
-    SearchSpace,
-)
+import pandas as pd
+from ax.service.ax_client import AxClient
+from ax.service.utils.instantiation import ObjectiveProperties
 
-from blop.integrations.ax import BlopExperiment, DatabrokerMetric
+from blop.integrations.ax import create_blop_experiment, create_bluesky_evaluator
 from blop.sim import Beamline
 from blop.utils import get_beam_stats
 
 
-def test_ax_experiment(RE, db):
+def test_ax_client_experiment(RE, db):
     beamline = Beamline(name="bl")
     beamline.det.noise.put(False)
 
-    parameters = [
-        RangeParameter(name="bl_kbv_dsv", lower=-5.0, upper=5.0, parameter_type=ParameterType.FLOAT),
-        RangeParameter(name="bl_kbv_usv", lower=-5.0, upper=5.0, parameter_type=ParameterType.FLOAT),
-        RangeParameter(name="bl_kbh_dsh", lower=-5.0, upper=5.0, parameter_type=ParameterType.FLOAT),
-        RangeParameter(name="bl_kbh_ush", lower=-5.0, upper=5.0, parameter_type=ParameterType.FLOAT),
-    ]
-    search_space = SearchSpace(parameters=parameters)
-
-    image_sum_metric = DatabrokerMetric(
-        broker=db,
-        name="bl_det_sum",
-        param_names=["bl_det_image"],
-        compute_fn=lambda df: (df["bl_det_image"].sum().mean(), 0.0),
-    )
-    optimization_config = OptimizationConfig(
-        objective=Objective(metric=image_sum_metric, minimize=False),
-        outcome_constraints=[
-            OutcomeConstraint(
-                metric=DatabrokerMetric(
-                    broker=db,
-                    param_names=["bl_det_image"],
-                    name="bl_det_wid_x",
-                    compute_fn=lambda df: (get_beam_stats(df["bl_det_image"].iloc[0], threshold=0.0)["wid_x"], 0.0),
-                ),
-                op=ComparisonOp.LEQ,
-                bound=10,
-                relative=False,
-            ),
-            OutcomeConstraint(
-                metric=DatabrokerMetric(
-                    broker=db,
-                    param_names=["bl_det_image"],
-                    name="bl_det_wid_y",
-                    compute_fn=lambda df: (get_beam_stats(df["bl_det_image"].iloc[0], threshold=0.0)["wid_y"], 0.0),
-                ),
-                op=ComparisonOp.LEQ,
-                bound=10,
-                relative=False,
-            ),
+    ax_client = AxClient()
+    create_blop_experiment(
+        ax_client,
+        parameters=[
+            {
+                "movable": beamline.kbv_dsv,
+                "type": "range",
+                "bounds": [-5.0, 5.0],
+            },
+            {
+                "movable": beamline.kbv_usv,
+                "type": "range",
+                "bounds": [-5.0, 5.0],
+            },
+            {
+                "movable": beamline.kbh_dsh,
+                "type": "range",
+                "bounds": [-5.0, 5.0],
+            },
+            {
+                "movable": beamline.kbh_ush,
+                "type": "range",
+                "bounds": [-5.0, 5.0],
+            },
         ],
+        objectives={"beam_intensity": ObjectiveProperties(minimize=False), "beam_area": ObjectiveProperties(minimize=True)},
     )
 
-    readables = [beamline.det]
-    movables = [beamline.kbv_dsv, beamline.kbv_usv, beamline.kbh_dsh, beamline.kbh_ush]
+    def evaluate(results_df: pd.DataFrame) -> dict[str, tuple[float, float]]:
+        stats = get_beam_stats(results_df["bl_det_image"].iloc[0])
+        return {"beam_intensity": (stats["sum"], None), "beam_area": (stats["area"], None)}
 
-    experiment = BlopExperiment(
-        RE=RE,
-        readables=readables,
-        movables=movables,
-        name="test_ax_experiment",
-        search_space=search_space,
-        optimization_config=optimization_config,
+    evaluator = create_bluesky_evaluator(
+        RE, db, [beamline.det], [beamline.kbv_dsv, beamline.kbv_usv, beamline.kbh_dsh, beamline.kbh_ush], evaluate
     )
+    for _ in range(25):
+        parameterization, trial_index = ax_client.get_next_trial()
+        ax_client.complete_trial(trial_index=trial_index, raw_data=evaluator(parameterization))
 
-    sobol = Models.SOBOL(experiment.search_space)
-    for _ in range(5):
-        trial = experiment.new_trial(generator_run=sobol.gen(1))
-        # TODO: Try RE(trial.run())
-        trial.run()
-        trial.mark_completed()
-
-    best_arm = None
-    for _ in range(5):
-        gpei = Models.BOTORCH_MODULAR(experiment=experiment, data=experiment.fetch_data())
-        generator_run = gpei.gen(1)
-        best_arm, _ = generator_run.best_arm_predictions
-        trial = experiment.new_trial(generator_run=generator_run)
-        trial.run()
-        trial.mark_completed()
-
-    experiment.fetch_data()
-    assert best_arm is not None
+    print(ax_client.generation_strategy.trials_as_df)

@@ -1,152 +1,86 @@
-from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
-from typing import Any, cast
+import copy
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
-from ax import Arm, Experiment, Runner, Trial
-from ax.core.base_trial import BaseTrial
-from ax.utils.common.result import Ok, Result
-from ax.core.map_metric import MapMetric
-from ax.core.map_data import MapData
-from bluesky import RunEngine
+from ax.service.ax_client import AxClient
 from bluesky.plans import list_scan
-from bluesky.protocols import HasName, Movable, NamedMovable, Readable
-from databroker import Broker
-from tiled.client.container import Container
-from numpy.typing import NDArray
+from bluesky.protocols import NamedMovable, Readable
 
 
-class BlopExperiment(Experiment):
-    def __init__(self, RE: RunEngine, readables: Sequence[Readable], movables: Sequence[NamedMovable], *args, **kwargs):
-        super().__init__(*args, runner=BlopRunner(RE, readables, movables), **kwargs)
-        self._validate_search_space(movables)
-        self._validate_optimization_config(readables, movables)
+def create_blop_experiment(ax_client: AxClient, parameters: list[dict[str, Any]], *args, **kwargs) -> None:
+    # Check that a movable key is present
+    if not all("movable" in p for p in parameters):
+        raise ValueError("All parameters must have a 'movable' key.")
 
-    def _validate_search_space(self, movables: Sequence[NamedMovable]):
-        """Validates that the parameters are compatible with the `Movable`s."""
-        parameter_names = set(self.search_space.parameters.keys())
-        for m, p in zip(movables, self.search_space.parameters.values(), strict=False):
-            if m.name != p.name:
-                if m.name not in parameter_names:
-                    raise ValueError(f"The movable name {m.name} is not a parameter in the search space.")
-                raise ValueError(
-                    f"The moveable name {m.name} is in the search space, but the order is not correct. "
-                    "The order of movables must match the order of the parameters in the search space "
-                    "so we can unpack the arm correctly."
-                )
+    # Check that a name attribute is present
+    if not all(hasattr(p["movable"], "name") for p in parameters):
+        raise ValueError("All 'movable' values must have a 'name' attribute.")
 
-    def _validate_optimization_config(self, readables: Sequence[Readable], movables: Sequence[NamedMovable]):
-        """Validates that the objectives are compatible with the `Readable`s."""
-        # Check that each metric is a BlopMetric
-        metrics = self.optimization_config.objective.metrics
-        if any(not isinstance(m, BlopMetric) for m in metrics):
-            non_blop_metrics = "\n".join([f"{m.name}: {type(m)}" for m in metrics if not isinstance(m, BlopMetric)])
-            raise ValueError(f"All objectives must inherit from `BlopMetric`, but found:\n{non_blop_metrics}")
+    ax_parameters = copy.copy(parameters)
+    for p in ax_parameters:
+        p["name"] = p["movable"].name
+        del p["movable"]
 
-        # Check that each metric's parameters reference a `Readable` or `Movable`
-        metric_param_names = {p for m in cast(Sequence[BlopMetric], metrics) for p in m.param_names}
-        unmatched_parameters = {
-            p
-            for p in metric_param_names
-            if not any(r.name in p for r in readables) and not any(m.name in p for m in movables)
-        }
-        if unmatched_parameters:
-            raise ValueError(
-                f"The following parameters are not referenced in any `Readable` or `Movable`: {unmatched_parameters}"
-            )
+    ax_client.create_experiment(*args, parameters=ax_parameters, **kwargs)
 
 
-class BlopRunner(Runner):
-    def __init__(self, RE: RunEngine, readables: Sequence[Readable], movables: Sequence[Movable], *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._RE = RE
-        self._readables = readables
-        self._movables = movables
+def create_bluesky_evaluator(
+    RE,
+    db,
+    readables: list[Readable],
+    movables: list[NamedMovable],
+    evaluation_function: Callable[[pd.DataFrame], dict[str, tuple[float, float]]],
+    plan: Callable | None = None,
+) -> Callable:
+    """
+    Create an evaluation function that runs a Bluesky plan and evaluates objectives.
 
-    def _unpack_arm(self, arm: Arm) -> list[Movable | list[Any]]:
-        """Unpacks the arm's parameters into the format of the `list_scan` plan."""
+    Parameters:
+    -----------
+    RE : RunEngine
+        The Bluesky RunEngine
+    db : databroker
+        The databroker/tiled instance
+    movables : List
+        List of Bluesky motors/devices to optimize
+    detectors : List
+        List of Bluesky detectors to read
+    evaluation_function : Callable[[pd.DataFrame], Dict[str, Tuple[float, float]]]
+        Function that takes a dataframe from databroker and returns
+        a dictionary mapping objective names to (mean, sem) tuples
+    plan : Callable, optional
+        Custom Bluesky plan to use. If None, uses list_scan
+
+    Returns:
+    --------
+    Callable
+        Function that takes an Ax parameterization and returns objective values
+    """
+    plan_function = plan or list_scan
+
+    def evaluate(parameterization: dict[str, float] | dict[str, list[float]]) -> dict[str, tuple[float, float]]:
+        # Prepare the parameters for the plan
         unpacked = []
-        for m, p in zip(self._movables, arm.parameters.values(), strict=True):
-            unpacked.append(m)
-            unpacked.append([p])
-        return unpacked
+        for m in movables:
+            if m.name in parameterization:
+                unpacked.append(m)
+                if isinstance(parameterization[m.name], float):
+                    unpacked.append([parameterization[m.name]])
+                elif isinstance(parameterization[m.name], list):
+                    unpacked.append(parameterization[m.name])
+                else:
+                    raise ValueError(f"Parameter {m.name} must be a float or list of floats.")
+            else:
+                raise ValueError(f"Parameter {m.name} not found in parameterization. Parameterization: {parameterization}")
 
-    def run(self, trial: Trial, **kwargs):
-        # TODO: Can probably do a yield from here instead and move the RunEngine call
-        # to the outermost part of execution.
-        # RE(trial.run()) or something like that.
-        uid = self._RE(list_scan(self._readables, *self._unpack_arm(trial.arm)))
-        return {"uid": uid}
+        # Run the plan
+        uid = RE(plan_function(readables, *unpacked))
 
-    def clone(self) -> "BlopRunner":
-        """Create a copy of this Runner."""
-        return BlopRunner(RE=self._RE, readables=self._readables, movables=self._movables)
+        # Fetch the data
+        results_df = db[uid][0].table(fill=True)
 
+        # Evaluate the data
+        return evaluation_function(results_df)
 
-class BlopMetric(MapMetric, ABC):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    @abstractmethod
-    def unpack_trial(self, trial: BaseTrial) -> pd.DataFrame:
-        """Unpacks the trial data into a DataFrame where each row is the result of a single evaluation of an arm."""
-        ...
-
-    def fetch_trial_data(self, trial: BaseTrial, **kwargs) -> Result[MapData, Exception]:
-        # Unpack the trial data into a dataframe where each row is
-        # the result of a single evaluation of an arm.
-        df = self.unpack_trial(trial)
-
-        # Create a dataframe that includes the arm name, metric name, and trial index
-        df["arm_name"] = [arm_name for arm_name in trial.arms_by_name.keys()]
-        df["metric_name"] = self.name
-        df["trial_index"] = trial.index
-
-        return Ok(value=MapData(df=df))
-
-
-class TiledMetric(BlopMetric):
-    def __init__(self, tiled_client: Container, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._tiled_client = tiled_client
-        # Need to save these so we can clone the metric easily
-        self._args = args
-        self._kwargs = kwargs
-
-    def unpack_trial(self, trial: BaseTrial) -> list[Any]:
-        # TODO: Implement this
-        # uid = trial.run_metadata["uid"]
-        raise NotImplementedError("TiledMetric is not implemented yet.")
-
-    def clone(self) -> "TiledMetric":
-        return self.__class__(self._tiled_client, *self._args, **self._kwargs)
-
-
-class DatabrokerMetric(BlopMetric):
-    def __init__(self, broker: Broker, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._broker = broker
-        # Need to save these so we can clone the metric easily
-        self._args = args
-        self._kwargs = kwargs
-
-    def unpack_trial(self, trial: BaseTrial) -> pd.DataFrame:
-        """Unpacks the trial using the databroker client.
-
-        Parameters
-        ----------
-        trial: BaseTrial
-            The trial to unpack.
-
-        Returns
-        -------
-        pd.DataFrame
-            The trial data.
-        """
-        uid = trial.run_metadata["uid"]
-        # TODO: Why is [0] needed here?
-        df: pd.DataFrame = self._broker[uid][0].table(fill=True)
-        return df
-
-    def clone(self) -> "DatabrokerMetric":
-        return self.__class__(self._broker, *self._args, **self._kwargs)
+    return evaluate
