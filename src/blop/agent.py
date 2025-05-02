@@ -936,12 +936,10 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-
             if("image_key" in self.digestion_kwargs):
-                run = self.db[uid]['primary','internal','events'].read()
-                run["bl_det_image"] = list(self.db[uid]['primary','external','bl_det_image'].read().astype(float))
-                print(run["bl_det_image"])
-                products = self.digestion(run, **self.digestion_kwargs)
+                tiled_data = self.db[uid]['primary','internal','events'].read()
+                tiled_data["bl_det_image"] = list(self.db[uid]['primary','external','bl_det_image'].read().astype(float))
+                products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
                 products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
