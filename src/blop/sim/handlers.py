@@ -2,6 +2,7 @@ import h5py  # type: ignore[import-untyped]
 import numpy as np
 from area_detector_handlers.handlers import HandlerBase  # type: ignore[import-untyped]
 from ophyd import Signal  # type: ignore[import-untyped]
+import numpy as np
 
 
 class HDF5Handler(HandlerBase):

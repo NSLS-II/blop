@@ -145,7 +145,7 @@ class Detector(Device):
     def describe(self):
         res = super().describe()
         res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": "<i8"}
+            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str} #<i8
         )
         return res
 
