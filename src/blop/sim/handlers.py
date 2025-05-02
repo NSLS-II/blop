@@ -1,7 +1,8 @@
-simport h5py  # type: ignore[import-untyped]
-import numpy as np
+
+import h5py  # type: ignore[import-untyped]
 from area_detector_handlers.handlers import HandlerBase  # type: ignore[import-untyped]
 from ophyd import Signal  # type: ignore[import-untyped]
+import numpy as np
 
 
 class HDF5Handler(HandlerBase):
@@ -25,8 +26,10 @@ class ExternalFileReference(Signal):
         resource_document_data = super().describe()
         resource_document_data[self.name].update(
             {
+                "shape": (300, 400),
                 "external": "STREAM:",
                 "dtype": "array",
+                "dtype_numpy" : np.dtype(np.float64).str
             }
         )
         return resource_document_data
