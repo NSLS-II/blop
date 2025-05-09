@@ -13,10 +13,13 @@ from tiled.client import from_uri
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
+from blop.sim import HDF5Handler
+from bluesky.callbacks.tiled_writer import TiledWriter
+from tiled.client import from_uri
 
-# converted from Broker
+
+#converted from Broker
 SERVER_HOST_LOCATION = "http://localhost:8000"
-
 
 @pytest.fixture(scope="function")
 def tiled_client():
