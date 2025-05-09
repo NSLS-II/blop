@@ -12,10 +12,6 @@ from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
 from ophyd.utils import make_dir_tree
 
-
-from bluesky.callbacks.tiled_writer import TiledWriter
-
-
 from blop.sim import HDF5Handler
 
 DEFAULT_DB_TYPE = "local"

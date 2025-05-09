@@ -1,27 +1,29 @@
 import asyncio
 
-import databroker
+# import databroker
 import matplotlib as mpl
 import numpy as np
 from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
-from databroker import Broker
+# from databroker import Broker
 from nicegui import ui
+from bluesky.callbacks.tiled_writer import TiledWriter
+from tiled.client import from_uri
+
 
 from blop import DOF, Agent, Objective
 from blop.utils import functions
 
 # MongoDB backend:
-db = Broker.named("temp")  # mongodb backend
-try:
-    databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-except Exception:
-    pass
+SERVER_HOST_LOCATION = "http://localhost:8000"
+
+tiled_client = from_uri(SERVER_HOST_LOCATION, api_key = "secret")  
+tiled_writer = TiledWriter(tiled_client)    # mongodb backend
 
 loop = asyncio.new_event_loop()
 loop.set_debug(True)
 RE = RunEngine({}, loop=loop)
-RE.subscribe(db.insert)
+RE.subscribe(tiled_writer)
 
 bec = best_effort.BestEffortCallback()
 RE.subscribe(bec)
@@ -43,7 +45,7 @@ agent = Agent(
     dofs=dofs,
     objectives=objectives,
     digestion=functions.himmelblau_digestion,
-    db=db,
+    db=tiled_writer,
     verbose=True,
     tolerate_acquisition_errors=False,
 )

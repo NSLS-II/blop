@@ -1,40 +1,39 @@
 # content of conftest.py
 import asyncio
 
-import databroker
 import numpy as np
 import pytest
 from bluesky.callbacks import best_effort
 from bluesky.run_engine import RunEngine
-from databroker import Broker
+# from databroker import Broker
 
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
 from blop.sim import HDF5Handler
+from bluesky.callbacks.tiled_writer import TiledWriter
+from tiled.client import from_uri
+
+
+#converted from Broker
+SERVER_HOST_LOCATION = "http://localhost:8000"
+
+@pytest.fixture(scope="function")
+def tiled_client():
+    """Return a TiledWriter instance"""
+    # Tiled backend
+    tiled_client = from_uri(SERVER_HOST_LOCATION, api_key = "secret")    
+    
+    return tiled_client
 
 
 @pytest.fixture(scope="function")
-def db():
-    """Return a data broker"""
-    # MongoDB backend:
-    db = Broker.named("temp")  # mongodb backend
-    try:
-        databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-    except Exception:
-        pass
-
-    db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-
-    return db
-
-
-@pytest.fixture(scope="function")
-def RE(db):
+def RE(tiled_client): #changed from db
     loop = asyncio.new_event_loop()
     loop.set_debug(True)
     RE = RunEngine({}, loop=loop)
-    RE.subscribe(db.insert)
+    tiled_writer = TiledWriter(tiled_client)
+    RE.subscribe(tiled_writer) #changed
 
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)
@@ -66,7 +65,6 @@ def get_agent(param):
     """
     Generate a bunch of different agents.
     """
-
     if param == "1d_1f":
         return Agent(
             dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),

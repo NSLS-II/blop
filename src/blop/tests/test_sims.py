@@ -5,7 +5,7 @@ from blop.digestion import beam_stats_digestion
 from blop.sim import Beamline
 
 
-def test_kb_simulation(RE, db):
+def test_kb_simulation(RE, tiled_client):
     beamline = Beamline(name="bl")
     beamline.det.noise.put(False)
 
@@ -29,7 +29,7 @@ def test_kb_simulation(RE, db):
         digestion=beam_stats_digestion,
         digestion_kwargs={"image_key": "bl_det_image"},
         verbose=True,
-        db=db,
+        db=tiled_client,
         tolerate_acquisition_errors=False,
         enforce_all_objectives_valid=True,
         train_every=3,

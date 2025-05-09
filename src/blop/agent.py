@@ -668,7 +668,7 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: TiledWriter = None,
+        tiled: TiledWriter = None,
         detectors: Sequence[Signal] = None,
         acquistion_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
@@ -699,7 +699,7 @@ class Agent(BaseAgent):
             A function to digest the output of the acquisition, taking a DataFrame as an argument.
         digestion_kwargs :
             Some kwargs for the digestion function.
-        db : optional                                            
+        tiled : optional                                            
             A TiledWriter instance.
         verbose : bool
             To be verbose or not.
@@ -745,7 +745,7 @@ class Agent(BaseAgent):
 
         self.detectors = list(np.atleast_1d(detectors or []))
 
-        self.db = db
+        self.tiled = tiled
 
         self.train_every = train_every
         self.trigger_delay = trigger_delay
@@ -919,8 +919,7 @@ class Agent(BaseAgent):
         acquisition_inputs :
             A 2D numpy array comprising inputs for the active and non-read-only DOFs to sample.
         """
-
-        if self.db is None:
+        if self.tiled is None:
             raise ValueError("Cannot run acquistion without TiledWriter instance!")
 
         acquisition_dofs = self.dofs(active=True, read_only=False)
@@ -937,11 +936,11 @@ class Agent(BaseAgent):
                 delay=self.trigger_delay,
             )
             if("image_key" in self.digestion_kwargs):
-                tiled_data = self.db[uid]['primary','internal','events'].read()
-                tiled_data["bl_det_image"] = list(self.db[uid]['primary','external','bl_det_image'].read().astype(float))
+                tiled_data = self.tiled[uid]['primary','internal','events'].read()
+                tiled_data["bl_det_image"] = list(self.tiled[uid]['primary','external','bl_det_image'].read().astype(float))
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
-                products = self.digestion(self.db[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
+                products = self.digestion(self.tiled[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt

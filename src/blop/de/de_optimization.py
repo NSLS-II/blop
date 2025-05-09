@@ -307,7 +307,7 @@ def select(
 def optimization_plan(
     fly_plan,
     bounds,
-    db,
+    tiled,
     motors=None,
     detector=None,
     max_velocity=0.2,
@@ -346,8 +346,8 @@ def optimization_plan(
     bounds : dict of dicts
         Keys are motor names and values are dicts of low and high bounds. See format below.
         {'motor_name': {'low': lower_bound, 'high': upper_bound}}
-    db : databroker.Broker
-        databroker V1 instance
+    tiled : tiledWriter.Container
+        tiledWriter instance
     motors : dict
         Keys are motor names and values are motor objects
     detector : detector object or None
