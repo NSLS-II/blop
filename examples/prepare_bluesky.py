@@ -17,9 +17,9 @@ bec.disable_plots()
 
 RE.subscribe(bec)
 
-# converted from Broker
 SERVER_HOST_LOCATION = "http://localhost:8000"
 tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
+
 tiled_writer = TiledWriter(tiled_client)
 
 RE.subscribe(tiled_writer)

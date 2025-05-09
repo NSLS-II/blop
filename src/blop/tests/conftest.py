@@ -13,10 +13,12 @@ from tiled.client import from_uri
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
+from blop.sim import HDF5Handler
+from bluesky.callbacks.tiled_writer import TiledWriter
+from tiled.client import from_uri
 
-# converted from Broker
+
 SERVER_HOST_LOCATION = "http://localhost:8000"
-
 
 @pytest.fixture(scope="function")
 def tiled_client():
@@ -32,12 +34,13 @@ logger.setLevel(logging.DEBUG)
 
 
 @pytest.fixture(scope="function")
-def RE(tiled_client):  # changed from db
+def RE(tiled_client):  
+
     loop = asyncio.new_event_loop()
     loop.set_debug(True)
     RE = RunEngine({}, loop=loop)
     tiled_writer = TiledWriter(tiled_client)
-    RE.subscribe(tiled_writer)  # changed
+    RE.subscribe(tiled_writer) 
 
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)
