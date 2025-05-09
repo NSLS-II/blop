@@ -54,60 +54,6 @@ def _validate_continuous_domains(trust_domain: tuple[float, float] | None, domai
 
 
 class Objective:
-    """An objective to be used by an agent.
-
-    Parameters
-    ----------
-    name: str
-        The name of the objective to optimize.. This is used as a key to index observed data.
-    description: str
-        A longer description for the objective.
-    type: Literal["continuous", "binary", "ordinal", "categorical"]
-        Describes the type of the outcome to be optimized. An outcome can be
-        - Continuous, meaning any real number.
-        - Binary, meaning that it can take one of two values (e.g. [on, off])
-        - Ordinal, meaning ordered categories (e.g. [low, medium, high])
-        - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
-        Default: "continuous"
-    target: str
-        One of "min" or "max". The agent will respectively minimize or maximize the outcome. Each Objective
-        must have either a target or a constraint.
-        Default: "max"
-    constraint: Optional[Union[tuple[float, float], set[int], set[str]]]
-        A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An Objective will
-        only be 'satisfied' if it lies within the constraint. Each Objective must have either a target or a constraint.
-        Default: None
-    transform: Optional[Literal["log", "logit", "arctanh"]]
-        One of "log", "logit", or "arctanh", to transform the outcomes and make them more Gaussian.
-        Default: None
-    weight: float
-        The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
-        Default: 1.
-    active: bool
-        If True, the agent will care about this Objective during optimization.
-        Default: True
-    trust_domain: Union[tuple[float, float], set[int], set[str]]
-        A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An outcome outside
-        the trust_domain will not be trusted and will be ignored as 'invalid'. By default, all values are trusted.
-        Default: None
-    min_noise: float
-        The minimum relative noise level of the fitted model.
-        Default: 1e-6
-    max_noise: float
-        The maximum relative noise level of the fitted model.
-        Default: 1e0
-    units: str
-        A label representing the units of the outcome (e.g., millimeters or counts)
-        Default: None
-    latent_groups: list of tuples of strs, optional
-        An agent will fit latent dimensions to all DOFs with the same latent_group. All other DOFs will be modeled
-        independently.
-        Default: None
-    min_points_to_train: int
-        How many new points to wait for before retraining model hyperparameters.
-        Default: 4
-    """
-
     def __init__(
         self,
         name: str,
@@ -125,6 +71,60 @@ class Objective:
         latent_groups: dict[str, Any] | None = None,
         min_points_to_train: int = 4,
     ) -> None:
+        """An objective to be used by an agent.
+
+        Parameters
+        ----------
+        name: str
+            The name of the objective to optimize.. This is used as a key to index observed data.
+        description: str
+            A longer description for the objective.
+        type: Literal["continuous", "binary", "ordinal", "categorical"]
+            Describes the type of the outcome to be optimized. An outcome can be
+            - Continuous, meaning any real number.
+            - Binary, meaning that it can take one of two values (e.g. [on, off])
+            - Ordinal, meaning ordered categories (e.g. [low, medium, high])
+            - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
+            Default: "continuous"
+        target: str
+            One of "min" or "max". The agent will respectively minimize or maximize the outcome. Each Objective
+            must have either a target or a constraint.
+            Default: "max"
+        constraint: Optional[Union[tuple[float, float], set[int], set[str]]]
+            A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An Objective will
+            only be 'satisfied' if it lies within the constraint. Each Objective must have either a target or a constraint.
+            Default: None
+        transform: Optional[Literal["log", "logit", "arctanh"]]
+            One of "log", "logit", or "arctanh", to transform the outcomes and make them more Gaussian.
+            Default: None
+        weight: float
+            The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
+            Default: 1.
+        active: bool
+            If True, the agent will care about this Objective during optimization.
+            Default: True
+        trust_domain: Union[tuple[float, float], set[int], set[str]]
+            A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An outcome outside
+            the trust_domain will not be trusted and will be ignored as 'invalid'. By default, all values are trusted.
+            Default: None
+        min_noise: float
+            The minimum relative noise level of the fitted model.
+            Default: 1e-6
+        max_noise: float
+            The maximum relative noise level of the fitted model.
+            Default: 1e0
+        units: str
+            A label representing the units of the outcome (e.g., millimeters or counts)
+            Default: None
+        latent_groups: list of tuples of strs, optional
+            An agent will fit latent dimensions to all DOFs with the same latent_group. All other DOFs will be modeled
+            independently.
+            Default: None
+        min_points_to_train: int
+            How many new points to wait for before retraining model hyperparameters.
+            Default: 4
+        """
+
         self.name = name
         self.units = units
         self.description = description
@@ -217,7 +217,10 @@ class Objective:
         else:
             return self._domain
 
-    def constrain(self, y: torch.Tensor) -> torch.Tensor:
+    def evaluate_constraint(self, y: torch.Tensor) -> torch.Tensor:
+        """
+        Evaluate whether each value in y satisfies the constraint of the Objective.
+        """
         if self.constraint is None:
             raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
         elif isinstance(self.constraint, tuple):
@@ -230,6 +233,9 @@ class Objective:
         return not getattr(self, "validity_conjugate_model", None)
 
     def log_total_constraint(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        What is the log probability that a sample at x will be valid and satisfy the constraint of the Objective?
+        """
         log_p = torch.zeros(x.shape[:-1])
         if self.constraint:
             log_p += self.constraint_probability(x).log()
@@ -304,6 +310,9 @@ class Objective:
         return int((~self.model.train_targets.isnan()).sum()) if self.model else 0
 
     def constraint_probability(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        How much of the posterior on the outcome at x satisfies the constraint?
+        """
         if not self.constraint:
             raise RuntimeError("Cannot call 'constrain' with a non-constraint objective.")
         if not self.model:

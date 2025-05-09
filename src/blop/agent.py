@@ -80,47 +80,6 @@ class BaseAgent:
         sample_center_on_init: bool = False,
         train_every: int = 4,
     ):
-        """_summary_
-
-        Parameters
-        ----------
-        dofs : Sequence[DOF]
-            The degrees of freedom that the agent can control, which determine the output of the model.
-        objectives : Sequence[Objective]
-            The objectives which the agent will try to optimize.
-        acquisition_plan : Callable, optional
-            A plan that samples the beamline for some given inputs, by default default_acquisition_plan.
-            Called directly in Agent, used only by ``__name__`` in BlueskyAdaptiveAgent.
-            Default: ``default_acquisition_plan``
-        digestion : Callable, optional
-            A function to digest the output of the acquisition, taking a DataFrame as an argument,
-            by default default_digestion_function
-            Default: ``default_digestion_function``
-        digestion_kwargs : dict, optional
-            Some kwargs for the digestion function, by default {}
-            Default: False
-        verbose : bool, optional
-            To be verbose or not, by default False
-            Default: False
-        enforce_all_objectives_valid : bool, optional
-            Whether the agent should exclude from fitting points with one or more invalid objectives.
-            Default: True
-        exclude_pruned : bool, optional
-            Whether to exclude from fitting points that have been pruned after running agent.prune().
-            Default: True
-        model_inactive_objectives : bool, optional
-            Whether the agent should update models for outcomes that affect inactive objectives.
-            Default: False
-        tolerate_acquisition_errors : bool, optional
-            Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
-            Default: False
-        sample_center_on_init : bool, optional
-            Whether to sample the center of the DOF limits when the agent has no data yet.
-            Default: False
-        train_every : int, optional
-            How many samples to take before retraining model hyperparameters.
-            Default: 4
-        """
         self.dofs = DOFList(list(dofs))
         self.objectives = ObjectiveList(list(objectives))
 
@@ -261,7 +220,9 @@ class BaseAgent:
         constraint_objectives = self.objectives(constraint=True)
         if len(constraint_objectives):
             raw_targets_dict = self.raw_targets_dict(constraint=True)
-            return torch.stack([obj.constrain(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1)
+            return torch.stack(
+                [obj.evaluate_constraint(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1
+            )
         else:
             return torch.ones(size=(len(self._table), 0), dtype=torch.bool)
 
@@ -643,47 +604,43 @@ class Agent(BaseAgent):
 
         Parameters
         ----------
-        dofs : iterable of DOF objects
+        dofs : Sequence[DOF]
             The degrees of freedom that the agent can control, which determine the output of the model.
-        objectives : iterable of Objective objects
+        objectives : Sequence[Objective]
             The objectives which the agent will try to optimize.
-        detectors : iterable of ophyd objects
-            Detectors to trigger during acquisition.
-        acquisition_plan : optional
-            A plan that samples the beamline for some given inputs.
-        digestion :
-            A function to digest the output of the acquisition, taking a DataFrame as an argument.
-        digestion_kwargs :
-            Some kwargs for the digestion function.
-        db : optional
-            A databroker instance.
-        verbose : bool
-            To be verbose or not.
-        tolerate_acquisition_errors : bool
+        acquisition_plan : Callable, optional
+            A plan that samples the beamline for some given inputs, by default default_acquisition_plan.
+            Called directly in Agent, used only by ``__name__`` in BlueskyAdaptiveAgent.
+            Default: ``default_acquisition_plan``
+        digestion : Callable, optional
+            A function to digest the output of the acquisition, taking a DataFrame as an argument,
+            by default default_digestion_function
+            Default: ``default_digestion_function``
+        digestion_kwargs : dict, optional
+            Some kwargs for the digestion function, by default {}
+            Default: False
+        verbose : bool, optional
+            To be verbose or not, by default False
+            Default: False
+        enforce_all_objectives_valid : bool, optional
+            Whether the agent should exclude from fitting points with one or more invalid objectives.
+            Default: True
+        exclude_pruned : bool, optional
+            Whether to exclude from fitting points that have been pruned after running agent.prune().
+            Default: True
+        model_inactive_objectives : bool, optional
+            Whether the agent should update models for outcomes that affect inactive objectives.
+            Default: False
+        tolerate_acquisition_errors : bool, optional
             Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
-        sample_center_on_init : bool
+            Default: False
+        sample_center_on_init : bool, optional
             Whether to sample the center of the DOF limits when the agent has no data yet.
-        trigger_delay : float
-            How many seconds to wait between moving DOFs and triggering detectors.
+            Default: False
+        train_every : int, optional
+            How many samples to take before retraining model hyperparameters.
+            Default: 4
         """
-
-        # DOFs are parametrized by whether they are active and whether they are read-only
-        #
-        # below are the behaviors of DOFs of each kind and mode:
-        #
-        # 'read': the agent will read the input on every acquisition (all dofs are always read)
-        # 'move': the agent will try to set and optimize over these (there must be at least one of these)
-        # 'input' means that the agent will use the value to make its posterior
-        #
-        #
-        #               not read-only        read-only
-        #          +---------------------+---------------+
-        #   active |  read, input, move  |  read, input  |
-        #          +---------------------+---------------+
-        # inactive |  read               |  read         |
-        #          +---------------------+---------------+
-        #
-        #
 
         super().__init__(
             dofs=dofs,
