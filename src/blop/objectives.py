@@ -9,9 +9,6 @@ from botorch.models.model import Model  # type: ignore[import-untyped]
 from .utils.functions import approximate_erf
 from .utils.sets import element_of, is_subset, validate_set
 
-DEFAULT_MIN_NOISE_LEVEL = 1e-6
-DEFAULT_MAX_NOISE_LEVEL = 1e0
-
 OBJ_FIELD_TYPES: dict[str, type] = {
     "name": str,
     "description": object,
@@ -62,29 +59,53 @@ class Objective:
     Parameters
     ----------
     name: str
-        The name of the objective. This is used as a key to index observed data.
+        The name of the objective to optimize.. This is used as a key to index observed data.
     description: str
         A longer description for the objective.
-    target: str or float or tuple
-        One of "min", "max" , a float, or a tuple of floats. The agent will respectively minimize or maximize the
-        objective, target the supplied number, or target the interval of the tuple of numbers.
-    log: bool
-        Whether to apply a log to the objective, i.e. to make the process more stationary.
+    type: Literal["continuous", "binary", "ordinal", "categorical"]
+        Describes the type of the outcome to be optimized. An outcome can be
+        - Continuous, meaning any real number.
+        - Binary, meaning that it can take one of two values (e.g. [on, off])
+        - Ordinal, meaning ordered categories (e.g. [low, medium, high])
+        - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
+        Default: "continuous"
+    target: str
+        One of "min" or "max". The agent will respectively minimize or maximize the outcome. Each Objective
+        must have either a target or a constraint.
+        Default: "max"
+    constraint: Optional[Union[tuple[float, float], set[int], set[str]]]
+        A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An Objective will
+        only be 'satisfied' if it lies within the constraint. Each Objective must have either a target or a constraint.
+        Default: None
+    transform: Optional[Literal["log", "logit", "arctanh"]]
+        One of "log", "logit", or "arctanh", to transform the outcomes and make them more Gaussian.
+        Default: None
     weight: float
-        The relative importance of this objective, to be used when scalarizing in multi-objective optimization.
+        The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
+        Default: 1.
     active: bool
-        If True, the agent will care about this objective during optimization.
-    limits: tuple of floats
-        The range of reliable measurements for the objective. Outside of this, data points will be ignored.
+        If True, the agent will care about this Objective during optimization.
+        Default: True
+    trust_domain: Union[tuple[float, float], set[int], set[str]]
+        A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An outcome outside
+        the trust_domain will not be trusted and will be ignored as 'invalid'. By default, all values are trusted.
+        Default: None
     min_noise: float
-        The minimum noise level of the fitted model.
+        The minimum relative noise level of the fitted model.
+        Default: 1e-6
     max_noise: float
-        The maximum noise level of the fitted model.
+        The maximum relative noise level of the fitted model.
+        Default: 1e0
     units: str
-        A label representing the units of the objective.
+        A label representing the units of the outcome (e.g., millimeters or counts)
+        Default: None
     latent_groups: list of tuples of strs, optional
-        An agent will fit latent dimensions to all DOFs with the same latent_group. All other
-        DOFs will be modeled independently.
+        An agent will fit latent dimensions to all DOFs with the same latent_group. All other DOFs will be modeled
+        independently.
+        Default: None
+    min_points_to_train: int
+        How many new points to wait for before retraining model hyperparameters.
+        Default: 4
     """
 
     def __init__(
@@ -97,9 +118,9 @@ class Objective:
         transform: Literal["log", "logit", "arctanh"] | None = None,
         weight: float = 1.0,
         active: bool = True,
-        trust_domain: tuple[float, float] | None = None,
-        min_noise: float = DEFAULT_MIN_NOISE_LEVEL,
-        max_noise: float = DEFAULT_MAX_NOISE_LEVEL,
+        trust_domain: tuple[float, float] | set[Any] | None = None,
+        min_noise: float = 1e-6,
+        max_noise: float = 1e0,
         units: str | None = None,
         latent_groups: dict[str, Any] | None = None,
         min_points_to_train: int = 4,
@@ -251,6 +272,9 @@ class Objective:
 
     @property
     def summary(self) -> pd.Series:
+        """
+        Return a Series summarizing the state of the Objectives.
+        """
         series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype=object)
         for attr in series.index:
             value = getattr(self, attr)
@@ -301,16 +325,6 @@ class Objective:
             return self.validity_conjugate_model.probabilities(x)[..., -1]
 
         return torch.ones(x.shape[:-1])
-
-    def pseudofitness(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        When the optimization problem consists only of constraints, the
-        """
-        # TODO: In what cases would the target be a tuple?
-        if isinstance(self.target, tuple):
-            return self.constraint_probability(x).log().clamp(min=-16)
-
-        raise NotImplementedError("Pseudofitness is not implemented for this objective.")
 
     @property
     def model(self) -> Model | None:
@@ -378,15 +392,9 @@ class ObjectiveList(Sequence[Objective]):
 
     @property
     def summary(self) -> pd.DataFrame:
-        # table = pd.DataFrame(columns=list(OBJ_FIELD_TYPES.keys()), index=np.arange(len(self)))
-
-        # for index, obj in enumerate(self.objectives):
-        #     for attr, value in obj.summary.items():
-        #         table.at[index, attr] = value
-
-        # for attr, dtype in OBJ_FIELD_TYPES.items():
-        #     table[attr] = table[attr].astype(dtype)
-
+        """
+        Return a DataFrame summarizing the state of the Objectives.
+        """
         return pd.concat([objective.summary for objective in self.objectives], axis=1)
 
     def __repr__(self) -> str:

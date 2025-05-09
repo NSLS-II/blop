@@ -78,7 +78,7 @@ class BaseAgent:
         model_inactive_objectives: bool = False,
         tolerate_acquisition_errors: bool = False,
         sample_center_on_init: bool = False,
-        train_every: int = 1,
+        train_every: int = 4,
     ):
         """_summary_
 
@@ -90,26 +90,36 @@ class BaseAgent:
             The objectives which the agent will try to optimize.
         acquisition_plan : Callable, optional
             A plan that samples the beamline for some given inputs, by default default_acquisition_plan.
-            Called directly in Agent, used only by __name__ in BlueskyAdaptiveAgent.
+            Called directly in Agent, used only by ``__name__`` in BlueskyAdaptiveAgent.
+            Default: ``default_acquisition_plan``
         digestion : Callable, optional
             A function to digest the output of the acquisition, taking a DataFrame as an argument,
             by default default_digestion_function
+            Default: ``default_digestion_function``
         digestion_kwargs : dict, optional
             Some kwargs for the digestion function, by default {}
+            Default: False
         verbose : bool, optional
             To be verbose or not, by default False
-        enforce_all_objectives_valid : bool, optional # TODO
-            _description_, by default True
-        exclude_pruned : bool, optional # TODO
-            _description_, by default True
-        model_inactive_objectives : bool, optional # TODO
-            _description_, by default False
+            Default: False
+        enforce_all_objectives_valid : bool, optional
+            Whether the agent should exclude from fitting points with one or more invalid objectives.
+            Default: True
+        exclude_pruned : bool, optional
+            Whether to exclude from fitting points that have been pruned after running agent.prune().
+            Default: True
+        model_inactive_objectives : bool, optional
+            Whether the agent should update models for outcomes that affect inactive objectives.
+            Default: False
         tolerate_acquisition_errors : bool, optional
-            Whether to allow errors during acquistion. If `True`, errors will be caught as warnings, by default False
+            Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
+            Default: False
         sample_center_on_init : bool, optional
-            Whether to sample the center of the DOF limits when the agent has no data yet, by default False
+            Whether to sample the center of the DOF limits when the agent has no data yet.
+            Default: False
         train_every : int, optional
-            How many times to train the model for each new point, by default 1
+            How many samples to take before retraining model hyperparameters.
+            Default: 4
         """
         self.dofs = DOFList(list(dofs))
         self.objectives = ObjectiveList(list(objectives))
@@ -245,6 +255,9 @@ class BaseAgent:
 
     @property
     def evaluated_constraints(self) -> torch.Tensor:
+        """
+        Return a tensor of booleans that evaluates whether each collected outcome satisfies its constraint.
+        """
         constraint_objectives = self.objectives(constraint=True)
         if len(constraint_objectives):
             raw_targets_dict = self.raw_targets_dict(constraint=True)
@@ -256,7 +269,7 @@ class BaseAgent:
         """
         Return the scalar fitness for each sample, scalarized by the weighting scheme.
 
-        If constrained=True, the points that satisfy the most constraints are automatically better than the others.
+        If constrained=True, points that satisfy the most constraints are preferred to those that satisfy fewer.
         """
         fitness_objs = self.objectives(fitness=True)
         if len(fitness_objs) >= 1:
@@ -271,6 +284,9 @@ class BaseAgent:
         return f
 
     def best_f(self, weights: str = "default") -> float:
+        """
+        Return the best point (the one with highest fitness given that it satisfies the most constraints)
+        """
         return float(self.scalarized_fitnesses(weights=weights, constrained=True).max())
 
     def fitness_scalarization(self, weights: str | torch.Tensor = "default") -> ScalarizedPosteriorTransform:
@@ -924,22 +940,6 @@ class Agent(BaseAgent):
     def posterior(self, x: ArrayLike) -> Posterior:
         """A model encompassing all the objectives. A single GP in the single-objective case, or a model list."""
         return self.model.posterior(self.dofs(active=True).transform(torch.tensor(x)))
-
-    # @property
-    # def pseudofitness_model(self):
-    #     """
-    #     In the case that we have all constraints, there is no fitness model. In that case,
-    #     we replace the fitness model with a
-    #     """
-    #     active_fitness_objectives = self.objectives(active=True, fitness=True)
-    #     if len(active_fitness_objectives) == 0:
-    #         # A dummy model that outputs all ones, for when there are only constraints.
-    #         dummy_X = self.sample(n=256, normalize=True).squeeze(-2)
-    #         dummy_Y = torch.ones(size=(*dummy_X.shape[:-1], 1), dtype=torch.double)
-    #         return construct_single_task_model(X=dummy_X, y=dummy_Y)
-    #     if len(active_fitness_objectives) == 1:
-    #         return active_fitness_objectives[0].model
-    #     return ModelListGP(*[obj.model for obj in active_fitness_objectives])
 
     @property
     def pareto_mask(self) -> torch.Tensor:

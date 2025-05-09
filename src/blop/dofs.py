@@ -41,29 +41,34 @@ class DOF:
     Parameters
     ----------
     name: str
-        The name of the DOF. This is used as a key to index observed data.
+        The name of the input. This is used as a key to index observed data.
     description: str, optional
         A longer, more descriptive name for the DOF.
     type: Literal["continuous", "binary", "ordinal", "categorical"]
-        What kind of DOF it is. A DOF can be:
-        - Continuous, meaning that it can vary to any point between a lower and upper bound.
+        Describes the type of the input to be optimized. An outcome can be
+        - Continuous, meaning any real number.
         - Binary, meaning that it can take one of two values (e.g. [on, off])
         - Ordinal, meaning ordered categories (e.g. [low, medium, high])
         - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
         Default: "continuous"
-    search_domain: Union[tuple[float, float], set[int], set[str]]
-        If continuous, a tuple of the lower and upper limit of the DOF for the agent to search.
-        If discrete, a set of the possible values for the DOF.
+    search_domain: Optional[Union[tuple[float, float], set[int], set[str]]]
+        The range of value for the agent to search. Must be supplied for a non read-only DOF.
+        - if continuous, a tuple of the lower and upper limit of the input for the agent to search.
+        - if discrete, a set of the possible values for the input.
         Default: (-np.inf, np.inf)
-    trust_domain: Union[tuple[float, float], set[int], set[str]]
+    trust_domain: Optional[Union[tuple[float, float], set[int], set[str]]]
         The agent will reject all data where the DOF value is outside this domain.
         Must span a equal or larger range than the search domain.
         Default: (-np.inf, np.inf)
-    active: bool
+    domain: Optional[Union[tuple[float, float], set[int], set[str]]]
+        The total domain of the input. This is inferred from the transform, unless the input is discrete.
+        Must span a equal or larger range than the trust domain.
+        Default: (-np.inf, np.inf)
+    active: Optional[bool]
         If True, the agent will try to use the DOF in its optimization. If False, the agent will
         still read the DOF but not include it any model or acquisition function.
         Default: True
-    read_only: bool
+    read_only: Optional[bool]
         If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
         device is read-only.
         Default: False
@@ -73,11 +78,11 @@ class DOF:
     device: Optional[Signal]
         An `ophyd.Signal`. If not supplied, a dummy `ophyd.Signal` will be generated.
         Default: None
-    tags: list[str]
-        A list of tags. These make it easier to subset large groups of dofs.
+    tags: Optional[list[str]]
+        A list of tags. These make it easier to subset large groups of DOFs.
         Default: []
-    travel_expense: float
-        The cost of moving the DOF from the current position to the new position.
+    travel_expense: Optional[float]
+        The relative cost of moving the DOF from the current position to the new position.
         Default: 1
     units: Optional[str]
         The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
