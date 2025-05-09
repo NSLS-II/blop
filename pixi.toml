@@ -7,15 +7,14 @@ platforms = ["linux-64"]
 version = "0.1.0"
 
 [dependencies]
-tiled = ">=0.1.0b22,<0.2"
+python = ">=3.10, <3.12"
 ipython = ">=9.2.0,<10"
-bluesky = ">=1.13.1rc2,<2"
-ipykernel = ">=6.29.5,<7"
-numpy = ">=2.2.5,<3"
-protobuf = ">=5.29.3,<6"
-
-
-[pypi-dependencies]
-blop = ">=0.7.4, <0.8"
-ortools = ">=9.12.4544, <10"
+jupyterlab = "*"
+notebook = "*"
+ipykernel = "*"
+protobuf = "*"
+numpy = "*"
+tiled = "*"
+bluesky = "*"
+libortools = "*"
 
