@@ -85,20 +85,22 @@ if __name__ == "__main__":
     )                                                                
 
     args = parser.parse_args()
-    kwargs_re = dict(db_type=args.db_type, root_dir=args.root_dir)
+    kwargs_re = {"db_type": args.db_type, "root_dir": args.root_dir}
     ret = re_env(**kwargs_re)
     globals().update(**ret)
+    bec = ret["bec"]
+    db = ret["db"]
 
     if args.use_sirepo:
-        from sirepo_bluesky.srw_handler import SRWFileHandler
+        from sirepo_bluesky.srw_handler import SRWFileHandler  # type: ignore[import-untyped]
 
         if args.env_type == "stepper":
-            from sirepo_bluesky.shadow_handler import ShadowFileHandler
+            from sirepo_bluesky.shadow_handler import ShadowFileHandler  # type: ignore[import-untyped]
 
             handlers = {"srw": SRWFileHandler, "SIREPO_FLYER": SRWFileHandler, "shadow": ShadowFileHandler}
             plt.ion()
         elif args.env_type == "flyer":
-            from sirepo_bluesky.madx_handler import MADXFileHandler
+            from sirepo_bluesky.madx_handler import MADXFileHandler  # type: ignore[import-untyped]
 
             handlers = {"srw": SRWFileHandler, "SIREPO_FLYER": SRWFileHandler, "madx": MADXFileHandler}
             bec.disable_plots()  # noqa: F821

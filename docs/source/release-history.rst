@@ -2,6 +2,36 @@
 Release History
 ===============
 
+v0.7.4 (2025-03-04)
+-------------------
+* Add missing files for documentation
+* Fix trigger condition for releases on PyPI and documentation
+
+v0.7.3 (2025-03-04)
+-------------------
+What's Changed
+..............
+* Fix documentation CI error by `@jennmald <https://github.com/jennmald>`_ in https://github.com/NSLS-II/blop/pull/84
+* Fix fitness and constraint plots by `@jennmald <https://github.com/jennmald>`_ in https://github.com/NSLS-II/blop/pull/80
+* Refactor: Make agent default compatible with Bluesky Adaptive by `@maffettone <https://github.com/maffettone>`_ in https://github.com/NSLS-II/blop/pull/86
+* Ruff linter support; Removal of black, flake8, and isort by `@thomashopkins32 <https://github.com/thomashopkins32>`_ in https://github.com/NSLS-II/blop/pull/95
+* Add type hints by `@thomashopkins32 <https://github.com/thomashopkins32>`_ in https://github.com/NSLS-II/blop/pull/87
+* Remove Python 3.9 support by `@thomashopkins32 <https://github.com/thomashopkins32>`_ in https://github.com/NSLS-II/blop/pull/101
+* Add XRT demo to blop tutorials by `@jennmald <https://github.com/jennmald>`_ in https://github.com/NSLS-II/blop/pull/102
+
+New Contributors
+................
+* `@jennmald <https://github.com/jennmald>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/84
+* `@maffettone <https://github.com/maffettone>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/86
+* `@thomashopkins32 <https://github.com/thomashopkins32>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/95
+
+**Full Changelog**: https://github.com/NSLS-II/blop/compare/v0.7.2...v0.7.3
+
+v0.7.2 (2025-01-31)
+-------------------
+- Renamed package in PyPI to `blop <https://pypi.org/project/blop/>`_.
+- `bloptools <https://pypi.org/project/bloptools/>`_ is still avaliable on PyPI.
+
 v0.7.1 (2024-09-26)
 -------------------
 - Add simulated hardware.

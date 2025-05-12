@@ -33,15 +33,13 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
     """
     ret_vels = []
     # check that max_velocity is not None if at least 1 motor doesn't have upper velocity limit
-    if any([lim["high"] == 0 for lim in velocity_limits]) and max_velocity is None:
+    if any(lim["high"] == 0 for lim in velocity_limits) and max_velocity is None:
         vel_max_lim_0 = []
         for lim in velocity_limits:
             if lim["high"] == 0:
                 vel_max_lim_0.append(lim["motor"])
-        raise ValueError(
-            f"The following motors have unset max velocity limits: {vel_max_lim_0}. " f"max_velocity must be set"
-        )
-    if all([d == 0 for d in dists]):
+        raise ValueError(f"The following motors have unset max velocity limits: {vel_max_lim_0}. max_velocity must be set")
+    if all(d == 0 for d in dists):
         # TODO: fix this to handle when motors don't need to move
         # if dists are all 0, set all motors to min velocity
         for i in range(len(velocity_limits)):
@@ -49,7 +47,7 @@ def calc_velocity(motors, dists, velocity_limits, max_velocity=None, min_velocit
         return ret_vels
     else:
         # check for negative distances
-        if any([d < 0.0 for d in dists]):
+        if any(d < 0.0 for d in dists):
             raise ValueError("Distances must be positive. Try using abs()")
         # create list of upper velocity limits for convenience
         upper_velocity_bounds = []
@@ -170,7 +168,7 @@ def generate_hardware_flyers(
         velocity_limits = []
         if i == 0:
             for elem, param in motors.items():
-                for param_name, elem_obj in param.items():
+                for _, elem_obj in param.items():
                     velocity_limit_dict = {
                         "motor": elem,
                         "low": elem_obj.velocity.low_limit,
@@ -195,7 +193,7 @@ def generate_hardware_flyers(
             max_velocity=max_velocity,
             min_velocity=min_velocity,
         )
-        for motor_name, vel, dist in zip(motors, velocities, dists):
+        for motor_name, vel, dist in zip(motors, velocities, dists, strict=False):
             velocities_dict[motor_name] = vel
             distances_dict[motor_name] = dist
         velocities_list.append(velocities_dict)
@@ -203,7 +201,7 @@ def generate_hardware_flyers(
 
     # Validation
     times_list = []
-    for dist, vel in zip(distances_list, velocities_list):
+    for dist, vel in zip(distances_list, velocities_list, strict=False):
         times_dict = {}
         for motor_name in motors.keys():
             if vel[motor_name] == 0:
@@ -213,7 +211,7 @@ def generate_hardware_flyers(
             times_dict[motor_name] = time_
         times_list.append(times_dict)
 
-    for param, vel, time_ in zip(population, velocities_list, times_list):
+    for param, vel, time_ in zip(population, velocities_list, times_list, strict=False):
         hf = HardwareFlyer(
             params_to_change=param,
             velocities=vel,
@@ -230,7 +228,7 @@ def generate_hardware_flyers(
 
 
 def generate_sim_flyers(population, num_between_vals, sim_id, server_name, root_dir, watch_name, run_parallel):
-    import sirepo_bluesky.sirepo_flyer as sf
+    import sirepo_bluesky.sirepo_flyer as sf  # type: ignore
 
     flyers = []
     params_to_change = []

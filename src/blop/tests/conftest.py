@@ -1,5 +1,6 @@
 # content of conftest.py
 import asyncio
+import logging
 
 import numpy as np
 import pytest
@@ -25,6 +26,9 @@ def tiled_client():
     tiled_client = from_uri(SERVER_HOST_LOCATION, api_key = "secret")    
     
     return tiled_client
+
+logger = logging.getLogger("blop")
+logger.setLevel(logging.DEBUG)
 
 
 @pytest.fixture(scope="function")
@@ -67,15 +71,15 @@ def get_agent(param):
     """
     if param == "1d_1f":
         return Agent(
-            dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-            objectives=Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
+            dofs=[DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))],
+            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", target="min")],
             digestion=sketchy_himmelblau_digestion,
         )
 
     elif param == "1d_1c":
         return Agent(
-            dofs=DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-            objectives=Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
+            dofs=[DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))],
+            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105))],
             digestion=sketchy_himmelblau_digestion,
         )
 
@@ -85,7 +89,7 @@ def get_agent(param):
                 DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
                 DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
             ],
-            objectives=Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
+            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", target="min")],
             digestion=sketchy_himmelblau_digestion,
         )
 

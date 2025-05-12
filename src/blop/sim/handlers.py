@@ -1,8 +1,7 @@
-import h5py
-from area_detector_handlers.handlers import HandlerBase
-from ophyd import Signal
 import numpy as np
-
+import h5py  # type: ignore[import-untyped]
+from area_detector_handlers.handlers import HandlerBase  # type: ignore[import-untyped]
+from ophyd import Signal  # type: ignore[import-untyped]
 
 class HDF5Handler(HandlerBase):
     specs = {"HDF5"}

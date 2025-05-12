@@ -1,11 +1,21 @@
+from collections.abc import Generator, Mapping, Sequence
+from typing import Any
+
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
+from bluesky.protocols import Movable
+from bluesky.run_engine import Msg
+from ophyd import Signal  # type: ignore[import-untyped]
+
+from .dofs import DOF
 
 
-def list_scan_with_delay(*args, delay=0, **kwargs):
+def list_scan_with_delay(*args: Any, delay: float = 0, **kwargs: Any) -> Generator[Msg, None, str]:
     "Accepts all the normal 'scan' parameters, plus an optional delay."
 
-    def one_nd_step_with_delay(detectors, step, pos_cache):
+    def one_nd_step_with_delay(
+        detectors: Sequence[Signal], step: Mapping[Movable, Any], pos_cache: Mapping[Movable, Any]
+    ) -> Generator[Msg, None, None]:
         "This is a copy of bluesky.plan_stubs.one_nd_step with a sleep added."
         motors = step.keys()
         yield from bps.move_per_step(step, pos_cache)
@@ -17,7 +27,9 @@ def list_scan_with_delay(*args, delay=0, **kwargs):
     return uid
 
 
-def default_acquisition_plan(dofs, inputs, dets, **kwargs):
+def default_acquisition_plan(
+    dofs: Sequence[DOF], inputs: Mapping[str, Sequence[Any]], dets: Sequence[Signal], **kwargs: Any
+) -> Generator[Msg, None, str]:
     """
     Parameters
     ----------

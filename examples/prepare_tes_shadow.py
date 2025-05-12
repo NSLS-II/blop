@@ -1,9 +1,12 @@
-import sirepo_bluesky
+import warnings
+
 from ophyd.utils import make_dir_tree
 from sirepo_bluesky.shadow_handler import ShadowFileHandler
 from sirepo_bluesky.sirepo_bluesky import SirepoBluesky
 from sirepo_bluesky.sirepo_ophyd import create_classes
 from sirepo_bluesky.srw_handler import SRWFileHandler
+
+warnings.filterwarnings("ignore", module="sirepo_bluesky")
 
 db.reg.register_handler("shadow", ShadowFileHandler, overwrite=True)
 db.reg.register_handler("SIREPO_FLYER", SRWFileHandler, overwrite=True)
@@ -26,7 +29,3 @@ data["models"]["watchpointReport12"]["histogramBins"] = 32
 bec.disable_baseline()
 bec.disable_heading()
 # bec.disable_table()
-
-import warnings
-
-warnings.filterwarnings("ignore", module="sirepo_bluesky")

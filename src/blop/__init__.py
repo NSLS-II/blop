@@ -12,4 +12,4 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-logger = logging.getLogger("maria")
+logger = logging.getLogger("blop")

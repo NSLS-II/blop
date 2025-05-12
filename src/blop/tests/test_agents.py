@@ -1,4 +1,5 @@
 import pytest  # noqa F401
+import numpy as np
 
 from .conftest import all_agents
 
@@ -20,10 +21,12 @@ def test_agent(agent, RE, tiled_client):
     print(agent.dofs)
     print(agent.objectives)
 
-    # test refreshing
-    RE(agent.learn("qei", n=1))
-    agent.dofs.activate()
-    RE(agent.learn("qei", n=1))
+    RE(agent.learn("qei", n=2))
+
+    # test turning on the dummy DOF
+    agent.dofs.dummy.activate()
+    RE(agent.learn("qei", n=2))
+    agent.dofs.dummy.deactivate()
 
     # test forgetting
     RE(agent.learn("qr", n=4))
@@ -32,6 +35,20 @@ def test_agent(agent, RE, tiled_client):
     # test some functions
     agent.refresh()
     agent.redigest()
+
+    # test trust domains for DOFs
+    dof = agent.dofs(active=True)[0]
+    raw_x = agent.raw_inputs(dof.name).numpy()
+    dof.trust_domain = tuple(np.nanquantile(raw_x, q=[0.2, 0.8]))
+
+    RE(agent.learn("qei", n=2))
+
+    # test trust domains for DOFs
+    obj = agent.objectives(active=True)[0]
+    raw_y = agent.raw_targets(index=obj.name).numpy()
+    obj.trust_domain = tuple(np.nanquantile(raw_y, q=[0.2, 0.8]))
+
+    RE(agent.learn("qei", n=2))
 
     # save the data, reset the agent, and get the data back
     agent.save_data("/tmp/test_save_data.h5")

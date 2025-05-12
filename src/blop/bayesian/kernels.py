@@ -1,33 +1,35 @@
-import gpytorch
+from collections.abc import Iterable
+
+import gpytorch  # type: ignore[import-untyped]
 import numpy as np
 import torch
 
 
 class LatentKernel(gpytorch.kernels.Kernel):
-    is_stationary = True
-    num_outputs = 1
-    batch_inverse_lengthscale = 1e6
+    is_stationary: bool = True
+    num_outputs: int = 1
+    batch_inverse_lengthscale: float = 1e6
 
     def __init__(
         self,
-        num_inputs=1,
-        skew_dims=True,
-        priors=True,
-        scale_output=True,
+        num_inputs: int = 1,
+        skew_dims: bool | Iterable[tuple[int, ...]] = True,
+        priors: bool = True,
+        scale_output: bool = True,
         **kwargs,
-    ):
-        super(LatentKernel, self).__init__()
+    ) -> None:
+        super().__init__()
 
-        self.num_inputs = num_inputs
-        self.scale_output = scale_output
+        self.num_inputs: int = num_inputs
+        self.scale_output: bool = scale_output
 
-        self.nu = kwargs.get("nu", 2.5)
+        self.nu: float = kwargs.get("nu", 2.5)
 
         if type(skew_dims) is bool:
             if skew_dims:
-                self.skew_dims = [torch.arange(self.num_inputs)]
+                self.skew_dims: list[torch.Tensor] = [torch.arange(self.num_inputs)]
             else:
-                self.skew_dims = [(i) for i in torch.arange(num_inputs)]
+                self.skew_dims = [torch.arange(num_inputs)]
         elif hasattr(skew_dims, "__iter__"):
             self.skew_dims = [torch.tensor(np.atleast_1d(skew_group)) for skew_group in skew_dims]
         else:
@@ -35,33 +37,31 @@ class LatentKernel(gpytorch.kernels.Kernel):
 
         # if not all([len(skew_group) >= 2 for skew_group in self.skew_dims]):
         #     raise ValueError("must have at least two dims per skew group")
-        skewed_dims = [dim for skew_group in self.skew_dims for dim in skew_group]
+        skewed_dims: list[int] = [dim.item() for skew_group in self.skew_dims for dim in skew_group]
         if not len(set(skewed_dims)) == len(skewed_dims):
             raise ValueError("values in skew_dims must be unique")
         if not max(skewed_dims) < self.num_inputs:
-            raise ValueError("invalud dimension index in skew_dims")
+            raise ValueError("invalid dimension index in skew_dims")
 
-        skew_group_submatrix_indices = []
+        skew_group_submatrix_indices: list[torch.Tensor] = []
         for dim in range(self.num_outputs):
             for skew_group in self.skew_dims:
                 j, k = skew_group[torch.triu_indices(len(skew_group), len(skew_group), 1)].unsqueeze(1)
                 i = dim * torch.ones(j.shape).long()
                 skew_group_submatrix_indices.append(torch.cat((i, j, k), dim=0))
 
-        self.diag_matrix_indices = tuple(
-            [
-                torch.kron(torch.arange(self.num_outputs), torch.ones(self.num_inputs)).long(),
-                *2 * [torch.arange(self.num_inputs).repeat(self.num_outputs)],
-            ]
-        )
+        self.diag_matrix_indices: list[torch.Tensor] = [
+            torch.kron(torch.arange(self.num_outputs), torch.ones(self.num_inputs)).long(),
+            *2 * [torch.arange(self.num_inputs).repeat(self.num_outputs)],
+        ]
 
-        self.skew_matrix_indices = (
+        self.skew_matrix_indices: tuple[torch.Tensor, ...] = (
             tuple(torch.cat(skew_group_submatrix_indices, dim=1))
             if len(skew_group_submatrix_indices) > 0
-            else tuple([[], []])
+            else (torch.tensor([]), torch.tensor([]))
         )
 
-        self.n_skew_entries = len(self.skew_matrix_indices[0])
+        self.n_skew_entries: int = len(self.skew_matrix_indices[0])
 
         lengthscale_constraint = gpytorch.constraints.Positive()
         raw_lengthscales_initial = lengthscale_constraint.inverse_transform(torch.tensor(1e-1)) * torch.ones(
@@ -104,46 +104,46 @@ class LatentKernel(gpytorch.kernels.Kernel):
             )
 
     @property
-    def lengthscales(self):
+    def lengthscales(self) -> torch.Tensor:
         return self.raw_lengthscales_constraint.transform(self.raw_lengthscales)
 
-    @property
-    def skew_entries(self):
-        return self.raw_skew_entries_constraint.transform(self.raw_skew_entries)
-
-    @property
-    def outputscale(self):
-        return self.raw_outputscale_constraint.transform(self.raw_outputscale)
-
     @lengthscales.setter
-    def lengthscales(self, value):
+    def lengthscales(self, value: torch.Tensor | float | np.ndarray) -> None:
         self._set_lengthscales(value)
 
+    @property
+    def skew_entries(self) -> torch.Tensor:
+        return self.raw_skew_entries_constraint.transform(self.raw_skew_entries)
+
     @skew_entries.setter
-    def skew_entries(self, value):
+    def skew_entries(self, value: torch.Tensor | float | np.ndarray) -> None:
         self._set_skew_entries(value)
 
+    @property
+    def outputscale(self) -> torch.Tensor:
+        return self.raw_outputscale_constraint.transform(self.raw_outputscale)
+
     @outputscale.setter
-    def outputscale(self, value):
+    def outputscale(self, value: torch.Tensor | float | np.ndarray) -> None:
         self._set_outputscale(value)
 
-    def _set_lengthscales(self, value):
+    def _set_lengthscales(self, value: torch.Tensor | float | np.ndarray) -> None:
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_lengthscales)
         self.initialize(raw_lengthscales=self.raw_lengthscales_constraint.inverse_transform(value))
 
-    def _set_skew_entries(self, value):
+    def _set_skew_entries(self, value: torch.Tensor | float | np.ndarray) -> None:
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_skew_entries)
         self.initialize(raw_skew_entries=self.raw_skew_entries_constraint.inverse_transform(value))
 
-    def _set_outputscale(self, value):
+    def _set_outputscale(self, value: torch.Tensor | float | np.ndarray) -> None:
         if not torch.is_tensor(value):
             value = torch.as_tensor(value).to(self.raw_outputscale)
         self.initialize(raw_outputscale=self.raw_outputscale_constraint.inverse_transform(value))
 
     @property
-    def skew_matrix(self):
+    def skew_matrix(self) -> torch.Tensor:
         S = torch.zeros((self.num_outputs, self.num_inputs, self.num_inputs), dtype=torch.float64)
         if self.n_skew_entries > 0:
             # to construct an orthogonal matrix. fun fact: exp(skew(N)) is the generator of SO(N)
@@ -152,16 +152,16 @@ class LatentKernel(gpytorch.kernels.Kernel):
         return torch.linalg.matrix_exp(S)
 
     @property
-    def diag_matrix(self):
+    def diag_matrix(self) -> torch.Tensor:
         D = torch.zeros((self.num_outputs, self.num_inputs, self.num_inputs), dtype=torch.float64)
         D[self.diag_matrix_indices] = self.lengthscales.ravel() ** -1
         return D
 
     @property
-    def latent_transform(self):
+    def latent_transform(self) -> torch.Tensor:
         return torch.matmul(self.diag_matrix, self.skew_matrix)
 
-    def forward(self, x1, x2, diag=False, **params):
+    def forward(self, x1: torch.Tensor, x2: torch.Tensor, diag: bool = False, **params: dict) -> torch.Tensor:
         # adapted from the Matern kernel
         mean = x1.reshape(-1, x1.size(-1)).mean(0)[(None,) * (x1.dim() - 1)]
 
@@ -184,3 +184,4 @@ class LatentKernel(gpytorch.kernels.Kernel):
             return outputscale * (1 + distance) * torch.exp(-distance)
         if self.nu == 2.5:
             return outputscale * (1 + distance + distance**2 / 3) * torch.exp(-distance)
+        raise ValueError(f"nu = {self.nu} is not supported")
