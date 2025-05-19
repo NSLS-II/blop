@@ -75,7 +75,8 @@ dev = [
   "pandas-stubs",
   "types-PyYAML",
   "mypy",
-  "pyarrow"
+  "pyarrow",
+  "stamina",
 ]
 
 [project.urls]
