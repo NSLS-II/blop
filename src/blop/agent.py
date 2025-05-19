@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
 import torch
-
+from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
@@ -36,7 +36,6 @@ from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
-
 
 logger = logging.getLogger("blop")
 
@@ -609,9 +608,9 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        tiled: TiledWriter = None,
+        tiled: TiledWriter | None = None,
         detectors: Sequence[Signal] = None,
-        acquistion_plan=default_acquisition_plan,
+        acquisition_plan=default_acquisition_plan,
         digestion: Callable = default_digestion_function,
         digestion_kwargs: dict | None = None,
         verbose: bool = False,
@@ -640,7 +639,7 @@ class Agent(BaseAgent):
             A function to digest the output of the acquisition, taking a DataFrame as an argument.
         digestion_kwargs :
             Some kwargs for the digestion function.
-        tiled : optional                                            
+        tiled : optional
             A TiledWriter instance.
         verbose : bool
             To be verbose or not.
@@ -772,7 +771,7 @@ class Agent(BaseAgent):
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
                 new_table = yield from self.acquire(res["points"])
-                
+
                 new_table.loc[:, "acqf"] = res["acqf_name"]
                 x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
                 y = {key: new_table.loc[:, key].tolist() for key in self.objectives.names}
@@ -851,12 +850,14 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            if("image_key" in self.digestion_kwargs):
-                tiled_data = self.tiled[uid]['primary','internal','events'].read()
-                tiled_data["bl_det_image"] = list(self.tiled[uid]['primary','external','bl_det_image'].read().astype(float))
+            if "image_key" in self.digestion_kwargs:
+                tiled_data = self.tiled[uid]["primary", "internal", "events"].read()
+                tiled_data["bl_det_image"] = list(
+                    self.tiled[uid]["primary", "external", "bl_det_image"].read().astype(float)
+                )
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
-                products = self.digestion(self.tiled[uid]['primary','internal','events'].read(), **self.digestion_kwargs)
+                products = self.digestion(self.tiled[uid]["primary", "internal", "events"].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
