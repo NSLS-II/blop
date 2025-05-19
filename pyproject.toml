@@ -75,7 +75,6 @@ dev = [
   "pandas-stubs",
   "types-PyYAML",
   "mypy",
-  "pyarrow",
   "stamina",
   "uvicorn",
   "asgi_correlation_id",
