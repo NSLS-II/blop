@@ -82,7 +82,8 @@ jobs:
       
       - name: Start Demo Tiled Server
         run: | 
-          tiled serve demo
+          tiled serve demo &
+          sleep 10
 
       - name: Build Docs
         run: make -C docs/ html
