@@ -77,6 +77,15 @@ dev = [
   "mypy",
   "pyarrow",
   "stamina",
+  "uvicorn",
+  "asgi_correlation_id",
+  "fastapi",
+  "awkward",
+  "sparse",
+  "sqlalchemy",
+  "python-jose", 
+  "jmespath",
+  "uvicorn",
 ]
 
 [project.urls]
