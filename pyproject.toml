@@ -84,7 +84,8 @@ dev = [
   "sqlalchemy",
   "python-jose", 
   "jmespath",
-  "uvicorn",
+  "pyarrow",
+  "openpyxl",
 ]
 
 [project.urls]
