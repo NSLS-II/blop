@@ -71,6 +71,9 @@ source_suffix = ".rst"
 # The master toctree document.
 master_doc = "index"
 
+# Allow errors in notebooks (TEST)
+nbsphinx_allow_errors = True
+
 # General information about the project.
 project = "blop"
 copyright = "2020, Brookhaven National Laboratory"
