@@ -72,7 +72,7 @@ source_suffix = ".rst"
 master_doc = "index"
 
 # Allow errors in notebooks (TEST)
-nbsphinx_allow_errors = True
+# nbsphinx_allow_errors = True
 
 # General information about the project.
 project = "blop"

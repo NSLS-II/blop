@@ -79,6 +79,10 @@ jobs:
           pip install --upgrade pip wheel
           pip install -v .[dev,xrt]
           pip list
+      
+      - name: Start Demo Tiled Server
+        run: | 
+          tiled serve demo
 
       - name: Build Docs
         run: make -C docs/ html
