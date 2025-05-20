@@ -24,22 +24,19 @@
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
-import blop
+import os
+import platform
 
 # -- General configuration ------------------------------------------------
-
 # If your documentation needs a minimal Sphinx version, state it here.
 #
 # needs_sphinx = '1.0'
-
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-
-
 import sys
-import os
-import platform
+
+import blop
 
 print("---- Environment Info ----")
 print(f"Python executable: {sys.executable}")
