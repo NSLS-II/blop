@@ -6,6 +6,7 @@ from pathlib import Path
 import h5py
 import numpy as np
 import scipy as sp
+from event_model import StreamRange, compose_stream_resource
 from ophyd import Component as Cpt
 from ophyd import Device, Kind, Signal
 from ophyd.sim import NullStatus, new_uid
@@ -13,10 +14,6 @@ from ophyd.utils import make_dir_tree
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
-from event_model import StreamRange, compose_stream_resource
-
-
-from ophyd import Kind
 
 DECTECTOR_STORAGE = "/tmp/blop/sim"
 
@@ -134,7 +131,7 @@ class Detector(Device):
     def describe(self):
         res = super().describe()
         res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str} #<i8
+            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
         )
         return res
 
