@@ -464,7 +464,7 @@ def optimization_plan(
             uids=uid_list,
             flyer_name=flyer_name,
             intensity_name=intensity_name,
-            db=db,
+            db=tiled,
         )
     elif opt_type == "sirepo":
         # make sure all required parameters needed for sirepo optimization aren't None
@@ -514,7 +514,7 @@ def optimization_plan(
             uids=uid_list,
             flyer_name=flyer_name,
             intensity_name=intensity_name,
-            db=db,
+            db=tiled,
         )
         pop_positions.reverse()
         pop_intensity.reverse()
@@ -559,7 +559,7 @@ def optimization_plan(
                 uids=uid_list,
                 flyer_name=flyer_name,
                 intensity_name=intensity_name,
-                db=db,
+                db=tiled,
             )
         else:
             select_positions = yield from create_selection_params(
@@ -585,7 +585,7 @@ def optimization_plan(
                 uids=uid_list,
                 flyer_name=flyer_name,
                 intensity_name=intensity_name,
-                db=db,
+                db=tiled,
             )
         all_uids[f"gen-{v + 1}"] = uid_list
 
@@ -635,7 +635,7 @@ def optimization_plan(
                     uids=uid_list,
                     flyer_name=flyer_name,
                     intensity_name=intensity_name,
-                    db=db,
+                    db=tiled,
                 )
             else:
                 positions, change_indx = yield from create_rand_selection_params(
@@ -661,7 +661,7 @@ def optimization_plan(
                     uids=uid_list,
                     flyer_name=flyer_name,
                     intensity_name=intensity_name,
-                    db=db,
+                    db=tiled,
                 )
             all_uids[f"gen-{v}"] += uid_list
 

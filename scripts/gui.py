@@ -4,12 +4,12 @@ import asyncio
 import matplotlib as mpl
 import numpy as np
 from bluesky.callbacks import best_effort
+from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
+
 # from databroker import Broker
 from nicegui import ui
-from bluesky.callbacks.tiled_writer import TiledWriter
 from tiled.client import from_uri
-
 
 from blop import DOF, Agent, Objective
 from blop.utils import functions
@@ -17,8 +17,8 @@ from blop.utils import functions
 # MongoDB backend:
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
-tiled_client = from_uri(SERVER_HOST_LOCATION, api_key = "secret")  
-tiled_writer = TiledWriter(tiled_client)    # mongodb backend
+tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
+tiled_writer = TiledWriter(tiled_client)  # mongodb backend
 
 loop = asyncio.new_event_loop()
 loop.set_debug(True)
