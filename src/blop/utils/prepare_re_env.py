@@ -1,20 +1,16 @@
 import argparse
 import datetime
 import json  # noqa F401
-from bluesky.callbacks.zmq import Publisher
+
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
-
-from tiled.client import from_uri, from_profile ##
-from bluesky.callbacks.tiled_writer import TiledWriter
 import matplotlib.pyplot as plt
 import numpy as np  # noqa F401
 from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
 from ophyd.utils import make_dir_tree
-
-from blop.sim import HDF5Handler
+from tiled.client import from_uri  #
 
 DEFAULT_DB_TYPE = "local"
 DEFAULT_ROOT_DIR = "/tmp/sirepo-bluesky-data"
@@ -22,7 +18,6 @@ DEFAULT_ENV_TYPE = "stepper"
 DEFAULT_USE_SIREPO = False
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
-from tiled.server import SimpleTiledServer
 
 tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
 
@@ -30,16 +25,17 @@ tiled_writer = TiledWriter(tiled_client)
 
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
+
 def re_env(db_type="default", root_dir="/default/path"):
     RE = RunEngine({})
     bec = best_effort.BestEffortCallback()
-    RE.subscribe(bec)    # Setup Tiled Client
+    RE.subscribe(bec)  # Setup Tiled Client
 
     RE.subscribe(tiled_writer)
 
     _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
     return {"RE": RE, "db": tiled_client, "bec": bec}
-    
+
 
 def register_handlers(db, handlers):
     for handler_spec, handler_class in handlers.items():
@@ -86,7 +82,7 @@ if __name__ == "__main__":
         "--file",
         dest="file",
         default="",
-    )                                                                
+    )
 
     args = parser.parse_args()
     kwargs_re = {"db_type": args.db_type, "root_dir": args.root_dir}

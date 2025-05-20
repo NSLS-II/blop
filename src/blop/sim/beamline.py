@@ -18,10 +18,6 @@ from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
-from event_model import StreamRange, compose_stream_resource
-
-
-from ophyd import Kind
 
 
 class Detector(Device):
@@ -87,14 +83,13 @@ class Detector(Device):
         super().trigger()
 
         return NullStatus()
-    
 
     def stage(self) -> list[Any]:
         devices = super().stage()
         date = datetime.now()
         self._assets_dir = date.strftime("%Y/%m/%d")
         data_file = f"{new_uid()}.h5"
-        
+
         self._resource_document, self._datum_factory, _ = compose_resource(
             start={"uid": "needed for compose_resource() but will be discarded"},
             spec="HDF5",
@@ -110,7 +105,6 @@ class Detector(Device):
 
         self._resource_document.pop("run_start")
         self._asset_docs_cache.append(("resource", self._resource_document))
-
 
         self._h5file_desc = h5py.File(self._data_file, "x")
         group = self._h5file_desc.create_group("/entry")
@@ -134,11 +128,11 @@ class Detector(Device):
         self._resource_document = None
         self._datum_factory = None
         return devices
-    
+
     def describe(self):
         res = super().describe()
         res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str} #<i8
+            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
         )
         return res
 
