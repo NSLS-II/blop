@@ -7,9 +7,7 @@ from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
 from nicegui import ui
-from bluesky.callbacks.tiled_writer import TiledWriter
 from tiled.client import from_uri
-
 
 from blop import DOF, Agent, Objective
 from blop.utils import functions

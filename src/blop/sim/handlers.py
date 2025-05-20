@@ -5,6 +5,7 @@ from ophyd import Signal  # type: ignore[import-untyped]
 import numpy as np
 
 
+
 class HDF5Handler(HandlerBase):
     specs = {"HDF5"}
 

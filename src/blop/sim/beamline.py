@@ -15,10 +15,6 @@ from ophyd.utils import make_dir_tree
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
-from event_model import StreamRange, compose_stream_resource
-
-
-from ophyd import Kind
 
 DECTECTOR_STORAGE = "/tmp/blop/sim"
 
@@ -77,7 +73,6 @@ class Detector(Device):
         super().trigger()
 
         return NullStatus()
-    
 
     def _generate_file_path(self, date_template="%Y/%m/%d"):
         date = datetime.datetime.now()
