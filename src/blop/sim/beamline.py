@@ -1,23 +1,19 @@
+import datetime
 import itertools
 from collections import deque
-import datetime
 from pathlib import Path
 
 import h5py
 import numpy as np
 import scipy as sp
-from event_model import compose_resource
+from event_model import StreamRange, compose_stream_resource
 from ophyd import Component as Cpt
-from ophyd import Device, Signal
+from ophyd import Device, Kind, Signal
 from ophyd.sim import NullStatus, new_uid
 from ophyd.utils import make_dir_tree
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
-from event_model import StreamRange, compose_stream_resource
-
-
-from ophyd import Kind
 
 
 class Detector(Device):
@@ -76,7 +72,7 @@ class Detector(Device):
         super().trigger()
 
         return NullStatus()
-    
+
     def _generate_file_path(self, date_template="%Y/%m/%d"):
         date = datetime.datetime.now()
         assets_dir = date.strftime(date_template)
@@ -84,10 +80,9 @@ class Detector(Device):
 
         return Path(self._root_dir) / Path(assets_dir) / Path(data_file)
 
-
     def stage(self):
         super().stage()
-  
+
         self._asset_docs_cache.clear()
         full_path = self._generate_file_path()
         image_shape = self.image_shape.get()
@@ -109,9 +104,7 @@ class Detector(Device):
 
         self._data_file = full_path
 
-        self._asset_docs_cache.append(
-            ("stream_resource", self._stream_resource_document)
-        )
+        self._asset_docs_cache.append(("stream_resource", self._stream_resource_document))
 
         self._h5file_desc = h5py.File(self._data_file, "x")
         group = self._h5file_desc.create_group("/entry")
@@ -124,11 +117,11 @@ class Detector(Device):
             compression="lzf",
         )
         self._counter = itertools.count()
-    
+
     def describe(self):
         res = super().describe()
         res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str} #<i8
+            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
         )
         return res
 
