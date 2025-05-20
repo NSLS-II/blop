@@ -24,8 +24,6 @@
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
-import os
-import platform
 
 # -- General configuration ------------------------------------------------
 # If your documentation needs a minimal Sphinx version, state it here.
@@ -34,15 +32,8 @@ import platform
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
-import sys
 
 import blop
-
-print("---- Environment Info ----")
-print(f"Python executable: {sys.executable}")
-print(f"Python version: {platform.python_version()}")
-print(f"Environment PATH: {os.environ.get('PATH')}")
-print("--------------------------")
 
 extensions = [
     "sphinx.ext.autodoc",
@@ -60,7 +51,7 @@ extensions = [
 ]
 
 # Set the kernel used by nbsphinx
-nbsphinx_kernel_name = "tiled-pixi"
+nbsphinx_kernel_name = "python3"
 
 # Configuration options for plot_directive. See:
 # https://github.com/matplotlib/matplotlib/blob/f3ed922d935751e08494e5fb5311d3050a3b637b/lib/matplotlib/sphinxext/plot_directive.py#L81
