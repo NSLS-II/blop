@@ -35,6 +35,18 @@ import blop
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
+
+
+import sys
+import os
+import platform
+
+print("---- Environment Info ----")
+print(f"Python executable: {sys.executable}")
+print(f"Python version: {platform.python_version()}")
+print(f"Environment PATH: {os.environ.get('PATH')}")
+print("--------------------------")
+
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
