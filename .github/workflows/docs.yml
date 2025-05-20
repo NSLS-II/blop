@@ -82,7 +82,7 @@ jobs:
       
       - name: Start temp Tiled Server
         run: | 
-          tiled serve catalog --temp --api-key secret -r /tmp/blop/sim/ & 
+          python -m tiled serve catalog --temp --api-key secret -r /tmp/blop/sim/ & 
           sleep 10
 
       - name: Build Docs
