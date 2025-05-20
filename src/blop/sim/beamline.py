@@ -2,12 +2,10 @@ import datetime
 import itertools
 from collections import deque
 from pathlib import Path
-from typing import Any
 
 import h5py
 import numpy as np
 import scipy as sp
-from event_model import StreamRange, compose_stream_resource
 from ophyd import Component as Cpt
 from ophyd import Device, Kind, Signal
 from ophyd.sim import NullStatus, new_uid
@@ -15,6 +13,10 @@ from ophyd.utils import make_dir_tree
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
+from event_model import StreamRange, compose_stream_resource
+
+
+from ophyd import Kind
 
 DECTECTOR_STORAGE = "/tmp/blop/sim"
 
@@ -34,7 +36,7 @@ class Detector(Device):
     def __init__(self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
 
-        _ = make_dir_tree(datetime.now().year, base_path=root_dir)
+        _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 
         self._root_dir = root_dir
         self._verbose = verbose
@@ -60,12 +62,14 @@ class Detector(Device):
 
         self._dataset[current_frame, :, :] = raw_image
 
-        datum_document = self._datum_factory(datum_kwargs={"frame": current_frame})
-
-        self._asset_docs_cache.append(("stream_datum", datum_document))
+        # datum_document = self._datum_factory(datum_kwargs={"frame": current_frame})
+        stream_datum_document = self._stream_datum_factory(
+            StreamRange(start=current_frame, stop=current_frame + 1),
+        )
+        self._asset_docs_cache.append(("stream_datum", stream_datum_document))
 
         stats = get_beam_stats(raw_image)
-        self.image.put(datum_document["datum_id"])
+        # self.image.put(stream_datum_document["datum_id"])
 
         for attr in ["max", "sum", "cen_x", "cen_y", "wid_x", "wid_y"]:
             getattr(self, attr).put(stats[attr])
@@ -73,7 +77,6 @@ class Detector(Device):
         super().trigger()
 
         return NullStatus()
-
     def _generate_file_path(self, date_template="%Y/%m/%d"):
         date = datetime.datetime.now()
         assets_dir = date.strftime(date_template)
@@ -111,9 +114,9 @@ class Detector(Device):
         group = self._h5file_desc.create_group("/entry")
         self._dataset = group.create_dataset(
             "image",
-            data=np.full(fill_value=np.nan, shape=(1, *self.image_shape.get())),
-            maxshape=(None, *self.image_shape.get()),
-            chunks=(1, *self.image_shape.get()),
+            data=np.full(fill_value=np.nan, shape=(1, *image_shape)),
+            maxshape=(None, *image_shape),
+            chunks=(1, *image_shape),
             dtype="float64",
             compression="lzf",
         )
@@ -131,7 +134,7 @@ class Detector(Device):
     def describe(self):
         res = super().describe()
         res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
+            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str} #<i8
         )
         return res
 
