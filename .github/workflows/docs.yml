@@ -80,9 +80,9 @@ jobs:
           pip install -v .[dev,xrt]
           pip list
       
-      - name: Start Demo Tiled Server
+      - name: Start temp Tiled Server
         run: | 
-          tiled serve demo &
+          tiled serve catalog --temp --api-key secret -r /tmp/blop/sim/ & 
           sleep 10
 
       - name: Build Docs
