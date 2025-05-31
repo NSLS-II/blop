@@ -2,7 +2,7 @@ import botorch  # type: ignore[import-untyped]
 import numpy as np
 import scipy as sp  # type: ignore[import-untyped]
 import torch
-from ortools.constraint_solver import pywrapcp, routing_enums_pb2  # type: ignore[import-untyped]
+from python_tsp.heuristics import solve_tsp_simulated_annealing  # type: ignore[import-untyped]
 
 from . import functions  # noqa
 
@@ -95,45 +95,23 @@ def route(start_point: np.ndarray, points: np.ndarray, dim_weights: float | np.n
     Returns the indices of the most efficient way to visit `points`, starting from `start_point`.
     """
 
-    total_points = np.r_[np.atleast_2d(start_point), points]
-    points_scale = np.ptp(total_points, axis=0)
-    dim_mask = points_scale > 0
+    total_points = np.concatenate(
+        [start_point[None], points], axis=0
+    )  # add the starting point, even though we won't go there
+    points_dim_range = np.ptp(total_points, axis=0)
+    dim_mask = points_dim_range > 0
+    scaled_points = (total_points - total_points.min(axis=0)) * (
+        dim_weights / np.where(points_dim_range > 0, points_dim_range, 1)
+    )
+    D = np.sqrt(np.square(scaled_points[:, None, :] - scaled_points[None, :, :]).sum(axis=-1))
+    D = (D / np.where(D > 0, D, np.inf).min()).astype(int)
+    D[:, 0] = 0  # zero cost to return, since we don't care where we end up
 
     if dim_mask.sum() == 0:
         return np.arange(len(points))
 
-    scaled_points = (total_points - total_points.min(axis=0)) * (dim_weights / np.where(points_scale > 0, points_scale, 1))
-
-    delay_matrix = np.sqrt(np.square(scaled_points[:, None, :] - scaled_points[None, :, :]).sum(axis=-1))
-    delay_matrix = (1e4 * delay_matrix).astype(int)  # it likes integers idk
-
-    manager = pywrapcp.RoutingIndexManager(len(total_points), 1, 0)  # number of depots, number of salesmen, starting index
-    routing = pywrapcp.RoutingModel(manager)
-
-    def delay_callback(from_index, to_index):
-        to_node = manager.IndexToNode(to_index)
-        if to_node == 0:
-            return 0  # it is free to return to the depot from anywhere; we just won't do it
-        from_node = manager.IndexToNode(from_index)
-        return delay_matrix[from_node][to_node]
-
-    transit_callback_index = routing.RegisterTransitCallback(delay_callback)
-    routing.SetArcCostEvaluatorOfAllVehicles(transit_callback_index)
-    search_parameters = pywrapcp.DefaultRoutingSearchParameters()
-    search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
-
-    solution = routing.SolveWithParameters(search_parameters)
-
-    index = routing.Start(0)
-    route_indices, route_delays = [0], []
-    while not routing.IsEnd(index):
-        previous_index = index
-        index = solution.Value(routing.NextVar(index))
-        route_delays.append(routing.GetArcCostForVehicle(previous_index, index, 0))
-        route_indices.append(index)
-
-    # omit the first and last indices, which correspond to the start
-    return np.array(route_indices)[1:-1] - 1
+    permutation, _ = solve_tsp_simulated_annealing(D / np.where(D > 0, D, np.inf).min())
+    return np.array(permutation[1:]) - 1  # ignore the starting point since we're there already
 
 
 def get_movement_time(x: float | np.ndarray, v_max: float, a: float) -> float | np.ndarray:
