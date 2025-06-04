@@ -17,6 +17,7 @@ from .handlers import ExternalFileReference
 
 DECTECTOR_STORAGE = "/tmp/blop/sim"
 
+
 class Detector(Device):
     sum = Cpt(Signal, kind=Kind.hinted)
     max = Cpt(Signal, kind=Kind.normal)
