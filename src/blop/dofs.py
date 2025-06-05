@@ -36,54 +36,6 @@ class ReadOnlyError(Exception):
 
 
 class DOF:
-    """A degree of freedom (DOF), to be used by an agent.
-
-    Parameters
-    ----------
-    name: str
-        The name of the DOF. This is used as a key to index observed data.
-    description: str, optional
-        A longer, more descriptive name for the DOF.
-    type: Literal["continuous", "binary", "ordinal", "categorical"]
-        What kind of DOF it is. A DOF can be:
-        - Continuous, meaning that it can vary to any point between a lower and upper bound.
-        - Binary, meaning that it can take one of two values (e.g. [on, off])
-        - Ordinal, meaning ordered categories (e.g. [low, medium, high])
-        - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
-        Default: "continuous"
-    search_domain: Union[tuple[float, float], set[int], set[str]]
-        If continuous, a tuple of the lower and upper limit of the DOF for the agent to search.
-        If discrete, a set of the possible values for the DOF.
-        Default: (-np.inf, np.inf)
-    trust_domain: Union[tuple[float, float], set[int], set[str]]
-        The agent will reject all data where the DOF value is outside this domain.
-        Must span a equal or larger range than the search domain.
-        Default: (-np.inf, np.inf)
-    active: bool
-        If True, the agent will try to use the DOF in its optimization. If False, the agent will
-        still read the DOF but not include it any model or acquisition function.
-        Default: True
-    read_only: bool
-        If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
-        device is read-only.
-        Default: False
-    transform: Optional[Literal["log", "logit", "arctanh"]]
-        A transform to apply to the objective, to make the process outputs more Gaussian.
-        Default: None
-    device: Optional[Signal]
-        An `ophyd.Signal`. If not supplied, a dummy `ophyd.Signal` will be generated.
-        Default: None
-    tags: list[str]
-        A list of tags. These make it easier to subset large groups of dofs.
-        Default: []
-    travel_expense: float
-        The cost of moving the DOF from the current position to the new position.
-        Default: 1
-    units: Optional[str]
-        The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
-        Default: None
-    """
-
     def __init__(
         self,
         name: str = None,
@@ -100,6 +52,68 @@ class DOF:
         travel_expense: float = 1,
         units: str | None = None,
     ):
+        """A degree of freedom (DOF), to be used by an agent.
+
+        Parameters
+        ----------
+        name: str
+            The name of the input. This is used as a key to index observed data.
+        description: str, optional
+            A longer, more descriptive name for the DOF.
+        type: Literal["continuous", "binary", "ordinal", "categorical"]
+            Describes the type of the input to be optimized. An outcome can be
+            - Continuous, meaning any real number.
+            - Binary, meaning that it can take one of two values (e.g. [on, off])
+            - Ordinal, meaning ordered categories (e.g. [low, medium, high])
+            - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
+            Default: "continuous"
+        search_domain: Optional[Union[tuple[float, float], set[int], set[str]]]
+            The range of value for the agent to search. Must be supplied for a non read-only DOF.
+            - if continuous, a tuple of the lower and upper limit of the input for the agent to search.
+            - if discrete, a set of the possible values for the input.
+            Default: (-np.inf, np.inf)
+        trust_domain: Optional[Union[tuple[float, float], set[int], set[str]]]
+            The agent will reject all data where the DOF value is outside this domain.
+            Must span a equal or larger range than the search domain.
+            Default: (-np.inf, np.inf)
+        domain: Optional[Union[tuple[float, float], set[int], set[str]]]
+            The total domain of the input. This is inferred from the transform, unless the input is discrete.
+            Must span a equal or larger range than the trust domain.
+            Default: (-np.inf, np.inf)
+        active: Optional[bool]
+            If True, the agent will try to use the DOF in its optimization. If False, the agent will
+            still read the DOF but not include it any model or acquisition function.
+            Default: True
+        read_only: Optional[bool]
+            If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
+            device is read-only. The behavior of the DOF on each sample for read only/not read-only are
+                          not read-only        read-only
+                     +---------------------+---------------+
+              active |  read, input, move  |  read, input  |
+                     +---------------------+---------------+
+            inactive |  read               |  read         |
+                     +---------------------+---------------+
+            'read': the agent will read the input on every acquisition (all dofs are always read)
+            'move': the agent will try to set and optimize over these (there must be at least one of these)
+            'input' means that the agent will use the value to make its posterior
+            Default: False
+        transform: Optional[Literal["log", "logit", "arctanh"]]
+            A transform to apply to the objective, to make the process outputs more Gaussian.
+            Default: None
+        device: Optional[Signal]
+            An `ophyd.Signal`. If not supplied, a dummy `ophyd.Signal` will be generated.
+            Default: None
+        tags: Optional[list[str]]
+            A list of tags. These make it easier to subset large groups of DOFs.
+            Default: []
+        travel_expense: Optional[float]
+            The relative cost of moving the DOF from the current position to the new position.
+            Default: 1
+        units: Optional[str]
+            The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
+            Default: None
+        """
+
         # these should be set first, as they are just variables
         self.name = name
         self.description = description
@@ -297,13 +311,18 @@ class DOF:
 
     @property
     def readback(self) -> Any:
-        # there is probably a better way to do this
+        """
+        The current value of the DOF.
+        """
         if not self.device:
             raise ValueError("DOF has no device.")
         return self.device.read()[self.device.name]["value"]
 
     @property
     def summary(self) -> pd.Series:
+        """
+        Return a Series summarizing the state of the DOF.
+        """
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
             value = getattr(self, attr)
@@ -312,6 +331,9 @@ class DOF:
 
     @property
     def label_with_units(self) -> str:
+        """
+        A label for a plot, perhaps.
+        """
         return f"{self.description}{f' [{self.units}]' if self.units else ''}"
 
     @property
@@ -319,9 +341,15 @@ class DOF:
         return hasattr(self, "model")
 
     def activate(self) -> None:
+        """
+        Activate the DOF
+        """
         self.active = True
 
     def deactivate(self) -> None:
+        """
+        Deactivate the DOF
+        """
         self.active = False
 
 
@@ -479,6 +507,9 @@ class DOFList(Sequence[DOF]):
         read_only: bool | None = None,
         tag: str | None = None,
     ) -> "DOFList":
+        """
+        Return all DOFs that
+        """
         return DOFList(
             [dof for dof in self.dofs if self._test_dof(dof, type=type, active=active, read_only=read_only, tag=tag)]
         )
