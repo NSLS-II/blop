@@ -23,7 +23,7 @@ dependencies = [
   "matplotlib",
   "numpy",
   "ophyd",
-  "ortools",
+  "python-tsp",
   "scipy",
   "tables",
   "torch",
