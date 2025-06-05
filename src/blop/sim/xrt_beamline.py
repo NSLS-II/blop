@@ -15,10 +15,11 @@ from ophyd.sim import NullStatus, new_uid
 from ophyd.utils import make_dir_tree
 
 from blop.sim.handlers import ExternalFileReference
-from blop.sim.xrt_kb_model import build_beamline
+from blop.sim.xrt_kb_model import build_beamline, build_histRGB, run_process
 from blop.utils import get_beam_stats
 
 TEST = False
+DECTECTOR_STORAGE = "/tmp/blop/sim"
 
 
 class xrtEpicsScreen(Device):
@@ -66,6 +67,7 @@ class xrtEpicsScreen(Device):
         stream_datum_document = self._stream_datum_factory(
             StreamRange(start=current_frame, stop=current_frame + 1),
         )
+
         self._asset_docs_cache.append(("stream_datum", stream_datum_document))
 
         stats = get_beam_stats(image)
@@ -79,15 +81,13 @@ class xrtEpicsScreen(Device):
         date = datetime.now()
         assets_dir = date.strftime(date_template)
         data_file = f"{new_uid()}.h5"
-
         return Path(self._root_dir) / Path(assets_dir) / Path(data_file)
 
     def stage(self):
         super().stage()
-
         full_path = self._generate_file_path()
+        image_shape = self.image_shape.get()
         uri = f"file://localhost/{str(full_path).strip('/')}"
-        
         (
             self._stream_resource_document,
             self._stream_datum_factory,
@@ -96,15 +96,13 @@ class xrtEpicsScreen(Device):
             uri=uri,
             data_key=self.image.name,
             parameters={
-                "chunk_shape": (1, *self.image_shape.get()),
+                "chunk_shape": (1, *image_shape),
                 "dataset": "/entry/image",
             },
         )
 
         self._data_file = full_path
 
-        # now discard the start uid, a real one will be added later
-        # self._stream_resource_document.pop("run_start")
         self._asset_docs_cache.append(("stream_resource", self._stream_resource_document))
 
         self._h5file_desc = h5py.File(self._data_file, "x")
@@ -121,10 +119,10 @@ class xrtEpicsScreen(Device):
 
     def unstage(self):
         super().unstage()
-        # del self._dataset
         self._h5file_desc.close()
         self._stream_resource_document = None
-        self._datum_factory = None
+        self._stream_datum_factory = None
+
 
 class Detector(Device):
     sum = Cpt(Signal, kind=Kind.hinted)
@@ -138,7 +136,7 @@ class Detector(Device):
     image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
     noise = Cpt(Signal, kind=Kind.normal)
 
-    def __init__(self, root_dir: str = "/tmp/blop/sim", verbose: bool = True, noise: bool = True, *args, **kwargs):
+    def __init__(self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         _ = make_dir_tree(datetime.now().year, base_path=root_dir)
@@ -153,6 +151,8 @@ class Detector(Device):
         self._asset_docs_cache = deque()
         self._stream_resource_document = None
         self._stream_datum_factory = None
+        self._dataset = None
+
         self.noise.put(noise)
         self.limits = [[-0.6, 0.6], [-0.45, 0.45]]
         if TEST:
@@ -175,6 +175,7 @@ class Detector(Device):
 
     def trigger(self):
         super().trigger()
+
         raw_image = self.generate_beam(noise=self.noise.get())
 
         current_frame = next(self._counter)
@@ -183,20 +184,17 @@ class Detector(Device):
 
         self._dataset[current_frame, :, :] = raw_image
 
-        # datum_document = self._datum_factory(datum_kwargs={"frame": current_frame})
         stream_datum_document = self._stream_datum_factory(
             StreamRange(start=current_frame, stop=current_frame + 1),
         )
         self._asset_docs_cache.append(("stream_datum", stream_datum_document))
 
         stats = get_beam_stats(raw_image)
-        # self.image.put(stream_datum_document["datum_id"])
 
         for attr in ["max", "sum", "cen_x", "cen_y", "wid_x", "wid_y"]:
             getattr(self, attr).put(stats[attr])
 
         super().trigger()
-
         return NullStatus()
 
     def _generate_file_path(self, date_template="%Y/%m/%d"):
@@ -212,8 +210,6 @@ class Detector(Device):
         self._asset_docs_cache.clear()
         full_path = self._generate_file_path()
         image_shape = self.image_shape.get()
-        print(f"image_shape: {image_shape}")
-        print(str((1, *image_shape)))
 
         uri = f"file://localhost/{str(full_path).strip('/')}"
 
@@ -231,7 +227,6 @@ class Detector(Device):
         )
 
         self._data_file = full_path
-
         self._asset_docs_cache.append(("stream_resource", self._stream_resource_document))
 
         self._h5file_desc = h5py.File(self._data_file, "x")
@@ -240,18 +235,12 @@ class Detector(Device):
             "image",
             data=np.full(fill_value=np.nan, shape=(1, *image_shape)),
             maxshape=(None, *image_shape),
-            chunks=(1, *image_shape),
+            chunks=(1, *self.image_shape.get()),
             dtype="float64",
             compression="lzf",
         )
-        self._counter = itertools.count()
 
-    def describe(self):
-        res = super().describe()
-        res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
-        )
-        return res
+        self._counter = itertools.count()
 
     def unstage(self):
         super().unstage()
@@ -265,7 +254,7 @@ class Detector(Device):
         self._asset_docs_cache.clear()
         yield from items
 
-    def generate_beam(self, noise: bool = True):
+    def generate_beam_func(self, noise: bool = True):
         nx, ny = self.image_shape.get()
 
         x = np.linspace(-10, 10, ny)
@@ -301,8 +290,44 @@ class Detector(Device):
             # background = 5e-3 * (X - Y) / X.max()
 
             image += white_noise + pink_noise
-
         return image
+
+    def generate_beam_xrt(self, noise: bool = True):
+        R2 = self.parent.kbh_dsh.get()
+        R1 = self.parent.kbv_dsv.get()
+
+        self.beamLine.toroidMirror01.R = R1
+        self.beamLine.toroidMirror02.R = R2
+        outDict = run_process(self.beamLine)
+        lb = outDict["screen01beamLocal01"]
+
+        hist2d, _, _ = build_histRGB(lb, lb, limits=self.limits, isScreen=True, shape=[400, 300])
+        image = hist2d
+        _ = np.max(image)
+        image += 1e-3 * np.abs(np.random.standard_normal(size=image.shape))
+        self.counter += 1
+        return image
+
+    def generate_beam(self, *args, **kwargs):
+        return self.generate_beam_xrt(*args, **kwargs)
+
+
+class BeamlineEpics(Device):
+    det = Cpt(xrtEpicsScreen, name="DetectorScreen")
+
+    kbh_ush = Cpt(Signal, kind="hinted")
+    kbh_dsh = Cpt(EpicsSignal, ":TM_HOR:R", kind="hinted")
+    kbv_usv = Cpt(Signal, kind="hinted")
+    kbv_dsv = Cpt(EpicsSignal, ":TM_VERT:R", kind="hinted")
+
+    ssa_inboard = Cpt(Signal, value=-5.0, kind="hinted")
+    ssa_outboard = Cpt(Signal, value=5.0, kind="hinted")
+    ssa_lower = Cpt(Signal, value=-5.0, kind="hinted")
+    ssa_upper = Cpt(Signal, value=5.0, kind="hinted")
+
+    def __init__(self, *args, **kwargs):
+        self.beamline = build_beamline()
+        super().__init__(*args, **kwargs)
 
 
 class Beamline(Device):
