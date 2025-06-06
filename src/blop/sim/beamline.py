@@ -1,41 +1,43 @@
+import datetime
 import itertools
 from collections import deque
-from collections.abc import Generator, Iterator
-from datetime import datetime
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import h5py  # type: ignore[import-untyped]
+import h5py
 import numpy as np
-import scipy as sp  # type: ignore[import-untyped]
-from event_model import compose_resource  # type: ignore[import-untyped]
-from ophyd import Component as Cpt  # type: ignore[import-untyped]
-from ophyd import Device, Signal  # type: ignore[import-untyped]
-from ophyd.sim import NullStatus, new_uid  # type: ignore[import-untyped]
-from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
+import scipy as sp
+from event_model import StreamRange, compose_stream_resource
+from ophyd import Component as Cpt
+from ophyd import Device, Kind, Signal
+from ophyd.sim import NullStatus, new_uid
+from ophyd.utils import make_dir_tree
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
 
+DECTECTOR_STORAGE = "/tmp/blop/sim"
+
 
 class Detector(Device):
-    sum = Cpt(Signal, kind="hinted")
-    max = Cpt(Signal, kind="normal")
-    area = Cpt(Signal, kind="normal")
-    cen_x = Cpt(Signal, kind="hinted")
-    cen_y = Cpt(Signal, kind="hinted")
-    wid_x = Cpt(Signal, kind="hinted")
-    wid_y = Cpt(Signal, kind="hinted")
-    image = Cpt(ExternalFileReference, kind="normal")
-    image_shape = Cpt(Signal, value=(300, 400), kind="normal")
-    noise = Cpt(Signal, kind="normal")
+    sum = Cpt(Signal, kind=Kind.hinted)
+    max = Cpt(Signal, kind=Kind.normal)
+    area = Cpt(Signal, kind=Kind.normal)
+    cen_x = Cpt(Signal, kind=Kind.hinted)
+    cen_y = Cpt(Signal, kind=Kind.hinted)
+    wid_x = Cpt(Signal, kind=Kind.hinted)
+    wid_y = Cpt(Signal, kind=Kind.hinted)
+    image = Cpt(ExternalFileReference, kind=Kind.normal)
+    image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
+    noise = Cpt(Signal, kind=Kind.normal)
 
     def __init__(
-        self, root_dir: str = "/tmp/blop/sim", verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any
-    ) -> None:
+        self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any
+    ):
         super().__init__(*args, **kwargs)
 
-        _ = make_dir_tree(datetime.now().year, base_path=root_dir)
+        _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
 
         self._root_dir = root_dir
         self._verbose = verbose
@@ -45,20 +47,18 @@ class Detector(Device):
 
         # Resource/datum docs related variables.
         self._asset_docs_cache: deque[tuple[str, dict[str, Any]]] = deque()
-        self._resource_document: dict[str, Any] | None = None
-        self._datum_factory: Any | None = None
+        self._stream_resource_document: dict[str, Any] | None = None
+        self._stream_datum_factory: Any | None = None
         self._dataset: h5py.Dataset | None = None
-        self._h5file_desc: h5py.File | None = None
         self._counter: Iterator[int] | None = None
-
         self.noise.put(noise)
 
-    def trigger(self) -> NullStatus:
+    def trigger(self):
         if not self._counter:
             raise RuntimeError("Counter not initialized, make sure to call stage() first.")
         if not self._dataset:
             raise RuntimeError("Dataset not initialized, make sure to call stage() first.")
-        if not self._datum_factory:
+        if not self._stream_datum_factory:
             raise RuntimeError("Datum factory not initialized, make sure to call stage() first.")
         super().trigger()
         raw_image = self.generate_beam(noise=self.noise.get())
@@ -66,13 +66,15 @@ class Detector(Device):
         current_frame = next(self._counter)
 
         self._dataset.resize((current_frame + 1, *self.image_shape.get()))
+
         self._dataset[current_frame, :, :] = raw_image
 
-        datum_document = self._datum_factory(datum_kwargs={"frame": current_frame})
-        self._asset_docs_cache.append(("datum", datum_document))
+        stream_datum_document = self._stream_datum_factory(
+            StreamRange(start=current_frame, stop=current_frame + 1),
+        )
+        self._asset_docs_cache.append(("stream_datum", stream_datum_document))
 
         stats = get_beam_stats(raw_image)
-        self.image.put(datum_document["datum_id"])
 
         for attr in ["max", "sum", "cen_x", "cen_y", "wid_x", "wid_y"]:
             getattr(self, attr).put(stats[attr])
@@ -81,36 +83,46 @@ class Detector(Device):
 
         return NullStatus()
 
-    def stage(self) -> list[Any]:
-        devices = super().stage()
-        date = datetime.now()
-        self._assets_dir = date.strftime("%Y/%m/%d")
+    def _generate_file_path(self, date_template="%Y/%m/%d"):
+        date = datetime.datetime.now()
+        assets_dir = date.strftime(date_template)
         data_file = f"{new_uid()}.h5"
 
-        self._resource_document, self._datum_factory, _ = compose_resource(
-            start={"uid": "needed for compose_resource() but will be discarded"},
-            spec="HDF5",
-            root=self._root_dir,
-            resource_path=str(Path(self._assets_dir) / Path(data_file)),
-            resource_kwargs={},
+        return Path(self._root_dir) / Path(assets_dir) / Path(data_file)
+
+    def stage(self):
+        devices = super().stage()
+
+        self._asset_docs_cache.clear()
+        full_path = self._generate_file_path()
+        image_shape = self.image_shape.get()
+
+        uri = f"file://localhost/{str(full_path).strip('/')}"
+
+        (
+            self._stream_resource_document,
+            self._stream_datum_factory,
+        ) = compose_stream_resource(
+            mimetype="application/x-hdf5",
+            uri=uri,
+            data_key=self.image.name,
+            parameters={
+                "chunk_shape": (1, *image_shape),
+                "dataset": "/entry/image",
+            },
         )
 
-        if not self._resource_document:
-            raise RuntimeError("Resource document not initialized.")
+        self._data_file = full_path
 
-        self._data_file = str(Path(self._resource_document["root"]) / Path(self._resource_document["resource_path"]))
-
-        # now discard the start uid, a real one will be added later
-        self._resource_document.pop("run_start")
-        self._asset_docs_cache.append(("resource", self._resource_document))
+        self._asset_docs_cache.append(("stream_resource", self._stream_resource_document))
 
         self._h5file_desc = h5py.File(self._data_file, "x")
         group = self._h5file_desc.create_group("/entry")
         self._dataset = group.create_dataset(
             "image",
-            data=np.full(fill_value=np.nan, shape=(1, *self.image_shape.get())),
-            maxshape=(None, *self.image_shape.get()),
-            chunks=(1, *self.image_shape.get()),
+            data=np.full(fill_value=np.nan, shape=(1, *image_shape)),
+            maxshape=(None, *image_shape),
+            chunks=(1, *image_shape),
             dtype="float64",
             compression="lzf",
         )
@@ -126,12 +138,19 @@ class Detector(Device):
         self._datum_factory = None
         return devices
 
-    def collect_asset_docs(self) -> Generator[tuple[str, dict[str, Any]], None, None]:
+    def describe(self):
+        res = super().describe()
+        res[self.image.name].update(
+            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
+        )
+        return res
+
+    def collect_asset_docs(self):
         items = list(self._asset_docs_cache)
         self._asset_docs_cache.clear()
         yield from items
 
-    def generate_beam(self, noise: bool = True) -> np.ndarray:
+    def generate_beam(self, noise: bool = True):
         nx, ny = self.image_shape.get()
 
         x = np.linspace(-10, 10, ny)
@@ -174,15 +193,15 @@ class Detector(Device):
 class Beamline(Device):
     det = Cpt(Detector)
 
-    kbh_ush = Cpt(Signal, kind="hinted")
-    kbh_dsh = Cpt(Signal, kind="hinted")
-    kbv_usv = Cpt(Signal, kind="hinted")
-    kbv_dsv = Cpt(Signal, kind="hinted")
+    kbh_ush = Cpt(Signal, kind=Kind.hinted)
+    kbh_dsh = Cpt(Signal, kind=Kind.hinted)
+    kbv_usv = Cpt(Signal, kind=Kind.hinted)
+    kbv_dsv = Cpt(Signal, kind=Kind.hinted)
 
-    ssa_inboard = Cpt(Signal, value=-5.0, kind="hinted")
-    ssa_outboard = Cpt(Signal, value=5.0, kind="hinted")
-    ssa_lower = Cpt(Signal, value=-5.0, kind="hinted")
-    ssa_upper = Cpt(Signal, value=5.0, kind="hinted")
+    ssa_inboard = Cpt(Signal, value=-5.0, kind=Kind.hinted)
+    ssa_outboard = Cpt(Signal, value=5.0, kind=Kind.hinted)
+    ssa_lower = Cpt(Signal, value=-5.0, kind=Kind.hinted)
+    ssa_upper = Cpt(Signal, value=5.0, kind=Kind.hinted)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

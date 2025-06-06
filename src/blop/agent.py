@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
 import torch
+from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
@@ -23,7 +24,6 @@ from botorch.models.model import Model  # type: ignore[import-untyped]
 from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[import-untyped]
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
 from botorch.posteriors.posterior import Posterior  # type: ignore[import-untyped]
-from databroker import Broker  # type: ignore[import-untyped]
 from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
@@ -38,6 +38,7 @@ from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 
 logger = logging.getLogger("blop")
+
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
 
@@ -585,7 +586,7 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker | None = None,
+        tiled: TiledWriter | None = None,
         detectors: Sequence[Signal] | None = None,
         acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
@@ -632,8 +633,12 @@ class Agent(BaseAgent):
             Whether the agent should update models for outcomes that affect inactive objectives.
             Default: False
         tolerate_acquisition_errors : bool, optional
+        detectors : iterable of ophyd objects
+            Detectors to trigger during acquisition.
             Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
             Default: False
+        tiled : optional
+            A TiledWriter instance.
         sample_center_on_init : bool, optional
             Whether to sample the center of the DOF limits when the agent has no data yet.
             Default: False
@@ -659,7 +664,7 @@ class Agent(BaseAgent):
 
         self.detectors = list(np.atleast_1d(detectors or []))
 
-        self.db = db
+        self.tiled = tiled
 
         self.trigger_delay = trigger_delay
 
@@ -688,6 +693,7 @@ class Agent(BaseAgent):
         self._train_all_models()
 
     def redigest(self):
+        print(self._table)
         self._table = self.digestion(self._table, **self.digestion_kwargs)
 
     def learn(
@@ -742,9 +748,9 @@ class Agent(BaseAgent):
                 logger.info(f"running iteration {i + 1} / {iterations}")
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
+                print(f"{res=}")  #
                 new_table = yield from self.acquire(res["points"])
                 new_table.loc[:, "acqf"] = res["acqf_name"]
-
                 x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
                 y = {key: new_table.loc[:, key].tolist() for key in self.objectives.names}
                 metadata = {
@@ -806,9 +812,8 @@ class Agent(BaseAgent):
         acquisition_inputs :
             A 2D numpy array comprising inputs for the active and non-read-only DOFs to sample.
         """
-
-        if self.db is None:
-            raise ValueError("Cannot run acquistion without databroker instance!")
+        if self.tiled is None:
+            raise ValueError("Cannot run acquistion without TiledWriter instance!")
 
         acquisition_dofs = self.dofs(active=True, read_only=False)
         for dof in acquisition_dofs:
@@ -816,7 +821,6 @@ class Agent(BaseAgent):
                 raise ValueError(f"Cannot acquire points; missing values for {dof.name}.")
 
         n = len(points[dof.name])
-
         try:
             uid = yield from self.acquisition_plan(
                 acquisition_dofs,
@@ -824,7 +828,14 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            products = self.digestion(self.db[uid].table(fill=True), **self.digestion_kwargs)
+            if "image_key" in self.digestion_kwargs:
+                tiled_data = self.tiled[uid]["primary", "internal", "events"].read()
+                tiled_data["bl_det_image"] = list(
+                    self.tiled[uid]["primary", "external", "bl_det_image"].read().astype(float)
+                )
+                products = self.digestion(tiled_data, **self.digestion_kwargs)
+            else:
+                products = self.digestion(self.tiled[uid]["primary", "internal", "events"].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
