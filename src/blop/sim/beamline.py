@@ -2,6 +2,7 @@ import datetime
 import itertools
 from collections import deque
 from pathlib import Path
+from typing import Any
 
 import h5py
 import numpy as np
