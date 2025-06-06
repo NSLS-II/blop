@@ -2,6 +2,7 @@ import datetime
 import itertools
 from collections import deque
 from pathlib import Path
+from typing import Any
 
 import h5py
 import numpy as np
@@ -30,7 +31,7 @@ class Detector(Device):
     image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
     noise = Cpt(Signal, kind=Kind.normal)
 
-    def __init__(self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args, **kwargs):
+    def __init__(self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
 
         _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
@@ -42,8 +43,8 @@ class Detector(Device):
         self._img_dir = None
 
         # Resource/datum docs related variables.
-        self._asset_docs_cache = deque()
-        self._stream_resource_document = None
+        self._asset_docs_cache: deque[tuple[str, dict[str, Any]]] = deque()
+        self._stream_resource_document: dict[str, Any] | None = None
         self._stream_datum_factory = None
         self._dataset = None
 

@@ -616,13 +616,13 @@ class Agent(BaseAgent):
             A function to digest the output of the acquisition, taking a DataFrame as an argument.
         digestion_kwargs :
             Some kwargs for the digestion function.
-        tiled : optional
-            A TiledWriter instance.
         verbose : bool
             To be verbose or not.
         tolerate_acquisition_errors : bool
             Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
             Default: False
+        tiled : optional
+            A TiledWriter instance.
         sample_center_on_init : bool, optional
             Whether to sample the center of the DOF limits when the agent has no data yet.
             Default: False
