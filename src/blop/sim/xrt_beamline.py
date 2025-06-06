@@ -3,6 +3,7 @@ import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import h5py
 import matplotlib as mpl
@@ -45,9 +46,9 @@ class xrtEpicsScreen(Device):
         self._img_dir = None
 
         # Resource/datum docs related variables.
-        self._asset_docs_cache = deque()
-        self._stream_resource_document = None
-        self._stream_datum_factory = None
+        self._asset_docs_cache: deque[tuple[str, dict[str, Any]]] = deque()
+        self._stream_resource_document: dict[str, Any] | None = None
+        self._stream_datum_factory: Any | None = None
         super().__init__(*args, **kwargs)
 
     def trigger(self):
@@ -84,7 +85,7 @@ class xrtEpicsScreen(Device):
         return Path(self._root_dir) / Path(assets_dir) / Path(data_file)
 
     def stage(self):
-        super().stage()
+        devices = super().unstage()
         full_path = self._generate_file_path()
         image_shape = self.image_shape.get()
         uri = f"file://localhost/{str(full_path).strip('/')}"
@@ -116,12 +117,16 @@ class xrtEpicsScreen(Device):
             compression="lzf",
         )
         self._counter = itertools.count()
+        return devices
 
-    def unstage(self):
-        super().unstage()
-        self._h5file_desc.close()
-        self._stream_resource_document = None
-        self._stream_datum_factory = None
+    def unstage(self) -> list[Any]:
+        devices = super().unstage()
+        del self._dataset
+        if self._h5file_desc:
+            self._h5file_desc.close()
+        self._resource_document = None
+        self._datum_factory = None
+        return devices
 
 
 class Detector(Device):

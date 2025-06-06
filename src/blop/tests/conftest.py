@@ -31,13 +31,12 @@ logger.setLevel(logging.DEBUG)
 
 
 @pytest.fixture(scope="function")
-def RE(tiled_client):  
-
+def RE(tiled_client):
     loop = asyncio.new_event_loop()
     loop.set_debug(True)
     RE = RunEngine({}, loop=loop)
     tiled_writer = TiledWriter(tiled_client)
-    RE.subscribe(tiled_writer) 
+    RE.subscribe(tiled_writer)
 
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)

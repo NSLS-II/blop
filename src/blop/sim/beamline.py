@@ -1,6 +1,7 @@
 import datetime
 import itertools
 from collections import deque
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,9 @@ class Detector(Device):
     image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
     noise = Cpt(Signal, kind=Kind.normal)
 
-    def __init__(self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any):
+    def __init__(
+        self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any
+    ):
         super().__init__(*args, **kwargs)
 
         _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
@@ -45,12 +48,18 @@ class Detector(Device):
         # Resource/datum docs related variables.
         self._asset_docs_cache: deque[tuple[str, dict[str, Any]]] = deque()
         self._stream_resource_document: dict[str, Any] | None = None
-        self._stream_datum_factory = None
-        self._dataset = None
-
+        self._stream_datum_factory: Any | None = None
+        self._dataset: h5py.Dataset | None = None
+        self._counter: Iterator[int] | None = None
         self.noise.put(noise)
 
     def trigger(self):
+        if not self._counter:
+            raise RuntimeError("Counter not initialized, make sure to call stage() first.")
+        if not self._dataset:
+            raise RuntimeError("Dataset not initialized, make sure to call stage() first.")
+        if not self._stream_datum_factory:
+            raise RuntimeError("Datum factory not initialized, make sure to call stage() first.")
         super().trigger()
         raw_image = self.generate_beam(noise=self.noise.get())
 
@@ -60,14 +69,12 @@ class Detector(Device):
 
         self._dataset[current_frame, :, :] = raw_image
 
-        # datum_document = self._datum_factory(datum_kwargs={"frame": current_frame})
         stream_datum_document = self._stream_datum_factory(
             StreamRange(start=current_frame, stop=current_frame + 1),
         )
         self._asset_docs_cache.append(("stream_datum", stream_datum_document))
 
         stats = get_beam_stats(raw_image)
-        # self.image.put(stream_datum_document["datum_id"])
 
         for attr in ["max", "sum", "cen_x", "cen_y", "wid_x", "wid_y"]:
             getattr(self, attr).put(stats[attr])
@@ -75,6 +82,7 @@ class Detector(Device):
         super().trigger()
 
         return NullStatus()
+
     def _generate_file_path(self, date_template="%Y/%m/%d"):
         date = datetime.datetime.now()
         assets_dir = date.strftime(date_template)
@@ -83,7 +91,7 @@ class Detector(Device):
         return Path(self._root_dir) / Path(assets_dir) / Path(data_file)
 
     def stage(self):
-        super().stage()
+        devices = super().stage()
 
         self._asset_docs_cache.clear()
         full_path = self._generate_file_path()
@@ -119,6 +127,7 @@ class Detector(Device):
             compression="lzf",
         )
         self._counter = itertools.count()
+        return devices
 
     def unstage(self) -> list[Any]:
         devices = super().unstage()
@@ -135,13 +144,6 @@ class Detector(Device):
             {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
         )
         return res
-
-    def unstage(self):
-        super().unstage()
-        # del self._dataset
-        self._h5file_desc.close()
-        self._stream_resource_document = None
-        self._stream_datum_factory = None
 
     def collect_asset_docs(self):
         items = list(self._asset_docs_cache)

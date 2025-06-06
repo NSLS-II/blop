@@ -23,7 +23,6 @@ tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
 tiled_writer = TiledWriter(tiled_client)
 
 
-
 def re_env(db_type="default", root_dir="/default/path"):
     RE = RunEngine({})
     bec = best_effort.BestEffortCallback()

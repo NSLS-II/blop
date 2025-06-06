@@ -25,7 +25,6 @@ from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
 from botorch.posteriors.posterior import Posterior  # type: ignore[import-untyped]
 from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
-from botorch.models.deterministic import GenericDeterministicModel
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
 
@@ -39,8 +38,6 @@ from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
 
 logger = logging.getLogger("blop")
-from bluesky.callbacks.tiled_writer import TiledWriter
-
 
 
 warnings.filterwarnings("ignore", category=botorch.exceptions.warnings.InputDataWarning)
@@ -751,7 +748,7 @@ class Agent(BaseAgent):
                 logger.info(f"running iteration {i + 1} / {iterations}")
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
-                print(f"{res=}") #
+                print(f"{res=}")  #
                 new_table = yield from self.acquire(res["points"])
                 new_table.loc[:, "acqf"] = res["acqf_name"]
                 x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
