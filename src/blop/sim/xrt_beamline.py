@@ -20,7 +20,7 @@ from blop.sim.xrt_kb_model import build_beamline, build_histRGB, run_process
 from blop.utils import get_beam_stats
 
 TEST = False
-DECTECTOR_STORAGE = "/tmp/blop/sim"
+DETECTOR_STORAGE = "/tmp/blop/sim"
 
 
 class xrtEpicsScreen(Device):
@@ -36,7 +36,7 @@ class xrtEpicsScreen(Device):
     image_shape = Cpt(Signal, value=(300, 400), kind="normal")
     noise = Cpt(Signal, kind="normal")
 
-    def __init__(self, root_dir: str = "/tmp/blop/sim", verbose: bool = True, noise: bool = True, *args, **kwargs):
+    def __init__(self, root_dir: str = DETECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args, **kwargs):
         _ = make_dir_tree(datetime.now().year, base_path=root_dir)
 
         self._root_dir = root_dir
@@ -141,7 +141,7 @@ class Detector(Device):
     image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
     noise = Cpt(Signal, kind=Kind.normal)
 
-    def __init__(self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args, **kwargs):
+    def __init__(self, root_dir: str = DETECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         _ = make_dir_tree(datetime.now().year, base_path=root_dir)

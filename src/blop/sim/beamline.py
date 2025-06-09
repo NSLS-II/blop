@@ -17,7 +17,7 @@ from ophyd.utils import make_dir_tree
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
 
-DECTECTOR_STORAGE = "/tmp/blop/sim"
+DETECTOR_STORAGE = "/tmp/blop/sim"
 
 
 class Detector(Device):
@@ -33,7 +33,7 @@ class Detector(Device):
     noise = Cpt(Signal, kind=Kind.normal)
 
     def __init__(
-        self, root_dir: str = DECTECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any
+        self, root_dir: str = DETECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any
     ):
         super().__init__(*args, **kwargs)
 

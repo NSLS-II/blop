@@ -15,14 +15,14 @@ maintainers = [
 requires-python = ">=3.10"
 dependencies = [
   "area-detector-handlers",
-  "bluesky",
+  "bluesky==1.13.1",
   "botorch",
   "databroker",
   "gpytorch",
   "h5py",
   "matplotlib",
   "numpy",
-  "ophyd",
+  "ophyd==1.10.0",
   "python-tsp",
   "scipy",
   "tables",
