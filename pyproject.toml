@@ -86,6 +86,10 @@ dev = [
   "jmespath",
   "pyarrow",
   "openpyxl",
+  "numpydoc",
+  "alembic",
+  "canonicaljson",
+  "aiosqlite",
 ]
 
 [project.urls]
@@ -96,6 +100,9 @@ Documentation = "https://nsls-ii.github.io/blop"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src/blop"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
