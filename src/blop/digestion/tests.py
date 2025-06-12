@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import xarray
 
 from ..utils import functions
 
@@ -15,10 +16,12 @@ def himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def constrained_himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
+def constrained_himmelblau_digestion(xr: xarray.DataArray) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback, constrained with NaN for a distance of more than 6 from the origin.
     """
+    # converts the xarray dataset to a pandas dataframe
+    df = xr.to_dataframe()
 
     df = himmelblau_digestion(df)
     df.loc[:, "himmelblau"] = np.where(

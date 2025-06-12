@@ -15,14 +15,14 @@ maintainers = [
 requires-python = ">=3.10"
 dependencies = [
   "area-detector-handlers",
-  "bluesky==1.13.1",
-  "botorch==0.13.0",
+  "bluesky",
+  "botorch",
   "databroker",
   "gpytorch",
   "h5py",
   "matplotlib",
-  "numpy==2.1.3",
-  "ophyd==1.10.0",
+  "numpy",
+  "ophyd",
   "python-tsp",
   "scipy",
   "tables",
@@ -64,7 +64,7 @@ dev = [
   "twine",
   "ipython",
   "jupyter",
-  "matplotlib==3.10.1",
+  "matplotlib",
   "nbsphinx",
   "numpydoc",
   "pandoc",
@@ -90,6 +90,7 @@ dev = [
   "alembic",
   "canonicaljson",
   "aiosqlite",
+  "duckdb",
 ]
 
 [project.urls]

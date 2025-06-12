@@ -748,7 +748,6 @@ class Agent(BaseAgent):
                 logger.info(f"running iteration {i + 1} / {iterations}")
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
-                print(f"{res=}")  #
                 new_table = yield from self.acquire(res["points"])
                 new_table.loc[:, "acqf"] = res["acqf_name"]
                 x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
@@ -829,13 +828,16 @@ class Agent(BaseAgent):
                 delay=self.trigger_delay,
             )
             if "image_key" in self.digestion_kwargs:
-                tiled_data = self.tiled[uid]["primary", "internal", "events"].read()
+                tiled_data = self.tiled[uid]["streams", "primary"].read()
+                # tiled_data = self.tiled[uid]["primary", "internal", "events"].read()
                 tiled_data["bl_det_image"] = list(
-                    self.tiled[uid]["primary", "external", "bl_det_image"].read().astype(float)
+                    self.tiled[uid]["streams", "primary", "bl_det_image"].read().astype(float)
+                    # self.tiled[uid]["primary", "external", "bl_det_image"].read().astype(float)
                 )
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
-                products = self.digestion(self.tiled[uid]["primary", "internal", "events"].read(), **self.digestion_kwargs)
+                products = self.digestion(self.tiled[uid]["streams", "primary"].read(), **self.digestion_kwargs)
+                # products = self.digestion(self.tiled[uid]["primary", "internal", "events"].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
