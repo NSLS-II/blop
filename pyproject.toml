@@ -51,8 +51,10 @@ pre-commit = [
 ]
 adaptive = ["bluesky-adaptive"]
 xrt = ["xrt"]
+ax = ["ax-platform"]
 
 dev = [
+  "ax-platform",
   "pytest-codecov",
   "coverage",
   "furo",
