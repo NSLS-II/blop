@@ -31,7 +31,7 @@ class xrtEpicsScreen(Device):
     cen_y = Cpt(Signal, kind="hinted")
     wid_x = Cpt(Signal, kind="hinted")
     wid_y = Cpt(Signal, kind="hinted")
-    image = Cpt(EpicsSignal, "BL:Screen1:Array", kind="normal")
+    image = Cpt(EpicsSignal, "BL:Screen1:Array", kind="omitted")
     acquire = Cpt(EpicsSignal, "BL:Screen1:Acquire", kind="normal")
     image_shape = Cpt(Signal, value=(300, 400), kind="normal")
     noise = Cpt(Signal, kind="normal")
@@ -137,7 +137,7 @@ class Detector(Device):
     cen_y = Cpt(Signal, kind=Kind.hinted)
     wid_x = Cpt(Signal, kind=Kind.hinted)
     wid_y = Cpt(Signal, kind=Kind.hinted)
-    image = Cpt(ExternalFileReference, kind=Kind.normal)
+    image = Cpt(ExternalFileReference, kind=Kind.omitted)
     image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
     noise = Cpt(Signal, kind=Kind.normal)
 
@@ -153,10 +153,10 @@ class Detector(Device):
         self._img_dir = None
 
         # Resource/datum docs related variables.
-        self._asset_docs_cache = deque()
-        self._stream_resource_document = None
-        self._stream_datum_factory = None
-        self._dataset = None
+        self._asset_docs_cache: deque[tuple[str, dict[str, Any]]] = deque()
+        self._stream_resource_document: dict[str, Any] | None = None
+        self._stream_datum_factory: Any | None = None
+        self._dataset: h5py.Dataset | None = None
 
         self.noise.put(noise)
         self.limits = [[-0.6, 0.6], [-0.45, 0.45]]
@@ -253,6 +253,17 @@ class Detector(Device):
         self._h5file_desc.close()
         self._stream_resource_document = None
         self._stream_datum_factory = None
+
+    def describe(self):
+        res = super().describe()
+        res[self.image.name] = {
+            "shape": [1, *self.image_shape.get()],
+            "external": "STREAM:",
+            "source": "sim",
+            "dtype": "array",
+            "dtype_numpy": np.dtype(np.float64).str,
+        }  # <i8
+        return res
 
     def collect_asset_docs(self):
         items = list(self._asset_docs_cache)

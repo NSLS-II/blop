@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
 import torch
+import xarray as xr
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
@@ -827,17 +828,15 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
+
             if "image_key" in self.digestion_kwargs:
                 tiled_data = self.tiled[uid]["streams", "primary"].read()
-                # tiled_data = self.tiled[uid]["primary", "internal", "events"].read()
-                tiled_data["bl_det_image"] = list(
-                    self.tiled[uid]["streams", "primary", "bl_det_image"].read().astype(float)
-                    # self.tiled[uid]["primary", "external", "bl_det_image"].read().astype(float)
+                tiled_data["bl_det_image"] = xr.DataArray(
+                    data=self.tiled[uid]["streams", "primary", "bl_det_image"].read().astype(float), dims=["dim0", "x", "y"]
                 )
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
                 products = self.digestion(self.tiled[uid]["streams", "primary"].read(), **self.digestion_kwargs)
-                # products = self.digestion(self.tiled[uid]["primary", "internal", "events"].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt

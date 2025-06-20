@@ -21,8 +21,11 @@ def constrained_himmelblau_digestion(xr: xarray.DataArray) -> pd.DataFrame:
     Digests Himmelblau's function into the feedback, constrained with NaN for a distance of more than 6 from the origin.
     """
     # converts the xarray dataset to a pandas dataframe
-    df = xr.to_dataframe()
-
+    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
+        df = xr.to_dataframe()
+    else:
+        df = xr
+    print(type(df))
     df = himmelblau_digestion(df)
     df.loc[:, "himmelblau"] = np.where(
         np.array(df.x1.values) ** 2 + np.array(df.x2) ** 2 < 36, np.array(df.himmelblau), np.nan
@@ -35,7 +38,6 @@ def sketchy_himmelblau_digestion(df: pd.DataFrame, p: float = 0.1) -> pd.DataFra
     """
     Evaluates the constrained Himmelblau, where every point is bad with probability p.
     """
-
     df = constrained_himmelblau_digestion(df)
     bad = np.random.choice(a=[True, False], size=len(df), p=[p, 1 - p])
     df.loc[:, "himmelblau"] = np.where(bad, np.nan, np.array(df.himmelblau))
@@ -48,7 +50,11 @@ Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_f
 """
 
 
-def chankong_and_haimes_digestion(df: pd.DataFrame) -> pd.DataFrame:
+def chankong_and_haimes_digestion(xr: xarray.DataArray) -> pd.DataFrame:
+    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
+        df = xr.to_dataframe()
+    else:
+        df = xr
     df["f1"] = (df.x1 - 2) ** 2 + (df.x2 - 1) + 2
     df["f2"] = 9 * df.x1 - (df.x2 - 1) + 2
     df["c1"] = df.x1**2 + df.x2**2
@@ -56,10 +62,14 @@ def chankong_and_haimes_digestion(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def mock_kbs_digestion(df: pd.DataFrame) -> pd.DataFrame:
+def mock_kbs_digestion(xr: xarray.DataArray) -> pd.DataFrame:
     """
     Digests a beam waist and height into the feedback.
     """
+    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
+        df = xr.to_dataframe()
+    else:
+        df = xr
     sigma_x = functions.gaussian_beam_waist(df.x1.values, df.x2.values)
     sigma_y = functions.gaussian_beam_waist(df.x3.values, df.x4.values)
     df["x_width"] = 2 * sigma_x
@@ -67,11 +77,14 @@ def mock_kbs_digestion(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def binh_korn_digestion(df: pd.DataFrame) -> pd.DataFrame:
+def binh_korn_digestion(xr: xarray.DataArray) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback.
     """
-
+    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
+        df = xr.to_dataframe()
+    else:
+        df = xr
     f1, f2 = functions.binh_korn(df.x1.values, df.x2.values)
     df["f1"] = f1
     df["f2"] = f2

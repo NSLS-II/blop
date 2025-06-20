@@ -28,7 +28,7 @@ class Detector(Device):
     cen_y = Cpt(Signal, kind=Kind.hinted)
     wid_x = Cpt(Signal, kind=Kind.hinted)
     wid_y = Cpt(Signal, kind=Kind.hinted)
-    image = Cpt(ExternalFileReference, kind=Kind.normal)
+    image = Cpt(ExternalFileReference, kind=Kind.omitted)
     image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
     noise = Cpt(Signal, kind=Kind.normal)
 
@@ -140,9 +140,13 @@ class Detector(Device):
 
     def describe(self):
         res = super().describe()
-        res[self.image.name].update(
-            {"shape": self.image_shape.get(), "dtype_numpy": np.dtype(np.float64).str}  # <i8
-        )
+        res[self.image.name] = {
+            "shape": [1, *self.image_shape.get()],
+            "external": "STREAM:",
+            "source": "sim",
+            "dtype": "array",
+            "dtype_numpy": np.dtype(np.float64).str,
+        }  # <i8
         return res
 
     def collect_asset_docs(self):
