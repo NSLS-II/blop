@@ -77,6 +77,22 @@ dev = [
   "pandas-stubs",
   "types-PyYAML",
   "mypy",
+  "stamina",
+  "uvicorn",
+  "asgi_correlation_id",
+  "fastapi",
+  "awkward",
+  "sparse",
+  "sqlalchemy",
+  "python-jose", 
+  "jmespath",
+  "pyarrow",
+  "openpyxl",
+  "numpydoc",
+  "alembic",
+  "canonicaljson",
+  "aiosqlite",
+  "duckdb",
 ]
 
 [project.urls]
@@ -87,6 +103,9 @@ Documentation = "https://nsls-ii.github.io/blop"
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src/blop"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""

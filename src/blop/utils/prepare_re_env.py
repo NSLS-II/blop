@@ -4,47 +4,39 @@ import json  # noqa F401
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
-import databroker  # type: ignore[import-untyped]
 import matplotlib.pyplot as plt
 import numpy as np  # noqa F401
 from bluesky.callbacks import best_effort
+from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
-from databroker import Broker
-from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
-
-from blop.sim import HDF5Handler
+from ophyd.utils import make_dir_tree
+from tiled.client import from_uri  #
 
 DEFAULT_DB_TYPE = "local"
 DEFAULT_ROOT_DIR = "/tmp/sirepo-bluesky-data"
 DEFAULT_ENV_TYPE = "stepper"
 DEFAULT_USE_SIREPO = False
+SERVER_HOST_LOCATION = "http://localhost:8000"
+
+tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
+
+tiled_writer = TiledWriter(tiled_client)
 
 
-def re_env(db_type=DEFAULT_DB_TYPE, root_dir=DEFAULT_ROOT_DIR):
+def re_env(db_type="default", root_dir="/default/path"):
     RE = RunEngine({})
     bec = best_effort.BestEffortCallback()
     RE.subscribe(bec)
 
-    db = Broker.named(db_type)
-    db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-    try:
-        databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-    except Exception:
-        pass
-    RE.subscribe(db.insert)
+    RE.subscribe(tiled_writer)
 
     _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
-
-    return {
-        "RE": RE,
-        "db": db,
-        "bec": bec,
-    }
+    return {"RE": RE, "db": tiled_client, "bec": bec}
 
 
 def register_handlers(db, handlers):
     for handler_spec, handler_class in handlers.items():
-        db.reg.register_handler(handler_spec, handler_class, overwrite=True)
+        tiled_client.reg.register_handler(handler_spec, handler_class, overwrite=True)
 
 
 if __name__ == "__main__":
@@ -54,7 +46,7 @@ if __name__ == "__main__":
         "--db-type",
         dest="db_type",
         default=DEFAULT_DB_TYPE,
-        help="Type of databroker ('local', 'temp', etc.)",
+        help="Type of tiledWriter ('local', 'temp', etc.)",
     )
     parser.add_argument(
         "-r",
