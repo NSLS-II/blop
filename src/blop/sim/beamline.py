@@ -5,14 +5,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-import h5py
+import h5py  # type: ignore[import-untyped]
 import numpy as np
-import scipy as sp
-from event_model import StreamRange, compose_stream_resource
-from ophyd import Component as Cpt
-from ophyd import Device, Kind, Signal
-from ophyd.sim import NullStatus, new_uid
-from ophyd.utils import make_dir_tree
+import scipy as sp  # type: ignore[import-untyped]
+from event_model import StreamRange, compose_stream_resource  # type: ignore[import-untyped]
+from ophyd import Component as Cpt  # type: ignore[import-untyped]
+from ophyd import Device, Kind, Signal  # type: ignore[import-untyped]
+from ophyd.sim import NullStatus, new_uid  # type: ignore[import-untyped]
+from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
 
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
