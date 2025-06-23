@@ -7,7 +7,7 @@ from blop.sim import Beamline
 from blop.utils import get_beam_stats
 
 
-def test_ax_client_experiment(RE, db):
+def test_ax_client_experiment(RE, tiled_client):
     beamline = Beamline(name="bl")
     beamline.det.noise.put(False)
 
@@ -43,7 +43,7 @@ def test_ax_client_experiment(RE, db):
     )
 
     def evaluate(results_df: pd.DataFrame) -> dict[str, tuple[float, float]]:
-        stats = get_beam_stats(results_df["bl_det_image"].iloc[0])
+        stats = get_beam_stats(results_df[0])
         area = stats["wid_x"] * stats["wid_y"]
         return {
             "beam_intensity": (stats["sum"], None),
@@ -51,7 +51,7 @@ def test_ax_client_experiment(RE, db):
         }
 
     evaluator = create_bluesky_evaluator(
-        RE, db, [beamline.det], [beamline.kbv_dsv, beamline.kbv_usv, beamline.kbh_dsh, beamline.kbh_ush], evaluate
+        RE, tiled_client, [beamline.det], [beamline.kbv_dsv, beamline.kbv_usv, beamline.kbh_dsh, beamline.kbh_ush], evaluate
     )
     for _ in range(10):
         parameterization, trial_index = ax_client.get_next_trial()

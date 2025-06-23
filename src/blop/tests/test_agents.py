@@ -18,8 +18,8 @@ def test_agent(agent, RE, tiled_client):
     assert [obj.name in best for obj in agent.objectives]
     assert agent.dofs.x1 is agent.dofs[0]
 
-    # print(agent.dofs)
-    # print(agent.objectives)
+    print(agent.dofs)
+    print(agent.objectives)
     print(agent.digestion)
 
     RE(agent.learn("qei", n=2))

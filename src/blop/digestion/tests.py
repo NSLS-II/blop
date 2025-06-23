@@ -25,7 +25,6 @@ def constrained_himmelblau_digestion(xr: xarray.DataArray) -> pd.DataFrame:
         df = xr.to_dataframe()
     else:
         df = xr
-    print(type(df))
     df = himmelblau_digestion(df)
     df.loc[:, "himmelblau"] = np.where(
         np.array(df.x1.values) ** 2 + np.array(df.x2) ** 2 < 36, np.array(df.himmelblau), np.nan

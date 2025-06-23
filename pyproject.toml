@@ -93,6 +93,8 @@ dev = [
   "canonicaljson",
   "aiosqlite",
   "duckdb",
+  "adbc-driver-manager",
+  "hdf5plugin",
 ]
 
 [project.urls]
