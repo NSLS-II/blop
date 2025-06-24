@@ -14,7 +14,7 @@ def test_pareto(agent, RE, tiled_client):
 @pytest.mark.parametrize("agent", pareto_agents, indirect=True)
 def test_monte_carlo_pareto_acqfs(agent, RE, tiled_client, acqf):
     agent.tiled = tiled_client
-    RE(agent.learn("qr", n=4))
+    RE(agent.learn("qr", n=16))
     RE(agent.learn(acqf, n=2))
     agent.dofs[0].deactivate()
     RE(agent.learn(acqf, n=2))
