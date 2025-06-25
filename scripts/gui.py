@@ -1,6 +1,5 @@
 import asyncio
 
-# import databroker
 import matplotlib as mpl
 import numpy as np
 from bluesky.callbacks import best_effort

@@ -23,5 +23,3 @@ tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
 tiled_writer = TiledWriter(tiled_client)
 
 RE.subscribe(tiled_writer)
-
-print(tiled_writer)
