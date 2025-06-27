@@ -587,7 +587,7 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        tiled: TiledWriter | None = None,
+        tiled_client: TiledWriter | None = None,
         detectors: Sequence[Signal] | None = None,
         acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
@@ -638,7 +638,7 @@ class Agent(BaseAgent):
             Detectors to trigger during acquisition.
             Whether to allow errors during acquistion. If `True`, errors will be caught as warnings.
             Default: False
-        tiled : optional
+        tiled_client : optional
             A TiledWriter instance.
         sample_center_on_init : bool, optional
             Whether to sample the center of the DOF limits when the agent has no data yet.
@@ -665,7 +665,7 @@ class Agent(BaseAgent):
 
         self.detectors = list(np.atleast_1d(detectors or []))
 
-        self.tiled = tiled
+        self.tiled_client = tiled_client
 
         self.trigger_delay = trigger_delay
 
@@ -812,7 +812,7 @@ class Agent(BaseAgent):
         acquisition_inputs :
             A 2D numpy array comprising inputs for the active and non-read-only DOFs to sample.
         """
-        if self.tiled is None:
+        if self.tiled_client is None:
             raise ValueError("Cannot run acquistion without TiledWriter instance!")
 
         acquisition_dofs = self.dofs(active=True, read_only=False)
@@ -830,13 +830,13 @@ class Agent(BaseAgent):
             )
 
             if "image_key" in self.digestion_kwargs:
-                tiled_data = self.tiled[uid]["streams", "primary"].read()
+                tiled_data = self.tiled_client[uid]["streams", "primary"].read()
                 tiled_data["bl_det_image"] = xr.DataArray(
-                    data=self.tiled[uid]["streams", "primary", "bl_det_image"].read().astype(float), dims=["dim0", "x", "y"]
+                    data=self.tiled_client[uid]["streams", "primary", "bl_det_image"].read().astype(float), dims=["dim0", "x", "y"]
                 )
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
-                products = self.digestion(self.tiled[uid]["streams", "primary"].read(), **self.digestion_kwargs)
+                products = self.digestion(self.tiled_client[uid]["streams", "primary"].read(), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt

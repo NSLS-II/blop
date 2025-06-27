@@ -11,11 +11,11 @@ from tiled.client import from_uri
 from blop import DOF, Agent, Objective
 from blop.utils import functions
 
-# MongoDB backend:
+# SQL backend:
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
 tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
-tiled_writer = TiledWriter(tiled_client)  # mongodb backend
+tiled_writer = TiledWriter(tiled_client)
 
 loop = asyncio.new_event_loop()
 loop.set_debug(True)

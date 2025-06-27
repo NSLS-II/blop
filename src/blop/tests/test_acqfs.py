@@ -6,7 +6,7 @@ from .conftest import all_agents
 @pytest.mark.parametrize("acqf", ["ei", "pi", "em", "ucb"])
 @pytest.mark.parametrize("agent", all_agents, indirect=True)
 def test_analytic_acqfs(agent, RE, tiled_client, acqf):
-    agent.tiled = tiled_client
+    agent.tiled_client = tiled_client
     RE(agent.learn("qr", n=16))
     RE(agent.learn(acqf, n=1))
     getattr(agent, acqf)
@@ -15,7 +15,7 @@ def test_analytic_acqfs(agent, RE, tiled_client, acqf):
 @pytest.mark.parametrize("acqf", ["qei", "qpi", "qem", "qucb"])
 @pytest.mark.parametrize("agent", all_agents, indirect=True)
 def test_monte_carlo_acqfs(agent, RE, tiled_client, acqf):
-    agent.tiled = tiled_client
+    agent.tiled_client = tiled_client
     RE(agent.learn("qr", n=32))
     RE(agent.learn(acqf, n=1))
     getattr(agent, acqf)

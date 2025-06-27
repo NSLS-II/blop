@@ -29,7 +29,7 @@ def test_kb_simulation(RE, tiled_client):
         digestion=beam_stats_digestion,
         digestion_kwargs={"image_key": "bl_det_image"},
         verbose=True,
-        tiled=tiled_client,
+        tiled_client=tiled_client,
         tolerate_acquisition_errors=False,
         enforce_all_objectives_valid=True,
         train_every=3,

@@ -347,8 +347,8 @@ def optimization_plan(
     bounds : dict of dicts
         Keys are motor names and values are dicts of low and high bounds. See format below.
         {'motor_name': {'low': lower_bound, 'high': upper_bound}}
-    tiled : tiledWriter.Container
-        tiledWriter instance
+    tiled : TiledWriter
+        TiledWriter instance
     motors : dict
         Keys are motor names and values are motor objects
     detector : detector object or None

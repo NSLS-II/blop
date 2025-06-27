@@ -10,7 +10,7 @@ def test_agent(agent, RE, tiled_client):
     All agents should be able to do these things.
     """
 
-    agent.tiled = tiled_client
+    agent.tiled_client = tiled_client
     RE(agent.learn("qr", n=64))
 
     best = agent.best
