@@ -1,13 +1,17 @@
 import pandas as pd
+import xarray
 
 from ..utils import get_beam_stats
 
 
-def default_digestion_function(df: pd.DataFrame) -> pd.DataFrame:
-    return df
+def default_digestion_function(df: pd.DataFrame) -> xarray.DataArray:
+    print(df.to_xarray())
+    return df.to_xarray()
 
 
-def beam_stats_digestion(df: pd.DataFrame, image_key: str, **kwargs) -> pd.DataFrame:
-    # Get the beam stats for each image in the dataframe and add them as new columns
-    df = pd.concat([df, df[image_key].apply(lambda img: pd.Series(get_beam_stats(img, **kwargs)))], axis=1)
+def beam_stats_digestion(xr: xarray.DataArray, image_key: str, **kwargs) -> xarray.DataArray:
+    df = xarray.merge(
+        [xr, xr[image_key].pipe(lambda arr: pd.DataFrame([get_beam_stats(img, **kwargs) for img in arr])).to_xarray()],
+        compat="identical",
+    )
     return df
