@@ -695,6 +695,7 @@ class Agent(BaseAgent):
 
     def redigest(self):
         print(self._table)
+        print(type(self._table))
         self._table = self.digestion(self._table, **self.digestion_kwargs)
 
     def learn(
@@ -750,11 +751,13 @@ class Agent(BaseAgent):
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
                 new_table = yield from self.acquire(res["points"])
-                new_table.loc[:, "acqf"] = res["acqf_name"]
-                x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
-                y = {key: new_table.loc[:, key].tolist() for key in self.objectives.names}
+                new_table = new_table.assign_coords(
+                    acqf=(list(new_table.dims)[0], [res["acqf_name"]] * new_table.sizes[list(new_table.dims)[0]])
+                )
+                x = {key: new_table[key].values.tolist() for key in self.dofs.names}
+                y = {key: new_table[key].values.tolist() for key in self.objectives.names}
                 metadata = {
-                    key: new_table.loc[:, key].tolist() for key in new_table.columns if (key not in x) and (key not in y)
+                    key: new_table[key].values.tolist() for key in new_table.data_vars if (key not in x) and (key not in y)
                 }
                 self.tell(x=x, y=y, metadata=metadata, append=append, force_train=force_train)
 
@@ -832,7 +835,8 @@ class Agent(BaseAgent):
             if "image_key" in self.digestion_kwargs:
                 tiled_data = self.tiled_client[uid]["streams", "primary"].read()
                 tiled_data["bl_det_image"] = xr.DataArray(
-                    data=self.tiled_client[uid]["streams", "primary", "bl_det_image"].read().astype(float), dims=["dim0", "x", "y"]
+                    data=self.tiled_client[uid]["streams", "primary", "bl_det_image"].read().astype(float),
+                    dims=["dim0", "x", "y"],
                 )
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
@@ -849,7 +853,13 @@ class Agent(BaseAgent):
             for obj in self.objectives(active=True):
                 products.loc[:, obj.name] = np.nan
 
-        if len(products) != n:
+        # checks to see that every row has the correct length
+        lengths = [
+            v.sizes[v.dims[0]] for v in products.data_vars.values() if v.dims
+        ]  # get size along first dim for each variable
+        same_lengths = all(length == lengths[0] for length in lengths)
+
+        if not same_lengths or lengths[0] != n:
             raise ValueError("The table returned by the digestion function must be the same length as the sampled inputs!")
 
         return products

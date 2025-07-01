@@ -5,43 +5,39 @@ import xarray
 from ..utils import functions
 
 
-def himmelblau_digestion(df: pd.DataFrame) -> pd.DataFrame:
+# TODO
+def himmelblau_digestion(xr: xarray.DataArray) -> xarray.DataArray:
     """
     Digests Himmelblau's function into the feedback.
     """
-    df["x1"] = df["x1"].fillna(0) if "x1" in df.columns else 0
-    df["x2"] = df["x2"].fillna(0) if "x2" in df.columns else 0
-    df["himmelblau"] = functions.himmelblau(x1=df.x1, x2=df.x2)
-    df["himmelblau_transpose"] = functions.himmelblau(x1=df.x2, x2=df.x1)
-    return df
+    xr = xr.assign(x1=(xr.x2 * 0 if "x1" not in xr else xr.x1.fillna(0)))
+    xr = xr.assign(x2=(xr.x1 * 0 if "x2" not in xr else xr.x2.fillna(0)))
+    xr = xr.assign(
+        himmelblau=functions.himmelblau(xr.x1, xr.x2),
+        himmelblau_transpose=functions.himmelblau(xr.x2, xr.x1),
+    )
+    return xr
 
 
-def constrained_himmelblau_digestion(xr: xarray.DataArray) -> pd.DataFrame:
+def constrained_himmelblau_digestion(xr: xarray.DataArray) -> xarray.DataArray:
     """
     Digests Himmelblau's function into the feedback, constrained with NaN for a distance of more than 6 from the origin.
     """
-    # converts the xarray dataset to a pandas dataframe
-    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
-        df = xr.to_dataframe()
-    else:
-        df = xr
-    df = himmelblau_digestion(df)
-    df.loc[:, "himmelblau"] = np.where(
-        np.array(df.x1.values) ** 2 + np.array(df.x2) ** 2 < 36, np.array(df.himmelblau), np.nan
-    )
-
-    return df
+    xr = himmelblau_digestion(xr)
+    xr = xr.assign(himmelblau=xr.himmelblau.where((xr.x1**2 + xr.x2**2) < 36))
+    return xr
 
 
-def sketchy_himmelblau_digestion(df: pd.DataFrame, p: float = 0.1) -> pd.DataFrame:
+def sketchy_himmelblau_digestion(xr: xarray.DataArray, p: float = 0.1) -> xarray.DataArray:
     """
     Evaluates the constrained Himmelblau, where every point is bad with probability p.
     """
-    df = constrained_himmelblau_digestion(df)
-    bad = np.random.choice(a=[True, False], size=len(df), p=[p, 1 - p])
-    df.loc[:, "himmelblau"] = np.where(bad, np.nan, np.array(df.himmelblau))
-
-    return df
+    xr = constrained_himmelblau_digestion(xr)
+    main_dim = list(xr.dims)[0]
+    bad = np.random.choice(a=[True, False], size=xr.sizes[main_dim], p=[p, 1 - p])
+    bad_xr = xarray.DataArray(bad, dims=(main_dim,), coords={main_dim: xr.coords[main_dim]})
+    xr = xr.assign(himmelblau=xr.himmelblau.where(~bad_xr))
+    return xr
 
 
 """
@@ -49,42 +45,34 @@ Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_f
 """
 
 
-def chankong_and_haimes_digestion(xr: xarray.DataArray) -> pd.DataFrame:
-    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
-        df = xr.to_dataframe()
-    else:
-        df = xr
-    df["f1"] = (df.x1 - 2) ** 2 + (df.x2 - 1) + 2
-    df["f2"] = 9 * df.x1 - (df.x2 - 1) + 2
-    df["c1"] = df.x1**2 + df.x2**2
-    df["c2"] = df.x1 - 3 * df.x2 + 10
-    return df
+def chankong_and_haimes_digestion(xr: xarray.DataArray) -> xarray.DataArray:
+    xr = xr.assign(
+        f1=(xr.x1 - 2) ** 2 + (xr.x2 - 1) + 2,
+        f2=9 * xr.x1 - (xr.x2 - 1) + 2,
+        c1=xr.x1**2 + xr.x2**2,
+        c2=xr.x1 - 3 * xr.x2 + 10,
+    )
+    return xr
 
 
-def mock_kbs_digestion(xr: xarray.DataArray) -> pd.DataFrame:
+def mock_kbs_digestion(xr: xarray.DataArray) -> xarray.DataArray:
     """
     Digests a beam waist and height into the feedback.
     """
-    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
-        df = xr.to_dataframe()
-    else:
-        df = xr
-    sigma_x = functions.gaussian_beam_waist(df.x1.values, df.x2.values)
-    sigma_y = functions.gaussian_beam_waist(df.x3.values, df.x4.values)
-    df["x_width"] = 2 * sigma_x
-    df["y_width"] = 2 * sigma_y
-    return df
+    xr = xr.assign(
+        x_width=2 * functions.gaussian_beam_waist(xr.x1, xr.x2),
+        y_width=2 * functions.gaussian_beam_waist(xr.x3, xr.x4),
+    )
+    return xr
 
 
 def binh_korn_digestion(xr: xarray.DataArray) -> pd.DataFrame:
     """
     Digests Himmelblau's function into the feedback.
     """
-    if isinstance(xr, xarray.DataArray) or isinstance(xr, xarray.Dataset):
-        df = xr.to_dataframe()
-    else:
-        df = xr
-    f1, f2 = functions.binh_korn(df.x1.values, df.x2.values)
-    df["f1"] = f1
-    df["f2"] = f2
-    return df
+    f1, f2 = functions.binh_korn(xr.x1, xr.x2)
+    xr = xr.assign(
+        f1=f1,
+        f2=f2,
+    )
+    return xr
