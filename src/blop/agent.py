@@ -100,7 +100,7 @@ class BaseAgent:
 
         self.sample_center_on_init = sample_center_on_init
 
-        self._table = pd.DataFrame()
+        self._table = xr.Dataset()
 
         self.initialized = False
         self.a_priori_hypers = None
@@ -126,8 +126,8 @@ class BaseAgent:
             return torch.stack([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
 
         key = self.dofs[index].name
-        if key in self._table.columns:
-            return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
+        if key in self._table.data_vars:
+            return torch.tensor(self._table[self.dofs[index].name].values, dtype=torch.double)
         return torch.ones(0)
 
     def train_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
@@ -149,8 +149,8 @@ class BaseAgent:
         if index is None:
             return {obj.name: self.raw_targets_dict(obj.name)[obj.name] for obj in self.objectives(**subset_kwargs)}
         key = self.objectives[index].name
-        if key in self._table.columns:
-            return {key: torch.tensor(self._table.loc[:, key].values, dtype=torch.double)}
+        if key in self._table.data_vars:
+            return {key: torch.tensor(self._table[key].values, dtype=torch.double)}
         return {key: torch.tensor([], dtype=torch.double)}
 
     def raw_targets(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
@@ -250,7 +250,7 @@ class BaseAgent:
         """
         Return the best point (the one with highest fitness given that it satisfies the most constraints)
         """
-        return float(self.scalarized_fitnesses(weights=weights, constrained=True).max())
+        return float(self.scalarizecolumnsd_fitnesses(weights=weights, constrained=True).max())
 
     def fitness_scalarization(self, weights: str | torch.Tensor = "default") -> ScalarizedPosteriorTransform:
         active_fitness_objectives = self.objectives(active=True, fitness=True)
@@ -328,7 +328,7 @@ class BaseAgent:
 
     # @property
     def pruned_mask(self) -> torch.Tensor:
-        if self.exclude_pruned and "prune" in self._table.columns:
+        if self.exclude_pruned and "prune" in self._table.data_vars:
             return torch.tensor(self._table.prune.values.astype(bool))
         return torch.zeros(len(self._table)).bool()
 
@@ -438,7 +438,8 @@ class BaseAgent:
         append: bool = True,
         force_train: bool = False,
     ) -> None:
-        """
+        """        # self._table.index = pd.Index(np.arange(len(self._table)))
+
         Inform the agent about new inputs and targets for the model.
 
         If run with no arguments, it will just reconstruct all the models.
@@ -472,10 +473,8 @@ class BaseAgent:
             raise ValueError("All supplies values must be the same length!")
 
         # TODO: This is an inefficient approach to caching data. Keep a list, make table at update model time.
-        new_table = pd.DataFrame(data)
-        self._table = pd.concat([self._table, new_table]) if append else new_table
-        self._table.index = pd.Index(np.arange(len(self._table)))
-
+        new_table = xr.Dataset({k: ("dims_0", v) for k, v in data.items()})
+        self._table = xr.merge([self._table, new_table], compat="no_conflicts") if append else new_table
         self.update_models(force_train=force_train)
 
     def ask(
@@ -743,7 +742,7 @@ class Agent(BaseAgent):
                 if isinstance(dof.search_domain, tuple)
             }
             new_table = yield from self.acquire(center_inputs)
-            new_table.loc[:, "acqf"] = "sample_center_on_init"
+            new_table["acqf"] = "sample_center_on_init"
 
         for i in range(iterations):
             if self.verbose:
@@ -759,6 +758,7 @@ class Agent(BaseAgent):
                 metadata = {
                     key: new_table[key].values.tolist() for key in new_table.data_vars if (key not in x) and (key not in y)
                 }
+                print(f'metadata: {metadata} \n x: {x} \n y: {y}')
                 self.tell(x=x, y=y, metadata=metadata, append=append, force_train=force_train)
 
     def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = 2**16):
@@ -841,6 +841,7 @@ class Agent(BaseAgent):
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
                 products = self.digestion(self.tiled_client[uid]["streams", "primary"].read(), **self.digestion_kwargs)
+            # print(f'products: {products}')
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
