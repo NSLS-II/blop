@@ -9,7 +9,6 @@ from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
 from tiled.client import from_uri
 
-# from databroker import Broker
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
@@ -17,12 +16,10 @@ from blop.dofs import BrownianMotion
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
 
-@pytest.fixture(scope="function")
+@pytest.fixture(scope="session")
 def tiled_client():
-    """Return a TiledWriter instance"""
-    # Tiled backend
+    # Start the Tiled server as a subprocess
     tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
-
     return tiled_client
 
 

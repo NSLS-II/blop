@@ -28,7 +28,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
 
     x_dof = agent.dofs(active=True)[0]
-    x_values = agent.table.loc[:, x_dof.device.name].values
+    x_values = agent.table[x_dof.device.name].values
 
     test_inputs = agent.sample(n=256, method="grid")
     test_model_inputs = agent.dofs.transform(test_inputs)
@@ -113,8 +113,8 @@ def _plot_objs_many_dofs(
 
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
-    x_values = agent.table.loc[:, x_dof.device.name].values
-    y_values = agent.table.loc[:, y_dof.device.name].values
+    x_values = agent.table[x_dof.device.name].values
+    y_values = agent.table[y_dof.device.name].values
 
     # test_inputs has shape (*input_shape, 1, n_active_dofs)
     # test_x and test_y should be squeezeable
@@ -405,7 +405,8 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * len(agent.objectives)), constrained_layout=True)
 
     x_dof = agent.dofs(active=True)[0]
-    x_values = agent.table.loc[:, x_dof.device.name].values
+    # Use xarray indexing to get the values for the x_dof
+    x_values = agent.table[x_dof.device.name].values
 
     test_inputs = agent.sample(method="grid")
     constraint = agent.constraint(agent.dofs.transform(test_inputs))[..., 0]
@@ -425,7 +426,6 @@ def _plot_valid_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_CO
 
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
-    # test_inputs has shape (..., 1, n_active_dofs)
     test_inputs = agent.sample(method="grid") if gridded else agent.sample(n=1024)
     test_x = test_inputs[..., 0, axes[0]].detach().squeeze().numpy()
     test_y = test_inputs[..., 0, axes[1]].detach().squeeze().numpy()
@@ -442,7 +442,6 @@ def _plot_valid_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_CO
             vmin=0,
             vmax=0,
         )
-
     else:
         _ = agent.valid_axes[1].scatter(
             test_x,
@@ -465,38 +464,32 @@ def _plot_valid_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_CO
             ax.set_yscale("log")
 
 
-def _plot_history(agent, x_key="index", show_all_objs=False):
-    x = getattr(agent.table, x_key).values
-
+def _plot_history(agent, x_key="dims_0", show_all_objs=False):
+    x = agent.table.coords[x_key].values
     num_obj_plots = 1
     if show_all_objs:
         num_obj_plots = len(agent.objectives) + 1
-
-    len(agent.objectives) + 1 if len(agent.objectives) > 1 else 1
 
     _, hist_axes = plt.subplots(
         num_obj_plots, 1, figsize=(6, 4 * num_obj_plots), sharex=True, constrained_layout=True, dpi=200
     )
     hist_axes = np.atleast_1d(hist_axes)
 
-    unique_strategies, _, acqf_inverse = np.unique(agent.table.acqf, return_index=True, return_inverse=True)
-
+    unique_strategies, _, acqf_inverse = np.unique(agent.table["acqf"].values, return_index=True, return_inverse=True)
     sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
 
     if show_all_objs:
         for obj_index, obj in enumerate(agent.objectives):
-            y = agent.table.loc[:, f"{obj.key}_fitness"].values
+            y = agent.table[f"{obj.key}_fitness"].values
             hist_axes[obj_index].scatter(x, y, c=sample_colors)
             hist_axes[obj_index].plot(x, y, lw=5e-1, c="k")
             hist_axes[obj_index].set_ylabel(obj.key)
 
     y = agent.scalarized_fitnesses()
-
     cummax_y = np.array([np.nanmax(y[: i + 1]) for i in range(len(y))])
 
     hist_axes[-1].scatter(x, y, c=sample_colors)
     hist_axes[-1].plot(x, y, lw=5e-1, c="k")
-
     hist_axes[-1].plot(x, cummax_y, lw=5e-1, c="k", ls=":")
 
     hist_axes[-1].set_ylabel("total_fitness")

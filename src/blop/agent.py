@@ -100,7 +100,7 @@ class BaseAgent:
 
         self.sample_center_on_init = sample_center_on_init
 
-        self._table = xr.Dataset()
+        self._table = xr.Dataset(coords={"dims_0": np.array([], dtype=int)})
 
         self.initialized = False
         self.a_priori_hypers = None
@@ -226,7 +226,7 @@ class BaseAgent:
                 [obj.evaluate_constraint(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1
             )
         else:
-            return torch.ones(size=(len(self._table), 0), dtype=torch.bool)
+            return torch.ones(size=(self._table.sizes[list(self._table.sizes.keys())[0]], 0), dtype=torch.bool)
 
     def scalarized_fitnesses(self, weights: str = "default", constrained: bool = True) -> torch.Tensor:
         """
@@ -238,8 +238,9 @@ class BaseAgent:
         if len(fitness_objs) >= 1:
             f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, fitness=True))
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
+        # if there are no fitnesses, use a constant dummy fitness
         else:
-            f = torch.zeros(len(self._table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
+            f = torch.zeros(self._table.sizes[list(self._table.sizes.keys())[0]], dtype=torch.double)
         if constrained:
             # how many constraints are satisfied?
             c = self.evaluated_constraints.sum(dim=-1)
@@ -250,7 +251,7 @@ class BaseAgent:
         """
         Return the best point (the one with highest fitness given that it satisfies the most constraints)
         """
-        return float(self.scalarizecolumnsd_fitnesses(weights=weights, constrained=True).max())
+        return float(self.scalarized_fitnesses(weights=weights, constrained=True).max())
 
     def fitness_scalarization(self, weights: str | torch.Tensor = "default") -> ScalarizedPosteriorTransform:
         active_fitness_objectives = self.objectives(active=True, fitness=True)
@@ -330,7 +331,7 @@ class BaseAgent:
     def pruned_mask(self) -> torch.Tensor:
         if self.exclude_pruned and "prune" in self._table.data_vars:
             return torch.tensor(self._table.prune.values.astype(bool))
-        return torch.zeros(len(self._table)).bool()
+        return torch.zeros(self._table.sizes[list(self._table.sizes.keys())[0]]).bool()
 
     @property
     def input_normalization(self) -> Normalize:
@@ -401,7 +402,6 @@ class BaseAgent:
 
         active_dofs = self.dofs(active=True)
         objectives_to_model = self.objectives if self.model_inactive_objectives else self.objectives(active=True)
-
         for obj in objectives_to_model:
             # do we need to update the model for this objective?
             n_trainable_points = sum(~self.train_targets(obj.name).isnan())
@@ -423,7 +423,6 @@ class BaseAgent:
                         self._construct_model(obj)
                         train_model(obj.model, hypers=cached_hypers)
                         continue
-
             t0 = ttime.monotonic()
             self._construct_model(obj)
             train_model(obj.model)
@@ -438,8 +437,7 @@ class BaseAgent:
         append: bool = True,
         force_train: bool = False,
     ) -> None:
-        """        # self._table.index = pd.Index(np.arange(len(self._table)))
-
+        """
         Inform the agent about new inputs and targets for the model.
 
         If run with no arguments, it will just reconstruct all the models.
@@ -465,16 +463,22 @@ class BaseAgent:
                 data = {**x, **y}
             else:
                 raise ValueError("Must supply either x and y, or data.")
-
         data = {k: list(np.atleast_1d(v)) for k, v in data.items()}
         unique_field_lengths = {len(v) for v in data.values()}
-
         if len(unique_field_lengths) > 1:
             raise ValueError("All supplies values must be the same length!")
-
+        start = int(self._table.sizes["dims_0"]) if self._table.sizes else 0
+        coords = {"dims_0": np.arange(start, start + len(next(iter(data.values()))))}
         # TODO: This is an inefficient approach to caching data. Keep a list, make table at update model time.
-        new_table = xr.Dataset({k: ("dims_0", v) for k, v in data.items()})
-        self._table = xr.merge([self._table, new_table], compat="no_conflicts") if append else new_table
+        data_vars = {}
+        for k, v in data.items():
+            dims = ("dims_0",)
+            if np.ndim(v) > 2:
+                dims += tuple(f"{k}_dim{i}" for i in range(1, np.ndim(v)))
+            data_vars[k] = xr.DataArray(v, dims=dims)
+
+        new_table = xr.Dataset(data_vars, coords=coords)
+        self._table = xr.concat([self._table, new_table], dim="dims_0") if append else new_table
         self.update_models(force_train=force_train)
 
     def ask(
@@ -693,8 +697,6 @@ class Agent(BaseAgent):
         self._train_all_models()
 
     def redigest(self):
-        print(self._table)
-        print(type(self._table))
         self._table = self.digestion(self._table, **self.digestion_kwargs)
 
     def learn(
@@ -750,15 +752,18 @@ class Agent(BaseAgent):
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
                 new_table = yield from self.acquire(res["points"])
-                new_table = new_table.assign_coords(
-                    acqf=(list(new_table.dims)[0], [res["acqf_name"]] * new_table.sizes[list(new_table.dims)[0]])
+
+                # we do not need to use the timestamps for the points "ts_" or sequence number so we can saftey remove them
+                new_table = new_table.drop_vars(
+                    [k for k in new_table.data_vars if k.startswith("ts_") or k.startswith("seq_num")]
                 )
+                new_table["acqf"] = (list(new_table.dims)[0], [res["acqf_name"]] * new_table.sizes[list(new_table.dims)[0]])
+
                 x = {key: new_table[key].values.tolist() for key in self.dofs.names}
                 y = {key: new_table[key].values.tolist() for key in self.objectives.names}
                 metadata = {
                     key: new_table[key].values.tolist() for key in new_table.data_vars if (key not in x) and (key not in y)
                 }
-                print(f'metadata: {metadata} \n x: {x} \n y: {y}')
                 self.tell(x=x, y=y, metadata=metadata, append=append, force_train=force_train)
 
     def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = 2**16):
@@ -841,7 +846,6 @@ class Agent(BaseAgent):
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
             else:
                 products = self.digestion(self.tiled_client[uid]["streams", "primary"].read(), **self.digestion_kwargs)
-            # print(f'products: {products}')
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -852,12 +856,11 @@ class Agent(BaseAgent):
             logger.warn(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(points)
             for obj in self.objectives(active=True):
-                products.loc[:, obj.name] = np.nan
+                products[obj.name] = np.nan
 
+        # needs to be checked for kbmirrors
         # checks to see that every row has the correct length
-        lengths = [
-            v.sizes[v.dims[0]] for v in products.data_vars.values() if v.dims
-        ]  # get size along first dim for each variable
+        lengths = [v.sizes[v.dims[0]] for v in products.data_vars.values() if v.dims]
         same_lengths = all(length == lengths[0] for length in lengths)
 
         if not same_lengths or lengths[0] != n:
@@ -866,13 +869,13 @@ class Agent(BaseAgent):
         return products
 
     def load_data(self, data_file: str, append: bool = True):
-        new_table = pd.DataFrame(pd.read_hdf(data_file, key="table"))
-        self._table = pd.concat([self._table, new_table]) if append else new_table
+        new_table = xr.open_dataset(data_file, engine="h5netcdf")
+        self._table = xr.concat([self._table, new_table], dim="dims_0") if append else new_table
         self.refresh()
 
     def reset(self):
         """Reset the agent."""
-        self._table = pd.DataFrame()
+        self._table = xr.Dataset(coords={"dims_0": np.array([], dtype=int)})
 
         for obj in self.objectives(active=True):
             if not obj._model:
@@ -996,9 +999,9 @@ class Agent(BaseAgent):
 
         save_dir, _ = os.path.split(path)
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-        self._table.to_hdf(path, key="table")
+        self._table.to_netcdf(path, engine="h5netcdf")
 
-    def forget(self, last: int | None = None, index: pd.Index | None = None, train: bool = True):
+    def forget(self, last: int | None = None, index: list[int] | None = None, train: bool = True):
         """
         Make the agent forget some data.
 
@@ -1009,14 +1012,17 @@ class Agent(BaseAgent):
         last : int
             Forget the last n=last points.
         """
-
+        main_dim = list(self._table.dims)[0]
         if last is not None:
-            if last > len(self._table):
-                raise ValueError(f"Cannot forget last {last} data points (only {len(self._table)} samples have been taken).")
-            self.forget(index=self._table.index[-last:], train=train)
+            if last > self._table.sizes[main_dim]:
+                raise ValueError(
+                    f"Cannot forget last {last} data points (only {self._table.sizes[main_dim]} samples have been taken)."
+                )
+            indices_to_drop = list(range(self._table.sizes[main_dim] - last, self._table.sizes[main_dim]))
+            self.forget(index=indices_to_drop, train=train)
 
         elif index is not None:
-            self._table.drop(index=index, inplace=True)
+            self._table = self._table.drop_isel({main_dim: index})
             self._construct_all_models()
             if train:
                 self._train_all_models()
@@ -1091,7 +1097,7 @@ class Agent(BaseAgent):
     @property
     def best(self) -> pd.DataFrame | pd.Series:
         """Returns all data for the best point."""
-        return self._table.loc[self.argmax_best_f()]
+        return self._table.isel({list(self._table.dims)[0]: self.argmax_best_f()})
 
     @property
     def best_inputs(self) -> dict[Hashable, Any]:

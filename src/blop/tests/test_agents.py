@@ -23,7 +23,6 @@ def test_agent(agent, RE, tiled_client):
     print(agent.digestion)
 
     RE(agent.learn("qei", n=2))
-    print("here")
 
     # test turning on the dummy DOF
     agent.dofs.dummy.activate()
