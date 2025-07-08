@@ -70,11 +70,6 @@ jobs:
           pip install -v .[dev]
           pip list
 
-      - name: Start temp Tiled Server
-        run: | 
-          python -m tiled serve catalog --temp --api-key secret -r /tmp/blop/sim/ & 
-          sleep 10
-
       - name: Test with pytest
         run: |
           set -vxeuo pipefail

@@ -10,11 +10,11 @@ def test_agent_with_image(RE, tiled_client):
     beamline.det.noise.put(False)
 
     dofs = [
-    DOF(description="KBV downstream", device=beamline.kbv_dsv, search_domain=(-5.0, 5.0)),
-    DOF(description="KBV upstream", device=beamline.kbv_usv, search_domain=(-5.0, 5.0)),
-    DOF(description="KBH downstream", device=beamline.kbh_dsh, search_domain=(-5.0, 5.0)),
-    DOF(description="KBH upstream", device=beamline.kbh_ush, search_domain=(-5.0, 5.0)),
-]
+        DOF(description="KBV downstream", device=beamline.kbv_dsv, search_domain=(-5.0, 5.0)),
+        DOF(description="KBV upstream", device=beamline.kbv_usv, search_domain=(-5.0, 5.0)),
+        DOF(description="KBH downstream", device=beamline.kbh_dsh, search_domain=(-5.0, 5.0)),
+        DOF(description="KBH upstream", device=beamline.kbh_ush, search_domain=(-5.0, 5.0)),
+    ]
 
     objectives = [
         Objective(name="bl_det_sum", target="max", transform="log", trust_domain=(200, np.inf)),
