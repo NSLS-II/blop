@@ -1,12 +1,9 @@
 # content of conftest.py
 import asyncio
 import logging
-import subprocess
-import time
 
 import numpy as np
 import pytest
-import requests
 from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
@@ -19,32 +16,12 @@ from blop.dofs import BrownianMotion
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="session")
 def tiled_client():
     # Start the Tiled server
-    process = subprocess.Popen(
-        ["tiled", "serve", "catalog", "--temp", "--api-key", "secret", "-r", "/tmp/blop/sim"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    # Check if the server started successfully
-    time.sleep(10)
-    url = "http://localhost:8000/api/v1/metadata/"
-    if requests.get(url, headers={"Authorization": "ApiKey secret"}).status_code != 200:
-        process.terminate()
-        raise RuntimeError("Tiled server did not start correctly")
-
     tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
-    yield tiled_client
 
-    # Disconnect
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
+    return tiled_client
 
 
 logger = logging.getLogger("blop")

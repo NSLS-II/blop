@@ -94,6 +94,7 @@ dev = [
   "aiosqlite",
   "duckdb",
   "adbc-driver-manager",
+  "hdf5plugin",
   "h5netcdf",
 ]
 
