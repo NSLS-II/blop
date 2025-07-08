@@ -14,17 +14,17 @@ jobs:
     uses: ./.github/workflows/_pre-commit.yml
 
   test:
-    needs: check
+    needs: pre-commit
     if: needs.check.outputs.branch-pr == ''
     uses: ./.github/workflows/_testing.yml
 
   docs:
-    needs: check
+    needs: pre-commit
     if: needs.check.outputs.branch-pr == ''
     uses: ./.github/workflows/_docs.yml
   
   pypi:
     if: github.ref_type == 'tag'
-    needs: dist
+    needs: [pre-commit, test, docs]
     uses: ./.github/workflows/_publish-pypi.yml
 
