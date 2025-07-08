@@ -1,11 +1,7 @@
-name: Build Documentation
+# name: Build Documentation
 
 on:
-  push:
-  pull_request:
-  workflow_dispatch:
-  release:
-    types: [published]
+  workflow_call:
 
 jobs:
   build_docs:

@@ -6,6 +6,7 @@
 name: PyPI upload
 
 on:
+  workflow_call:
   release:
     types: [published]
   workflow_dispatch:

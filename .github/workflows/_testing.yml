@@ -1,8 +1,7 @@
 name: Unit Tests
 
 on:
-  push:
-  pull_request:
+  workflow_call:
   workflow_dispatch:
   schedule:
     - cron: '00 6 * * *'  # daily at 6AM UTC
