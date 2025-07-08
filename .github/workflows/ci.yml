@@ -26,5 +26,5 @@ jobs:
   pypi:
     if: github.ref_type == 'tag'
     needs: dist
-    uses: ./.github/workflows/_publish_pypi.yml
-    
+    uses: ./.github/workflows/_publish-pypi.yml
+
