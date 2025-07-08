@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    uses: ./.github/workflows/_check.yml
+
+  pre-commit:
+    needs: check
+    if: needs.check.outputs.branch-pr == ''
+    uses: ./.github/workflows/_pre-commit.yml
+
+  test:
+    needs: check
+    if: needs.check.outputs.branch-pr == ''
+    uses: ./.github/workflows/_testing.yml
+
+  docs:
+    needs: check
+    if: needs.check.outputs.branch-pr == ''
+    uses: ./.github/workflows/_docs.yml
+  
+  pypi:
+    if: github.ref_type == 'tag'
+    needs: dist
+    uses: ./.github/workflows/_publish_pypi.yml
+    
