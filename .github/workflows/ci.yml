@@ -31,4 +31,5 @@ jobs:
     needs: [lint, test, docs]
     uses: ./.github/workflows/_publish-pypi.yml
     permissions:
-      contents: write
+    contents: read
+    id-token: write
