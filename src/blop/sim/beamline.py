@@ -17,8 +17,6 @@ from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
 from ..utils import get_beam_stats
 from .handlers import ExternalFileReference
 
-DETECTOR_STORAGE = "/tmp/blop/sim"
-
 
 class Detector(Device):
     sum = Cpt(Signal, kind=Kind.hinted)
@@ -32,9 +30,7 @@ class Detector(Device):
     image_shape = Cpt(Signal, value=(300, 400), kind=Kind.omitted)
     noise = Cpt(Signal, kind=Kind.normal)
 
-    def __init__(
-        self, root_dir: str = DETECTOR_STORAGE, verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any
-    ):
+    def __init__(self, root_dir: str = "/tmp/blop/sim", verbose: bool = True, noise: bool = True, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
 
         _ = make_dir_tree(datetime.datetime.now().year, base_path=root_dir)
