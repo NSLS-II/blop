@@ -1,8 +1,7 @@
 # content of conftest.py
 import asyncio
 import logging
-import subprocess
-import time
+from collections.abc import Generator
 
 import numpy as np
 import pytest
@@ -10,6 +9,8 @@ from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
 from tiled.client import from_uri
+from tiled.client.container import Container
+from tiled.server.simple import SimpleTiledServer
 
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
@@ -18,31 +19,12 @@ from blop.dofs import BrownianMotion
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def tiled_client():
-    process_open = subprocess.Popen(
-        ["tiled", "serve", "catalog", "--temp", "--api-key", "secret", "-r", "/tmp/blop/sim"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
-
-    # Check if the server started successfully
-    time.sleep(2)
-    # url = "http://localhost:8000/api/v1/metadata/"
-    # if requests.get(url, headers={"Authorization": "ApiKey secret"}).status_code != 200:
-    #     process_open.terminate()
-    #     raise RuntimeError("Tiled server did not start correctly")
-
-    tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
-    # time.sleep(20)
-    yield tiled_client
-
-    print("Killing tiled server process...")
-    try:
-        process_open.terminate()
-    except Exception as e:
-        print(f"Could not kill processes on port 8000: {e}")
+@pytest.fixture
+def tiled_client() -> Generator[Container, None, None]:
+    server: SimpleTiledServer = SimpleTiledServer()
+    client: Container = from_uri(server.uri)
+    yield client
+    server.close()
 
 
 logger = logging.getLogger("blop")
