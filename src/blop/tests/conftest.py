@@ -15,13 +15,12 @@ from tiled.server.simple import SimpleTiledServer
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
-
-SERVER_HOST_LOCATION = "http://localhost:8000"
+from blop.sim import beamline
 
 
 @pytest.fixture
 def tiled_client() -> Generator[Container, None, None]:
-    server: SimpleTiledServer = SimpleTiledServer()
+    server: SimpleTiledServer = SimpleTiledServer(readable_storage=[beamline.DETECTOR_STORAGE])
     client: Container = from_uri(server.uri)
     yield client
     server.close()
