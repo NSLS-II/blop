@@ -1,6 +1,8 @@
 # content of conftest.py
 import asyncio
 import logging
+import subprocess
+import time
 
 import numpy as np
 import pytest
@@ -16,12 +18,31 @@ from blop.dofs import BrownianMotion
 SERVER_HOST_LOCATION = "http://localhost:8000"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def tiled_client():
-    # Start the Tiled server
-    tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
+    process_open = subprocess.Popen(
+        ["tiled", "serve", "catalog", "--temp", "--api-key", "secret", "-r", "/tmp/blop/sim"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
 
-    return tiled_client
+    # Check if the server started successfully
+    time.sleep(2)
+    # url = "http://localhost:8000/api/v1/metadata/"
+    # if requests.get(url, headers={"Authorization": "ApiKey secret"}).status_code != 200:
+    #     process_open.terminate()
+    #     raise RuntimeError("Tiled server did not start correctly")
+
+    tiled_client = from_uri(SERVER_HOST_LOCATION, api_key="secret")
+    # time.sleep(20)
+    yield tiled_client
+
+    print("Killing tiled server process...")
+    try:
+        process_open.terminate()
+    except Exception as e:
+        print(f"Could not kill processes on port 8000: {e}")
 
 
 logger = logging.getLogger("blop")

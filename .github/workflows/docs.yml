@@ -79,11 +79,6 @@ jobs:
           pip install --upgrade pip wheel
           pip install -v .[dev,xrt]
           pip list
-      
-      - name: Start temp Tiled Server
-        run: | 
-          python -m tiled serve catalog --temp --api-key secret -r /tmp/blop/sim/ & 
-          sleep 10
 
       - name: Build Docs
         run: make -C docs/ html
