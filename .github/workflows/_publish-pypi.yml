@@ -7,10 +7,7 @@ name: PyPI upload
 
 on:
   workflow_call:
-  release:
-    types: [published]
-  workflow_dispatch:
-
+  
 jobs:
   publish_pypi:
     name: Publish package to PyPI
