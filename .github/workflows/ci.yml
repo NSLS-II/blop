@@ -5,27 +5,30 @@ permissions:
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   check:
     uses: ./.github/workflows/_check.yml
 
-  pre-commit:
+  lint:
     needs: check
     if: needs.check.outputs.branch-pr == ''
     uses: ./.github/workflows/_pre-commit.yml
 
   test:
-    needs: pre-commit
+    needs: lint
     if: needs.check.outputs.branch-pr == ''
     uses: ./.github/workflows/_testing.yml
 
   docs:
-    needs: pre-commit
+    needs: lint
     if: needs.check.outputs.branch-pr == ''
     uses: ./.github/workflows/_docs.yml
   
   pypi:
-    if: github.ref_type == 'tag'
-    needs: [pre-commit, test, docs]
+    if: success() && github.event_name == 'release'
+    needs: [lint, test, docs]
     uses: ./.github/workflows/_publish-pypi.yml
+    permissions:
+      contents: write
