@@ -27,4 +27,3 @@ jobs:
     if: github.ref_type == 'tag'
     needs: [pre-commit, test, docs]
     uses: ./.github/workflows/_publish-pypi.yml
-
