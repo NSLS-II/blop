@@ -3,9 +3,7 @@ name: Unit Tests
 on:
   workflow_call:
   workflow_dispatch:
-  schedule:
-    - cron: '00 6 * * *'  # daily at 6AM UTC
-
+  
 jobs:
   run_tests:
     runs-on: ${{ matrix.host-os }}
