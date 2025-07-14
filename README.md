@@ -1,7 +1,9 @@
 # Blop - Beamline Optimization Package
 
 
-![https://github.com/NSLS-II/blop/actions/workflows/testing.yml/badge.svg](https://github.com/NSLS-II/blop/actions/workflows/testing.yml) | ![https://img.shields.io/pypi/v/blop.svg](https://pypi.python.org/pypi/blop) | ![https://img.shields.io/conda/vn/conda-forge/blop.svg](https://anaconda.org/conda-forge/blop)
+[![Testing](https://github.com/NSLS-II/blop/actions/workflows/ci.yml/badge.svg)](https://github.com/NSLS-II/blop/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/blop.svg)](https://pypi.python.org/pypi/blop)
+[![Conda](https://img.shields.io/conda/vn/conda-forge/bloptools.svg)](https://anaconda.org/conda-forge/bloptools)
 
 * Free software: 3-clause BSD license
 * Documentation: <https://NSLS-II.github.io/blop>.
