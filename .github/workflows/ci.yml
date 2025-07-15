@@ -1,0 +1,40 @@
+name: CI
+permissions:
+  contents: read
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '00 6 * * *'  # daily at 6AM UTC
+  workflow_dispatch:
+
+jobs:
+  scheduled-job:
+    if: github.event_name == 'schedule'
+    uses: ./.github/workflows/_testing.yml
+
+  check:
+    uses: ./.github/workflows/_check.yml
+
+  lint:
+    needs: check
+    if: needs.check.outputs.branch-pr == ''
+    uses: ./.github/workflows/_pre-commit.yml
+
+  test:
+    needs: lint
+    if: needs.check.outputs.branch-pr == ''
+    uses: ./.github/workflows/_testing.yml
+
+  docs:
+    needs: lint
+    if: needs.check.outputs.branch-pr == ''
+    uses: ./.github/workflows/_docs.yml
+  
+  pypi:
+    if: success() && github.event_name == 'release'
+    needs: [lint, test, docs]
+    uses: ./.github/workflows/_publish-pypi.yml
+    permissions:
+      id-token: write
