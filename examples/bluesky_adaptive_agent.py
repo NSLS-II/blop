@@ -7,8 +7,56 @@ from databroker.client import BlueskyRun  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 
 from blop.agent import BaseAgent as BlopAgent  # type: ignore[import-untyped]
+from blop.agent import Agent as BlopFullAgent  # type: ignore[import-untyped]
 from blop.digestion import default_digestion_function  # type: ignore[import-untyped]
 
+### 
+import threading
+from bluesky.callbacks.zmq import RemoteDispatcher
+from bluesky.callbacks import CallbackBase
+
+class ZMQConsumerCallback(CallbackBase):
+    
+    def __init__(self,callback:callable=None,enable=True,*args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.start_doc_cache = None
+        self.callback = callback # A function that is called when stop is called
+        self.enable = enable
+        
+    def start(self,doc):
+        if self.enable:
+            self.start_doc_cache = doc
+        
+    def stop(self,doc):
+        if self.enable:
+            self.callback(self.start_doc_cache,doc)
+            self._clear_cache()
+            
+    def _clear_cache(self):
+        self.start_doc_cache = None
+        
+
+class ZMQConsumer:
+    
+    """
+    Allows us to start a thread which will listen to docs 
+    """
+    def __init__(self,zmq_consumer_ip_address,zmq_consumer_port,callback:callable=None):
+        
+        self.zmq_consumer_ip_address = zmq_consumer_ip_address
+        self.zmq_consumer_port = zmq_consumer_port
+        
+        self.zmq_consumer = RemoteDispatcher(f"{self.zmq_consumer_ip_address}:{self.zmq_consumer_port}")
+        self.zmq_consumer_callback = ZMQConsumerCallback(callback=callback, enable=True)
+        self.zmq_consumer.subscribe(self.zmq_consumer_callback)
+        self._zmq_thread = None
+        
+    def start_zmq_listener_thread(self):
+        print('Starting ZMQ Callback Thread')
+        self._zmq_thread = threading.Thread(target=self.zmq_consumer.start, name="zmq-consumer", daemon=True)
+        self._zmq_thread.start()
+        
 
 class BlueskyAdaptiveAgent(BlueskyAdaptiveBaseAgent, BlopAgent):
     """A BlueskyAdaptiveAgent that uses Blop for the underlying agent."""
@@ -197,3 +245,5 @@ class BlueskyAdaptiveAgent(BlueskyAdaptiveBaseAgent, BlopAgent):
             ]
         else:
             raise NotImplementedError("Only default_acquisition_plan is implemented")
+
+class QserverZmqAgent(BlopFullAgent):
