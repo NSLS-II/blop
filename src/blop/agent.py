@@ -836,11 +836,12 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-
             if "image_key" in self.digestion_kwargs:
                 tiled_data = self.tiled_client[uid]["streams", "primary"].read()
-                tiled_data["bl_det_image"] = xr.DataArray(
-                    data=self.tiled_client[uid]["streams", "primary", "bl_det_image"].read().astype(float),
+                tiled_data[str(list(self.digestion_kwargs.values())[0])] = xr.DataArray(
+                    data=self.tiled_client[uid]["streams", "primary", str(list(self.digestion_kwargs.values())[0])]
+                    .read()
+                    .astype(float),
                     dims=["dim0", "x", "y"],
                 )
                 products = self.digestion(tiled_data, **self.digestion_kwargs)
