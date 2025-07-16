@@ -24,17 +24,17 @@
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
-import blop
 
 # -- General configuration ------------------------------------------------
-
 # If your documentation needs a minimal Sphinx version, state it here.
 #
 # needs_sphinx = '1.0'
-
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
+
+import blop
+
 extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.autosummary",
@@ -49,6 +49,9 @@ extensions = [
     "sphinx_copybutton",
     "nbsphinx",
 ]
+
+# Set the kernel used by nbsphinx
+nbsphinx_kernel_name = "python3"
 
 # Configuration options for plot_directive. See:
 # https://github.com/matplotlib/matplotlib/blob/f3ed922d935751e08494e5fb5311d3050a3b637b/lib/matplotlib/sphinxext/plot_directive.py#L81
@@ -70,6 +73,9 @@ source_suffix = ".rst"
 
 # The master toctree document.
 master_doc = "index"
+
+# Allow errors in notebooks (TEST)
+# nbsphinx_allow_errors = True
 
 # General information about the project.
 project = "blop"

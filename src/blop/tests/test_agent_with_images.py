@@ -5,7 +5,7 @@ from blop.digestion import beam_stats_digestion
 from blop.sim import Beamline
 
 
-def test_kb_simulation(RE, tiled_client):
+def test_agent_with_image(RE, tiled_client):
     beamline = Beamline(name="bl")
     beamline.det.noise.put(False)
 
@@ -36,9 +36,18 @@ def test_kb_simulation(RE, tiled_client):
     )
 
     RE(agent.learn("qr", n=16))
-    RE(agent.learn("qei", n=4, iterations=4))
-
     agent.forget(last=2)
+
+    # test some functions
+    agent.refresh()
+    agent.redigest()
+
+    # test trust domains for DOFs
+    dof = agent.dofs(active=True)[0]
+    raw_x = agent.raw_inputs(dof.name).numpy()
+    dof.trust_domain = tuple(np.nanquantile(raw_x, q=[0.2, 0.8]))
+
+    # test plots
     agent.plot_objectives()
     agent.plot_acquisition()
     agent.plot_validity()
