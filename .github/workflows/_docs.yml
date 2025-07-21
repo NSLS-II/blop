@@ -1,22 +1,14 @@
-name: Unit Tests
+name: Build Documentation
 
 on:
-  push:
-  pull_request:
-  workflow_dispatch:
-  schedule:
-    - cron: '00 6 * * *'  # daily at 6AM UTC
+  workflow_call:
 
 jobs:
-  run_tests:
-    # pull requests are a duplicate of a branch push if within the same repo.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
-
-    runs-on: ${{ matrix.host-os }}
+  build_docs:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        host-os: ["ubuntu-latest"]
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10"]
       fail-fast: false
 
     defaults:
@@ -31,6 +23,8 @@ jobs:
 
       - name: Checkout the code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       # - name: Start MongoDB
       #   uses: supercharge/mongodb-github-action@1.6.0
@@ -61,17 +55,43 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install the package and its dependencies
+      - name: Install documentation-building requirements with apt/dpkg
+        run: |
+          set -vxeuo pipefail
+          wget --progress=dot:giga "https://github.com/jgm/pandoc/releases/download/3.1.6.1/pandoc-3.1.6.1-1-amd64.deb" -O /tmp/pandoc.deb
+          sudo dpkg -i /tmp/pandoc.deb
+          # conda install -c conda-forge -y pandoc
+          which pandoc
+          pandoc --version
+
+      - name: Install documentation-building requirements with pip
         run: |
           # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
           set -vxeo pipefail
 
           pip install --upgrade pip wheel
-          pip install -v .[dev]
+          pip install -v .[dev,xrt]
           pip list
 
-      - name: Test with pytest
-        run: |
-          set -vxeuo pipefail
-          coverage run -m pytest -vv -s
-          coverage report -m
+      - name: Build Docs
+        run: make -C docs/ html
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.REPOSITORY_NAME }}-docs
+          path: docs/build/html/
+
+      - name: Deploy documentation to nsls-ii.github.io
+        # if: github.repository_owner == 'NSLS-II' && github.ref_name == 'main'
+        if: github.event_name == 'release'
+        # We pin to the SHA, not the tag, for security reasons.
+        # https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/security-hardening-for-github-actions#using-third-party-actions
+        uses: peaceiris/actions-gh-pages@bbdfb200618d235585ad98e965f4aafc39b4c501  # v3.7.3
+        with:
+          deploy_key: ${{ secrets.ACTIONS_DOCUMENTATION_DEPLOY_KEY }}
+          publish_branch: master
+          publish_dir: ./docs/build/html
+          external_repository: NSLS-II/NSLS-II.github.io
+          destination_dir: ${{ env.REPOSITORY_NAME }}
+          keep_files: true  # Keep old files.
+          force_orphan: false  # Keep git history.
