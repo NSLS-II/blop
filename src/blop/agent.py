@@ -7,6 +7,8 @@ from collections import OrderedDict
 from collections.abc import Callable, Generator, Hashable, Iterator, Mapping, Sequence
 from typing import Any, cast
 
+import json 
+
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
 import gpytorch  # type: ignore[import-untyped]
@@ -98,7 +100,7 @@ class BaseAgent:
 
         self.sample_center_on_init = sample_center_on_init
 
-        self._table = pd.DataFrame()
+        self._table = {}
 
         self.initialized = False
         self.a_priori_hypers = None
@@ -124,18 +126,16 @@ class BaseAgent:
             return torch.stack([self.raw_inputs(dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
 
         key = self.dofs[index].name
-        if key in self._table.columns:
-            return torch.tensor(self._table.loc[:, self.dofs[index].name].values, dtype=torch.double)
+        if key in self._table:
+            return torch.tensor(self._table[self.dofs[index].name], dtype=torch.double)
         return torch.ones(0)
 
     def train_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
         A two-dimensional tensor of all DOF values for training on.
         """
-
         if index is None:
             return torch.stack([self.train_inputs(index=dof.name) for dof in self.dofs(**subset_kwargs)], dim=-1)
-
         dof = self.dofs[index]
         raw_inputs = self.raw_inputs(index=index, **subset_kwargs)
         return dof._transform(raw_inputs)
@@ -146,10 +146,9 @@ class BaseAgent:
         """
         if index is None:
             return {obj.name: self.raw_targets_dict(obj.name)[obj.name] for obj in self.objectives(**subset_kwargs)}
-        key = self.objectives[index].name
-        if key in self._table.columns:
-            return {key: torch.tensor(self._table.loc[:, key].values, dtype=torch.double)}
-        return {key: torch.tensor([], dtype=torch.double)}
+        if index in self._table:
+            return {index: torch.tensor(self._table[index], dtype=torch.double)}
+        return {index: torch.tensor([], dtype=torch.double)}
 
     def raw_targets(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
@@ -161,10 +160,8 @@ class BaseAgent:
         """
         Returns the values associated with an objective name.
         """
-
         targets_dict = {}
         raw_targets_dict = self.raw_targets_dict(**subset_kwargs)
-
         for obj in self.objectives(**subset_kwargs):
             targets_dict[obj.name] = obj._transform(raw_targets_dict[obj.name])
 
@@ -172,7 +169,6 @@ class BaseAgent:
             any_invalid_mask = torch.stack([values.isnan() for values in targets_dict.values()]).any(dim=0)
             for name in targets_dict:
                 targets_dict[name] = targets_dict[name].where(~any_invalid_mask, np.nan)
-
         if index is not None:
             key = self.objectives[index].name
             return {key: targets_dict[key]}
@@ -224,7 +220,7 @@ class BaseAgent:
                 [obj.evaluate_constraint(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1
             )
         else:
-            return torch.ones(size=(len(self._table), 0), dtype=torch.bool)
+            return torch.ones(size=(len(self._table[next(iter(self._table))]), 0), dtype=torch.bool)
 
     def scalarized_fitnesses(self, weights: str = "default", constrained: bool = True) -> torch.Tensor:
         """
@@ -237,7 +233,7 @@ class BaseAgent:
             f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, fitness=True))
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
-            f = torch.zeros(len(self._table), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
+            f = torch.zeros(len(self._table[next(iter(self._table))]), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
         if constrained:
             # how many constraints are satisfied?
             c = self.evaluated_constraints.sum(dim=-1)
@@ -326,9 +322,9 @@ class BaseAgent:
 
     # @property
     def pruned_mask(self) -> torch.Tensor:
-        if self.exclude_pruned and "prune" in self._table.columns:
+        if self.exclude_pruned and "prune" in self._table:
             return torch.tensor(self._table.prune.values.astype(bool))
-        return torch.zeros(len(self._table)).bool()
+        return torch.zeros(len(self._table[next(iter(self._table))])).bool()
 
     @property
     def input_normalization(self) -> Normalize:
@@ -426,6 +422,22 @@ class BaseAgent:
             self._construct_model(obj)
             train_model(obj.model)
             logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
+    
+    def deep_merge(self, dict1, dict2):
+        merged = dict1.copy()
+
+        for key, value2 in dict2.items():
+            if key in merged:
+                value1 = merged[key]
+                if isinstance(value1, dict) and isinstance(value2, dict):
+                    merged[key] = self.deep_merge(value1, value2)
+                elif isinstance(value1, list) and isinstance(value2, dict):
+                    merged[key] = value1 + value2
+                else:
+                    merged[key] = value2
+            else:
+                merged[key] = value2
+        return merged
 
     def tell(
         self,
@@ -455,6 +467,7 @@ class BaseAgent:
             A dict of hyperparameters for the model to assume a priori, instead of training.
         """
 
+
         if not data:
             if x and y and metadata:
                 data = {**x, **y, **metadata}
@@ -462,18 +475,16 @@ class BaseAgent:
                 data = {**x, **y}
             else:
                 raise ValueError("Must supply either x and y, or data.")
-
         data = {k: list(np.atleast_1d(v)) for k, v in data.items()}
-        unique_field_lengths = {len(v) for v in data.values()}
+        unique_field_lengths = {len(v) for d in data for v in d}
 
         if len(unique_field_lengths) > 1:
             raise ValueError("All supplies values must be the same length!")
 
         # TODO: This is an inefficient approach to caching data. Keep a list, make table at update model time.
-        new_table = pd.DataFrame(data)
-        self._table = pd.concat([self._table, new_table]) if append else new_table
-        self._table.index = pd.Index(np.arange(len(self._table)))
-
+        new_table = data
+        # self._table = self.deep_merge(new_table, self._table) if append else new_table
+        self._table = {**new_table, **self._table} if append else new_table
         self.update_models(force_train=force_train)
 
     def ask(
@@ -735,7 +746,7 @@ class Agent(BaseAgent):
                 if isinstance(dof.search_domain, tuple)
             }
             new_table = yield from self.acquire(center_inputs)
-            new_table.loc[:, "acqf"] = "sample_center_on_init"
+            new_table[:, "acqf"] = "sample_center_on_init"
 
         for i in range(iterations):
             if self.verbose:
@@ -743,12 +754,11 @@ class Agent(BaseAgent):
             for single_acqf in np.atleast_1d(acqf):
                 res = self.ask(n=n, acqf=single_acqf, upsample=upsample, route=route, **acqf_kwargs)
                 new_table = yield from self.acquire(res["points"])
-                new_table.loc[:, "acqf"] = res["acqf_name"]
-
-                x = {key: new_table.loc[:, key].tolist() for key in self.dofs.names}
-                y = {key: new_table.loc[:, key].tolist() for key in self.objectives.names}
+                new_table["acqf"] = [res["acqf_name"]] * len(next(iter(new_table.values())))
+                x = {key: new_table[key] for key in self.dofs.names}
+                y = {key: new_table[key] for key in self.objectives.names}
                 metadata = {
-                    key: new_table.loc[:, key].tolist() for key in new_table.columns if (key not in x) and (key not in y)
+                    key: new_table[key] for key in new_table.keys() if (key not in x) and (key not in y)
                 }
                 self.tell(x=x, y=y, metadata=metadata, append=append, force_train=force_train)
 
@@ -797,6 +807,13 @@ class Agent(BaseAgent):
             self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
 
         self.viewer.dims.axis_labels = self.dofs.names
+    
+    def convert_to_dictonary(self, db):
+        dicta = {}
+
+        for i in db:
+            dicta[i] = db[i].to_list()
+        return dicta
 
     def acquire(self, points: dict[str, list[ArrayLike]]) -> Generator[Msg, None, pd.DataFrame]:
         """Acquire and digest according to the self's acquisition and digestion plans.
@@ -824,7 +841,7 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            products = self.digestion(self.db[uid].table(fill=True), **self.digestion_kwargs)
+            products = self.digestion(self.convert_to_dictonary(self.db[uid].table(fill=True)), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -837,19 +854,28 @@ class Agent(BaseAgent):
             for obj in self.objectives(active=True):
                 products.loc[:, obj.name] = np.nan
 
-        if len(products) != n:
+        if len(next(iter(products.values()))) != n:
             raise ValueError("The table returned by the digestion function must be the same length as the sampled inputs!")
 
         return products
 
     def load_data(self, data_file: str, append: bool = True):
-        new_table = pd.DataFrame(pd.read_hdf(data_file, key="table"))
-        self._table = pd.concat([self._table, new_table]) if append else new_table
+        new_table = {}
+        with h5py.File(data_file, 'r') as f:
+            for key in f.keys():
+                dataset = f[key]
+                if key == 'time':
+                    new_table[key] = [pd.Timestamp(value) for value in dataset[:]]
+                elif dataset.dtype.kind == 'S':
+                    new_table[key] = [s.decode('utf-8') for s in dataset[:]]
+                else:
+                    new_table[key] = dataset[:]
+        self._table = {**self._table, **new_table} if append else new_table
         self.refresh()
 
     def reset(self):
         """Reset the agent."""
-        self._table = pd.DataFrame()
+        self._table = {}
 
         for obj in self.objectives(active=True):
             if not obj._model:
@@ -954,7 +980,7 @@ class Agent(BaseAgent):
         if self.verbose:
             logger.info(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
-        self.n_last_trained = len(self._table)
+        self.n_last_trained = len(self._table[next(iter(self._table))])
 
     def _get_acquisition_function(
         self, identifier: str, return_metadata: bool = False
@@ -970,10 +996,17 @@ class Agent(BaseAgent):
         Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future agent.
         """
-
+        
         save_dir, _ = os.path.split(path)
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-        self._table.to_hdf(path, key="table")
+        with h5py.File(path, 'w') as f:
+            for key, value in self._table.items():
+                if isinstance(value[0], pd.Timestamp):
+                    f.create_dataset(key, data=[ts.value for ts in value], dtype='int64')
+                elif isinstance(value[0], (np.str_, str)):
+                    f.create_dataset(key, data=np.array(value, dtype='S'))
+                else:
+                    f.create_dataset(key, data=value)
 
     def forget(self, last: int | None = None, index: pd.Index | None = None, train: bool = True):
         """
@@ -986,11 +1019,16 @@ class Agent(BaseAgent):
         last : int
             Forget the last n=last points.
         """
-
+        num_samples = len(self._table[next(iter(self._table))])
         if last is not None:
-            if last > len(self._table):
-                raise ValueError(f"Cannot forget last {last} data points (only {len(self._table)} samples have been taken).")
-            self.forget(index=self._table.index[-last:], train=train)
+            if last > num_samples:
+                raise ValueError(f"Cannot forget last {last} data points (only {num_samples} samples have been taken).")
+            self._table = {
+                key: [
+                    item for i, item in enumerate(value) if i not in set(list(range(num_samples - last, num_samples)))
+                ]
+                for key, value in self._table.items()
+            }
 
         elif index is not None:
             self._table.drop(index=index, inplace=True)
@@ -1066,14 +1104,14 @@ class Agent(BaseAgent):
         return acquisition.all_acqfs()
 
     @property
-    def best(self) -> pd.DataFrame | pd.Series:
+    def best(self) -> dict:
         """Returns all data for the best point."""
-        return self._table.loc[self.argmax_best_f()]
-
+        return { key: value[self.argmax_best_f()] for key, value in self._table.items() }
+    
     @property
     def best_inputs(self) -> dict[Hashable, Any]:
         """Returns the value of each DOF at the best point."""
-        return self._table.iloc[self.argmax_best_f()][self.dofs.names].to_dict()
+        return self._table[self.argmax_best_f()][self.dofs.names].to_dict()
 
     def go_to(self, **positions: Any) -> Generator[Any, None, None]:
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as
