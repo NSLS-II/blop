@@ -1,7 +1,7 @@
 import pandas as pd
 
 from ..utils import get_beam_stats
-import pprint
+
 
 def default_digestion_function(df: pd.DataFrame) -> pd.DataFrame:
     return df

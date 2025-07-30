@@ -25,31 +25,29 @@ def constrained_himmelblau_digestion(df):
     df = himmelblau_digestion(df)
     df["himmelblau"] = [
         np.nan if (x1_val**2 + x2_val**2 >= 36) else himmelblau_val
-        for x1_val, x2_val, himmelblau_val in zip(df["x1"], df["x2"], df["himmelblau"])
+        for x1_val, x2_val, himmelblau_val in zip(df["x1"], df["x2"], df["himmelblau"], strict=False)
     ]
     return df
 
 
-def sketchy_himmelblau_digestion(df, p: float = 0.1): #-> pd.DataFrame:
+def sketchy_himmelblau_digestion(df, p: float = 0.1):  # -> pd.DataFrame:
     """
     Evaluates the constrained Himmelblau, where every point is bad with probability p.
     """
 
     df = constrained_himmelblau_digestion(df)
     bad = np.random.choice(a=[True, False], size=len(next(iter(df.values()))), p=[p, 1 - p])
-    df['himmelblau'] = [
-        np.nan if is_bad else val
-        for val, is_bad in zip(df['himmelblau'], bad)
-    ]
+    df["himmelblau"] = [np.nan if is_bad else val for val, is_bad in zip(df["himmelblau"], bad, strict=False)]
     return df
+
 
 def chankong_and_haimes_digestion(df: pd.DataFrame) -> pd.DataFrame:
     """
     Chankong and Haimes function from https://en.wikipedia.org/wiki/Test_functions_for_optimization
     """
-    
+
     df["f1"], df["f2"], df["c1"], df["c2"] = [], [], [], []
-    for (val_x1, val_x2) in zip(df.get("x1"), df.get("x2")):
+    for val_x1, val_x2 in zip(df.get("x1"), df.get("x2"), strict=False):
         df["f1"].append((val_x1 - 2) ** 2 + (val_x2 - 1) + 2)
         df["f2"].append(9 * val_x1 - (val_x2 - 1) + 2)
         df["c1"].append(val_x1**2 + val_x2**2)
