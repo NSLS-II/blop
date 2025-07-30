@@ -140,7 +140,9 @@ def _plot_objs_many_dofs(
         values_ax = agent.obj_axes[obj_index, 0].scatter(
             np.array(x_values)[~mask], np.array(y_values)[~mask], c=values[~mask], s=size, norm=val_norm, cmap=cmap
         )
-        agent.obj_axes[obj_index, 0].scatter(np.array(x_values)[mask], np.array(y_values)[mask], marker="o", ec="k", fc="w", s=size)
+        agent.obj_axes[obj_index, 0].scatter(
+            np.array(x_values)[mask], np.array(y_values)[mask], marker="o", ec="k", fc="w", s=size
+        )
 
         # mean and sigma will have shape (*input_shape,)
         test_posterior = obj.model.posterior(test_model_inputs)
@@ -465,7 +467,7 @@ def _plot_valid_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_CO
 
 
 def _plot_history(agent, x_key="index", show_all_objs=False):
-    x = list(range(0,len(agent.table[next(iter(agent.table))])))
+    x = list(range(0, len(agent.table[next(iter(agent.table))])))
 
     num_obj_plots = 1
     if show_all_objs:
