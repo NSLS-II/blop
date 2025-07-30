@@ -7,8 +7,6 @@ from collections import OrderedDict
 from collections.abc import Callable, Generator, Hashable, Iterator, Mapping, Sequence
 from typing import Any, cast
 
-import json 
-
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
 import gpytorch  # type: ignore[import-untyped]
@@ -233,7 +231,9 @@ class BaseAgent:
             f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, fitness=True))
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
-            f = torch.zeros(len(self._table[next(iter(self._table))]), dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
+            f = torch.zeros(
+                len(self._table[next(iter(self._table))]), dtype=torch.double
+            )  # if there are no fitnesses, use a constant dummy fitness
         if constrained:
             # how many constraints are satisfied?
             c = self.evaluated_constraints.sum(dim=-1)
@@ -422,7 +422,7 @@ class BaseAgent:
             self._construct_model(obj)
             train_model(obj.model)
             logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
-    
+
     def deep_merge(self, dict1, dict2):
         merged = dict1.copy()
 
@@ -466,7 +466,6 @@ class BaseAgent:
         hypers:
             A dict of hyperparameters for the model to assume a priori, instead of training.
         """
-
 
         if not data:
             if x and y and metadata:
@@ -757,9 +756,7 @@ class Agent(BaseAgent):
                 new_table["acqf"] = [res["acqf_name"]] * len(next(iter(new_table.values())))
                 x = {key: new_table[key] for key in self.dofs.names}
                 y = {key: new_table[key] for key in self.objectives.names}
-                metadata = {
-                    key: new_table[key] for key in new_table.keys() if (key not in x) and (key not in y)
-                }
+                metadata = {key: new_table[key] for key in new_table.keys() if (key not in x) and (key not in y)}
                 self.tell(x=x, y=y, metadata=metadata, append=append, force_train=force_train)
 
     def view(self, item: str = "mean", cmap: str = "turbo", max_inputs: int = 2**16):
@@ -807,7 +804,7 @@ class Agent(BaseAgent):
             self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
 
         self.viewer.dims.axis_labels = self.dofs.names
-    
+
     def convert_to_dictonary(self, db):
         dicta = {}
 
@@ -861,13 +858,13 @@ class Agent(BaseAgent):
 
     def load_data(self, data_file: str, append: bool = True):
         new_table = {}
-        with h5py.File(data_file, 'r') as f:
+        with h5py.File(data_file, "r") as f:
             for key in f.keys():
                 dataset = f[key]
-                if key == 'time':
+                if key == "time":
                     new_table[key] = [pd.Timestamp(value) for value in dataset[:]]
-                elif dataset.dtype.kind == 'S':
-                    new_table[key] = [s.decode('utf-8') for s in dataset[:]]
+                elif dataset.dtype.kind == "S":
+                    new_table[key] = [s.decode("utf-8") for s in dataset[:]]
                 else:
                     new_table[key] = dataset[:]
         self._table = {**self._table, **new_table} if append else new_table
@@ -996,15 +993,15 @@ class Agent(BaseAgent):
         Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future agent.
         """
-        
+
         save_dir, _ = os.path.split(path)
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
-        with h5py.File(path, 'w') as f:
+        with h5py.File(path, "w") as f:
             for key, value in self._table.items():
                 if isinstance(value[0], pd.Timestamp):
-                    f.create_dataset(key, data=[ts.value for ts in value], dtype='int64')
+                    f.create_dataset(key, data=[ts.value for ts in value], dtype="int64")
                 elif isinstance(value[0], (np.str_, str)):
-                    f.create_dataset(key, data=np.array(value, dtype='S'))
+                    f.create_dataset(key, data=np.array(value, dtype="S"))
                 else:
                     f.create_dataset(key, data=value)
 
@@ -1024,9 +1021,7 @@ class Agent(BaseAgent):
             if last > num_samples:
                 raise ValueError(f"Cannot forget last {last} data points (only {num_samples} samples have been taken).")
             self._table = {
-                key: [
-                    item for i, item in enumerate(value) if i not in set(list(range(num_samples - last, num_samples)))
-                ]
+                key: [item for i, item in enumerate(value) if i not in set(range(num_samples - last, num_samples))]
                 for key, value in self._table.items()
             }
 
@@ -1106,8 +1101,8 @@ class Agent(BaseAgent):
     @property
     def best(self) -> dict:
         """Returns all data for the best point."""
-        return { key: value[self.argmax_best_f()] for key, value in self._table.items() }
-    
+        return {key: value[self.argmax_best_f()] for key, value in self._table.items()}
+
     @property
     def best_inputs(self) -> dict[Hashable, Any]:
         """Returns the value of each DOF at the best point."""
