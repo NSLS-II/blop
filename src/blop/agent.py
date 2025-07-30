@@ -8,8 +8,6 @@ from collections import OrderedDict
 from collections.abc import Callable, Generator, Hashable, Iterator, Mapping, Sequence
 from typing import Any, cast
 
-import json 
-
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
 import databroker
@@ -427,7 +425,7 @@ class BaseAgent:
             self._construct_model(obj)
             train_model(obj.model)
             logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
-    
+
     def deep_merge(self, dict1, dict2):
         merged = dict1.copy()
 
@@ -487,7 +485,6 @@ class BaseAgent:
         hypers:
             A dict of hyperparameters for the model to assume a priori, instead of training.
         """
-
 
         if not data:
             if x and y and metadata:
@@ -828,7 +825,7 @@ class Agent(BaseAgent):
             self.viewer.add_image(data=a, name=f"{acqf_identifier}", colormap=cmap)
 
         self.viewer.dims.axis_labels = self.dofs.names
-    
+
     def convert_to_dictonary(self, db):
         dicta = {}
 
@@ -1049,7 +1046,7 @@ class Agent(BaseAgent):
         Save the sampled inputs and targets of the agent to a file, which can be used
         to initialize a future agent.
         """
-        
+
         save_dir, _ = os.path.split(path)
         pathlib.Path(save_dir).mkdir(parents=True, exist_ok=True)
         with h5py.File(path, "w") as f:
