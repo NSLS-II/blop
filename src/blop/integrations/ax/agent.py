@@ -3,6 +3,7 @@ from collections import defaultdict
 from collections.abc import Generator
 from typing import Callable
 
+import pandas as pd
 from ax import Client
 from ax.api.types import TParameterization, TOutcome, TParameterValue
 from bluesky.protocols import Movable, Readable
@@ -12,19 +13,54 @@ from databroker import Broker
 from .adapters import configure_parameters, configure_metrics, configure_objectives
 from ...dofs import DOF
 from ...objectives import Objective
-from ...digestion import default_digestion_function
 
 logger = logging.getLogger(__name__)
 
 
+def default_digestion_function(trial_index: int, objectives: list[Objective], df: pd.DataFrame) -> TOutcome:
+    """
+    Simple digestion function.
+
+    Assumes the following:
+    - Objective names are the same as the names of the columns in the dataframe.
+    - Each row in the dataframe corresponds to a single trial.
+
+    Parameters
+    ----------
+    trial_index : int
+        The index of the trial in the dataframe.
+    objectives : list[Objective]
+        The objectives of the experiment.
+    df : pd.DataFrame
+        The dataframe containing the results of the experiment.
+
+    Returns
+    -------
+    TOutcome
+        A dictionary mapping objective names to their mean and standard error. Since there
+        is a single trial, the standard error is None.
+    """
+    return {
+        objective.name: (df.loc[(trial_index % len(df)) + 1, objective.name], None) for objective in objectives
+    }
+
+
 class AxAgent:
-    def __init__(self, readables: list[Readable], dofs: list[DOF], objectives: list[Objective], db: Broker, digestion: Callable = default_digestion_function, digestion_kwargs: dict | None = None):
+    def __init__(self, 
+        readables: list[Readable], 
+        dofs: list[DOF], 
+        objectives: list[Objective], 
+        db: Broker, 
+        digestion: Callable[[pd.DataFrame], dict[str, tuple[float, float]]] = default_digestion_function, 
+        digestion_kwargs: dict | None = None
+    ):
         self.readables = readables
         self.dofs = {dof.name: dof for dof in dofs}
         self.objectives = {obj.name: obj for obj in objectives}
         self.client = Client()
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs or {}
+        self.db = db
 
     def configure_experiment(self, name: str | None = None, description: str | None = None, experiment_type: str | None = None, owner: str | None = None) -> None:
         parameters = configure_parameters(self.dofs.values())
@@ -39,8 +75,8 @@ class AxAgent:
         return self.client.get_next_trials(n)
 
     def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
-        for trial_index, parameters in trials.items():
-            self.client.complete_trial(trial_index=trial_index, parameters=parameters, raw_data=outcomes[trial_index] if outcomes is not None else None)
+        for trial_index in trials.keys():
+            self.client.complete_trial(trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None)
 
     def attach_data(self, data: list[tuple[TParameterization, TOutcome]]) -> None:
         for parameters, raw_data in data:
@@ -71,12 +107,8 @@ class AxAgent:
         
     def acquire(self, trials: dict[int, TParameterization]) -> Generator[dict[int, TOutcome], None, dict[int, TOutcome] | None]:
         plan_args = self._unpack_parameters(trials.values())
-
         uid = yield from list_scan(self.readables, *plan_args, md={"ax_trial_indices": list(trials.keys())})
-
-        results_df = self.db[uid][0].table(fill=True)
-
-        # TODO: Convert to dict[int, TOutcome] while using standard digestion function
-        #return self.digestion(trials, results_df)
-        return {}
+        results_df = self.db[uid].table(fill=True)
+        active_objectives = [objective for objective in self.objectives.values() if objective.active]
+        return {trial_index: self.digestion(trial_index, active_objectives, results_df, **self.digestion_kwargs) for trial_index in trials.keys()}
         
