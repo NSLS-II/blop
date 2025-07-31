@@ -151,7 +151,7 @@ class LatentConstraintModel(LatentGP):
         return (samples / samples.sum(-1, keepdim=True)).mean(0).reshape(*input_shape, -1)
 
 
-class LatentDirichletClassifier(SingleTaskGP):
+class LatentDirichletClassifier(LatentGP):
     def __init__(
         self,
         train_inputs: torch.Tensor,
@@ -160,7 +160,7 @@ class LatentDirichletClassifier(SingleTaskGP):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_inputs, train_targets, *args, **kwargs)
+        super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
 
         self.trained: bool = False
 
