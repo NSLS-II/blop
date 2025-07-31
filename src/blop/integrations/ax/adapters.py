@@ -1,11 +1,10 @@
 import logging
 
-from ax import RangeParameterConfig, ChoiceParameterConfig, Client
+from ax import ChoiceParameterConfig, RangeParameterConfig
 from ax.api.protocols import IMetric
 
 from ...dofs import DOF
 from ...objectives import Objective
-
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,7 @@ def _to_ax_parameter_config(dof: DOF) -> RangeParameterConfig | ChoiceParameterC
             is_ordered=dof.type == "ordinal",
             dependent_parameters=None,
         )
-    
+
     return parameter_config
 
 
@@ -45,7 +44,10 @@ def configure_parameters(dofs: list[DOF]) -> list[RangeParameterConfig | ChoiceP
 
 def _unpack_objectives(objectives: list[Objective]) -> tuple[str, list[str]]:
     if not all(o.active for o in objectives):
-        msg = f"Found inactive objectives while configuring the optimization: {", ".join([o.name for o in objectives if not o.active])}"
+        msg = (
+            "Found inactive objectives while configuring the optimization: "
+            f"{', '.join([o.name for o in objectives if not o.active])}"
+        )
         raise ValueError(msg)
 
     objective_specs = []
@@ -66,19 +68,23 @@ def _unpack_objectives(objectives: list[Objective]) -> tuple[str, list[str]]:
     objective_str = ", ".join(objective_specs)
     return objective_str, outcome_contraint_specs
 
+
 def configure_objectives(objectives: list[Objective]) -> tuple[str, list[str]]:
     active_objectives = [o for o in objectives if o.active]
     objective_str, outcome_constraint_strs = _unpack_objectives(active_objectives)
-    logger.info(f"Configuring optimization with objective: {objective_str} and outcome constraints: {outcome_constraint_strs}")
+    logger.info(
+        f"Configuring optimization with objective: {objective_str} and outcome constraints: {outcome_constraint_strs}"
+    )
     return objective_str, outcome_constraint_strs
 
 
 def _unpack_inactive_objectives(objectives: list[Objective]) -> list[IMetric]:
     if any(o.active for o in objectives):
-        msg = f"Found active objectives while configuring the metrics: {", ".join([o.name for o in objectives if o.active])}"
+        msg = f"Found active objectives while configuring the metrics: {', '.join([o.name for o in objectives if o.active])}"
         raise ValueError(msg)
-    
+
     return [IMetric(o.name) for o in objectives]
+
 
 def configure_metrics(objectives: list[Objective]) -> list[IMetric]:
     inactive_objectives = [o for o in objectives if not o.active]

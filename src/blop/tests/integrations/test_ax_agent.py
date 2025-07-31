@@ -1,7 +1,7 @@
-from blop.sim import Beamline
-from blop.integrations.ax.agent import AxAgent
 from blop.dofs import DOF
+from blop.integrations.ax.agent import AxAgent
 from blop.objectives import Objective
+from blop.sim import Beamline
 
 
 def test_ax_agent(RE, db):
