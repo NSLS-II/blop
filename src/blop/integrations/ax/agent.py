@@ -63,6 +63,7 @@ class AxAgent:
     digestion_kwargs : dict
         Additional keyword arguments to pass to the digestion function.
     """
+
     def __init__(
         self,
         readables: list[Readable],
@@ -100,7 +101,7 @@ class AxAgent:
             The type of experiment.
         owner : str, optional
             The owner of the experiment.
-        
+
         See Also
         --------
         ax.Client.configure_experiment : The Ax method to configure an experiment.
@@ -215,9 +216,7 @@ class AxAgent:
 
         return unpacked_list
 
-    def acquire(
-        self, trials: dict[int, TParameterization]
-    ) -> Generator[Msg, str, dict[int, TOutcome] | None]:
+    def acquire(self, trials: dict[int, TParameterization]) -> Generator[Msg, str, dict[int, TOutcome] | None]:
         """
         Acquire data given a set of trials. Deploys the trials in a single Bluesky run and
         returns the outcomes of the trials computed by the digestion function.
