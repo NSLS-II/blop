@@ -83,3 +83,7 @@ target/
 
 # Ipython Notebook
 .ipynb_checkpoints
+
+# pixi environments
+.pixi
+*.egg-info
