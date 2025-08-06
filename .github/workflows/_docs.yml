@@ -64,14 +64,12 @@ jobs:
           which pandoc
           pandoc --version
 
-      - name: Install documentation-building requirements with pip
-        run: |
-          # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
-          set -vxeo pipefail
-
-          pip install --upgrade pip wheel
-          pip install -v .[dev,xrt]
-          pip list
+      - name: Install pixi and activate environment
+        uses: prefix-dev/setup-pixi@v0.8.14
+        with:
+          pixi-version: v0.46.0
+          environments: docs
+          activate-environment: docs
 
       - name: Build Docs
         run: make -C docs/ html
