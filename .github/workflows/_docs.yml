@@ -67,7 +67,7 @@ jobs:
       - name: Install pixi and activate environment
         uses: prefix-dev/setup-pixi@v0.8.14
         with:
-          pixi-version: v0.49.0
+          pixi-version: v0.46.0
           environments: docs
           activate-environment: docs
 
