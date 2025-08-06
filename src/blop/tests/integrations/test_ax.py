@@ -2,7 +2,7 @@ import pandas as pd
 from ax.service.ax_client import AxClient
 from ax.service.utils.instantiation import ObjectiveProperties
 
-from blop.integrations.ax import create_blop_experiment, create_bluesky_evaluator
+from blop.integrations.ax.helpers import create_blop_experiment, create_bluesky_evaluator
 from blop.sim import Beamline
 from blop.utils import get_beam_stats
 
