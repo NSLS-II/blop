@@ -8,9 +8,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-      - name: Install pre-commit dependencies
-        run: pip install .[pre-commit]
-      - uses: pre-commit/action@v3.0.0
+      - uses: prefix-dev/setup-pixi@v0.8.14
         with:
-          extra_args: --all-files
+          pixi-version: v0.46.0
+          environments: pre-commit
+          cache: false
+          activate-environment: pre-commit
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files

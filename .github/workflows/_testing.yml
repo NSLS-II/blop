@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         host-os: ["ubuntu-latest"]
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["py310", "py311", "py312"]
       fail-fast: false
 
     defaults:
@@ -26,43 +26,13 @@ jobs:
       - name: Checkout the code
         uses: actions/checkout@v3
 
-      # - name: Start MongoDB
-      #   uses: supercharge/mongodb-github-action@1.6.0
-
-      # - name: Start Sirepo Docker container
-      #   uses: NSLS-II/start-sirepo-action@v2
-      #   with:
-      #     docker-binary: docker
-
-      # - name: Copy databroker config file
-      #   run: |
-      #     set -vxeuo pipefail
-      #     mkdir -v -p ~/.config/databroker/
-      #     wget https://raw.githubusercontent.com/NSLS-II/sirepo-bluesky/main/examples/local.yml -O ~/.config/databroker/local.yml
-
-      # - name: Set up Python ${{ matrix.python-version }} with conda
-      #   uses: conda-incubator/setup-miniconda@v2
-      #   with:
-      #     activate-environment: ${{ env.REPOSITORY_NAME }}-py${{ matrix.python-version }}
-      #     auto-update-conda: true
-      #     miniconda-version: "latest"
-      #     python-version: ${{ matrix.python-version }}
-      #     mamba-version: "*"
-      #     channels: conda-forge
-
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - name: Install pixi and activate environment
+        uses: prefix-dev/setup-pixi@v0.8.14
         with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install the package and its dependencies
-        run: |
-          # For reference: https://www.gnu.org/software/bash/manual/html_node/The-Set-Builtin.html.
-          set -vxeo pipefail
-
-          pip install --upgrade pip wheel
-          pip install -v .[dev]
-          pip list
+          pixi-version: v0.46.0
+          environments: ${{ matrix.python-version }}
+          cache: false
+          activate-environment: ${{ matrix.python-version }}
 
       - name: Test with pytest
         run: |
