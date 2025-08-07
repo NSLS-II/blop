@@ -1,23 +1,15 @@
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Generator
-<<<<<<< HEAD
 from typing import Literal
-=======
->>>>>>> 93823ecb1128a600e7a0bfa1c5ff332090087c0f
 
 import pandas as pd
 from ax import Client
 from ax.api.types import TOutcome, TParameterization, TParameterValue
-<<<<<<< HEAD
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from bluesky.plans import list_scan
 from bluesky.protocols import Movable, Readable
-=======
-from bluesky.plans import list_scan
-from bluesky.protocols import Movable, Readable
 from bluesky.utils import Msg
->>>>>>> 93823ecb1128a600e7a0bfa1c5ff332090087c0f
 from databroker import Broker
 
 from ...dofs import DOF
@@ -38,11 +30,7 @@ def default_digestion_function(trial_index: int, objectives: list[Objective], df
     Parameters
     ----------
     trial_index : int
-<<<<<<< HEAD
         The index of the trial.
-=======
-        The index of the trial in the dataframe.
->>>>>>> 93823ecb1128a600e7a0bfa1c5ff332090087c0f
     objectives : list[Objective]
         The objectives of the experiment.
     df : pd.DataFrame
@@ -329,4 +317,19 @@ class AxAgent:
         self.client.set_generation_strategy(generation_strategy)
 
     def summarize(self) -> pd.DataFrame:
+        """
+        View of the experiment state.
+
+        NOTE: This method is a convenience method for inspecting the experiment state.
+        It is not recommended to use this for downstream analysis.
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe of the experiment state containing a parameterization per row.
+
+        See Also
+        --------
+        ax.Client.summarize : The Ax method to summarize the experiment state.
+        """
         return self.client.summarize()
