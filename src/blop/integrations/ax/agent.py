@@ -285,6 +285,7 @@ class AxAgent:
         See Also
         --------
         set_generation_strategy : Explicitly set the generation strategy for the experiment.
+        ax.Client.configure_generation_strategy : The Ax method to configure the generation strategy.
         """
         self.client.configure_generation_strategy(
             method=method,
@@ -313,6 +314,7 @@ class AxAgent:
         See Also
         --------
         configure_generation_strategy : Configure an implicit generation strategy for the experiment.
+        ax.Client.set_generation_strategy : The Ax method to set the generation strategy.
         """
         self.client.set_generation_strategy(generation_strategy)
 
