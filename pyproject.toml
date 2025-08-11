@@ -78,6 +78,7 @@ dev = [
   "pandas-stubs",
   "types-PyYAML",
   "mypy",
+  "tiled[server, minimal-client]",
 ]
 
 [project.urls]
