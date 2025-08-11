@@ -2,11 +2,15 @@ import numpy as np
 
 from blop import DOF, Agent, Objective
 from blop.digestion import beam_stats_digestion
-from blop.sim import Beamline
+from blop.sim import DatabrokerBeamline, TiledBeamline
 
 
-def test_kb_simulation(RE, db):
-    beamline = Beamline(name="bl")
+def test_kb_simulation(RE, backend, setup):
+    if backend == "databroker":
+        beamline = DatabrokerBeamline(name="bl")
+
+    elif backend == "tiled":
+        beamline = TiledBeamline(name="bl")
     beamline.det.noise.put(False)
 
     dofs = [
@@ -29,7 +33,7 @@ def test_kb_simulation(RE, db):
         digestion=beam_stats_digestion,
         digestion_kwargs={"image_key": "bl_det_image"},
         verbose=True,
-        db=db,
+        db=setup,
         tolerate_acquisition_errors=False,
         enforce_all_objectives_valid=True,
         train_every=3,
