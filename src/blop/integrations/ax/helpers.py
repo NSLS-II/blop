@@ -3,6 +3,7 @@ from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
+import tiled.client.container
 from ax.service.ax_client import AxClient
 from bluesky.plans import list_scan
 from bluesky.protocols import NamedMovable, Readable
@@ -59,6 +60,35 @@ def create_bluesky_evaluator(
     """
     plan_function = plan or list_scan
 
+    def convert_to_dictonary(db) -> dict[str, list[Any]]:
+        """
+        Converts the data that arrives from either databroker as a pd.Dataframe or through
+        tiled as a xr.DataArray into a dictonary
+
+        Parameters
+        ----------
+        db : databroker or tiled
+            The databroker or tiled instance
+        """
+        dictonary = {}
+        if isinstance(db, tiled.client.container.Container):
+            tiled_data = db["streams", "primary"].read()
+            for var_name, data_array in tiled_data.data_vars.items():
+                dictonary[var_name] = data_array.values.flatten().tolist()
+            tiled_image = db["streams", "primary", "bl_det_image"].read().astype(float)
+            dictonary["bl_det_image"] = tiled_image
+            return dictonary
+
+        # if it is a databroker instance
+        elif isinstance(db, list):
+            data = db[0].table(fill=True)
+            for i in data:
+                dictonary[i] = data[i].to_list()
+            return dictonary
+
+        else:
+            raise ValueError("Unknown data source.")
+
     def evaluate(parameterization: dict[str, float] | dict[str, list[float]]) -> dict[str, tuple[float, float]]:
         # Prepare the parameters for the plan
         unpacked = []
@@ -78,7 +108,7 @@ def create_bluesky_evaluator(
         uid = RE(plan_function(readables, *unpacked))
 
         # Fetch the data
-        results_df = db[uid][0].to_table(fill=True)
+        results_df = convert_to_dictonary(db[uid])
 
         # Evaluate the data
         return evaluation_function(results_df)
