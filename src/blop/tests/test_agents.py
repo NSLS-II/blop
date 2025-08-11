@@ -5,12 +5,11 @@ from .conftest import all_agents
 
 
 @pytest.mark.parametrize("agent", all_agents, indirect=True)
-def test_agent(agent, RE, db):
+def test_agent(agent, RE):
     """
     All agents should be able to do these things.
     """
 
-    agent.db = db
     RE(agent.learn("qr", n=32))
 
     best = agent.best
@@ -65,7 +64,6 @@ def test_agent(agent, RE, db):
 
 
 @pytest.mark.parametrize("agent", all_agents, indirect=True)
-def test_benchmark(agent, RE, db):
-    agent.db = db
+def test_benchmark(agent, RE):
     per_iter_learn_kwargs_list = [{"acqf": "qr", "n": 32}, {"acqf": "qei", "n": 2, "iterations": 2}]
     RE(agent.benchmark(output_dir="/tmp/blop", iterations=1, per_iter_learn_kwargs_list=per_iter_learn_kwargs_list))

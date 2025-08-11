@@ -78,7 +78,7 @@ def create_bluesky_evaluator(
         uid = RE(plan_function(readables, *unpacked))
 
         # Fetch the data
-        results_df = db[uid][0].table(fill=True)
+        results_df = db[uid][0].to_table(fill=True)
 
         # Evaluate the data
         return evaluation_function(results_df)

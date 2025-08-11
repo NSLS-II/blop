@@ -1,6 +1,7 @@
 import logging
 import os
 import pathlib
+import pprint as pprint
 import time as ttime
 import warnings
 from collections import OrderedDict
@@ -9,13 +10,16 @@ from typing import Any, cast
 
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
+import databroker
 import gpytorch  # type: ignore[import-untyped]
 import h5py  # type: ignore[import-untyped]
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
+import tiled.client
 import torch
+import xarray as xr
 from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
@@ -23,7 +27,6 @@ from botorch.models.model import Model  # type: ignore[import-untyped]
 from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[import-untyped]
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
 from botorch.posteriors.posterior import Posterior  # type: ignore[import-untyped]
-from databroker import Broker  # type: ignore[import-untyped]
 from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
@@ -595,7 +598,7 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker | None = None,
+        db,
         detectors: Sequence[Signal] | None = None,
         acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
@@ -616,6 +619,8 @@ class Agent(BaseAgent):
         ----------
         dofs : Sequence[DOF]
             The degrees of freedom that the agent can control, which determine the output of the model.
+        db:
+            A Tiled or Databroker object
         objectives : Sequence[Objective]
             The objectives which the agent will try to optimize.
         acquisition_plan : Callable, optional
@@ -806,11 +811,36 @@ class Agent(BaseAgent):
         self.viewer.dims.axis_labels = self.dofs.names
 
     def convert_to_dictonary(self, db):
-        dicta = {}
+        """
+        Converts the data that arrives from either databroker as a pd.Dataframe or through
+        tiled as a xr.DataArray into a dictonary
 
-        for i in db:
-            dicta[i] = db[i].to_list()
-        return dicta
+        Parameters
+        ----------
+        __________________
+        """
+        dictonary = {}
+        if isinstance(db, tiled.client.container.Container):
+            if "image_key" in self.digestion_kwargs:
+                tiled_data = db["streams", "primary"].read()
+                for var_name, data_array in tiled_data.data_vars.items():
+                    dictonary[var_name] = data_array.values.flatten().tolist()
+                tiled_image = db["streams", "primary", "bl_det_image"].read().astype(float)
+                dictonary["bl_det_image"] = tiled_image
+                return dictonary
+            else:
+                for var_name, data_array in db["streams", "primary"].read().data_vars.items():
+                    dictonary[var_name] = data_array.values.flatten().tolist()
+                return dictonary
+
+        elif isinstance(db, databroker.v1.Header):
+            data = db.table(fill=True)
+            for i in data:
+                dictonary[i] = data[i].to_list()
+            return dictonary
+
+        else:
+            raise ValueError("Unknown data source.")
 
     def acquire(self, points: dict[str, list[ArrayLike]]) -> Generator[Msg, None, pd.DataFrame]:
         """Acquire and digest according to the self's acquisition and digestion plans.
@@ -838,7 +868,7 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            products = self.digestion(self.convert_to_dictonary(self.db[uid].table(fill=True)), **self.digestion_kwargs)
+            products = self.digestion(self.convert_to_dictonary(self.db[uid]), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -1098,10 +1128,41 @@ class Agent(BaseAgent):
         """
         return acquisition.all_acqfs()
 
+    def convert_back_from_dictionary(self, data):
+        if isinstance(self.db, tiled.client.container.Container):
+            data_vars = {}
+
+            for key, value in data.items():
+                if key in ["time", "ts_x1", "ts_x2"]:
+                    converted_value = pd.to_datetime(value, unit="s", origin="unix")
+                    data_vars[key] = xr.DataArray(converted_value)
+
+                elif isinstance(value, (list, np.ndarray)) and isinstance(value[0], np.ndarray):
+                    dims = ("dim_0",)
+                    value = np.array(value)
+                    dims += tuple(f"{key}_dim{i}" for i in range(1, len(value.shape)))
+                    data_vars[key] = xr.DataArray(value, dims=dims)
+
+                else:
+                    converted_value = value
+                    data_vars[key] = xr.DataArray(converted_value)
+            return xr.Dataset(data_vars)
+
+        elif isinstance(self.db, databroker.v1.Broker):
+            return pd.DataFrame(data)
+        else:
+            raise Exception("Not a supported type")
+
     @property
     def best(self) -> dict:
         """Returns all data for the best point."""
-        return {key: value[self.argmax_best_f()] for key, value in self._table.items()}
+        df = self.convert_back_from_dictionary(self._table)
+        if isinstance(self.db, tiled.client.container.Container):
+            print(df)
+            return df.isel({list(df.dims)[0]: self.argmax_best_f()})
+        elif isinstance(self.db, databroker.v1.Broker):
+            return df.loc[self.argmax_best_f()]
+        pass  # self.convert_back_from_dictionary( {key: value[self.argmax_best_f()] for key, value in self._table.items()})
 
     @property
     def best_inputs(self) -> dict[Hashable, Any]:
