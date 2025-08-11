@@ -833,7 +833,8 @@ class Agent(BaseAgent):
 
         Parameters
         ----------
-        __________________
+        db : databroker or tiled
+            The databroker or tiled instance
         """
         dictonary = {}
         if isinstance(db, tiled.client.container.Container):
@@ -900,7 +901,7 @@ class Agent(BaseAgent):
         """
 
         if self.db is None:
-            raise ValueError("Cannot run acquistion without databroker instance!")
+            raise ValueError("Cannot run acquistion without databroker or tiled instance!")
 
         acquisition_dofs = self.dofs(active=True, read_only=False)
         for dof in acquisition_dofs:
@@ -1177,9 +1178,16 @@ class Agent(BaseAgent):
         return acquisition.all_acqfs()
 
     def convert_back_from_dictionary(self, data):
+        """
+        Converts the dictonary back to either a pd.Dataframe or xr.DataArray depending on the type of db
+
+        Parameters
+        ----------
+        data : dict
+            A dictonary containing the data to be converted
+        """
         if isinstance(self.db, tiled.client.container.Container):
             data_vars = {}
-
             for key, value in data.items():
                 if key in ["time", "ts_x1", "ts_x2"]:
                     converted_value = pd.to_datetime(value, unit="s", origin="unix")
@@ -1194,6 +1202,7 @@ class Agent(BaseAgent):
                 else:
                     converted_value = value
                     data_vars[key] = xr.DataArray(converted_value)
+
             return xr.Dataset(data_vars)
 
         elif isinstance(self.db, databroker.v1.Broker):
@@ -1206,11 +1215,10 @@ class Agent(BaseAgent):
         """Returns all data for the best point."""
         df = self.convert_back_from_dictionary(self._table)
         if isinstance(self.db, tiled.client.container.Container):
-            print(df)
             return df.isel({list(df.dims)[0]: self.argmax_best_f()})
         elif isinstance(self.db, databroker.v1.Broker):
             return df.loc[self.argmax_best_f()]
-        pass  # self.convert_back_from_dictionary( {key: value[self.argmax_best_f()] for key, value in self._table.items()})
+        pass
 
     @property
     def best_inputs(self) -> dict[Hashable, Any]:

@@ -1,9 +1,10 @@
+import numpy as np
 import pandas as pd
 from ax.service.ax_client import AxClient
 from ax.service.utils.instantiation import ObjectiveProperties
 
 from blop.integrations.ax.helpers import create_blop_experiment, create_bluesky_evaluator
-from blop.sim import DatabrokerBeamline, TiledBeamline
+from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
 from blop.utils import get_beam_stats
 
 
@@ -47,7 +48,7 @@ def test_ax_client_experiment(RE, backend, setup):
     )
 
     def evaluate(results_df: pd.DataFrame) -> dict[str, tuple[float, float]]:
-        stats = get_beam_stats(results_df["bl_det_image"].iloc[0])
+        stats = get_beam_stats(np.asarray(results_df["bl_det_image"][0], dtype=np.float32))
         area = stats["wid_x"] * stats["wid_y"]
         return {
             "beam_intensity": (stats["sum"], None),

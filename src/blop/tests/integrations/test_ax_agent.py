@@ -10,11 +10,15 @@ from blop.bayesian.models import LatentGP
 from blop.dofs import DOF
 from blop.integrations.ax.agent import AxAgent
 from blop.objectives import Objective
-from blop.sim import Beamline
+from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
 
 
-def test_sim_beamline(RE, db):
-    beamline = Beamline(name="bl")
+def test_ax_agent(RE, backend, setup):
+    if backend == "databroker":
+        beamline = DatabrokerBeamline(name="bl")
+
+    elif backend == "tiled":
+        beamline = TiledBeamline(name="bl")
     beamline.det.noise.put(False)
 
     dofs = [
@@ -34,7 +38,7 @@ def test_sim_beamline(RE, db):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        db=setup,
     )
 
     agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
