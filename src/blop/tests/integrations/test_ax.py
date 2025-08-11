@@ -2,11 +2,19 @@ import pandas as pd
 from ax.service.ax_client import AxClient
 from ax.service.utils.instantiation import ObjectiveProperties
 
+from blop.integrations.ax import create_blop_experiment, create_bluesky_evaluator
+from blop.sim import DatabrokerBeamline, TiledBeamline
 from blop.integrations.ax.helpers import create_blop_experiment, create_bluesky_evaluator
 from blop.sim import DatabrokerBeamline, TiledBeamline
 from blop.utils import get_beam_stats
 
 
+def test_ax_client_experiment(RE, backend, setup):
+    if backend == "databroker":
+        beamline = DatabrokerBeamline(name="bl")
+
+    elif backend == "tiled":
+        beamline = TiledBeamline(name="bl")
 def test_ax_client_experiment(RE, backend, setup):
     if backend == "databroker":
         beamline = DatabrokerBeamline(name="bl")
@@ -55,6 +63,7 @@ def test_ax_client_experiment(RE, backend, setup):
         }
 
     evaluator = create_bluesky_evaluator(
+        RE, setup, [beamline.det], [beamline.kbv_dsv, beamline.kbv_usv, beamline.kbh_dsh, beamline.kbh_ush], evaluate
         RE, setup, [beamline.det], [beamline.kbv_dsv, beamline.kbv_usv, beamline.kbh_dsh, beamline.kbh_ush], evaluate
     )
     for _ in range(10):
