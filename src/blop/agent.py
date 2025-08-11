@@ -827,11 +827,36 @@ class Agent(BaseAgent):
         self.viewer.dims.axis_labels = self.dofs.names
 
     def convert_to_dictonary(self, db):
-        dicta = {}
+        """
+        Converts the data that arrives from either databroker as a pd.Dataframe or through
+        tiled as a xr.DataArray into a dictonary
 
-        for i in db:
-            dicta[i] = db[i].to_list()
-        return dicta
+        Parameters
+        ----------
+        __________________
+        """
+        dictonary = {}
+        if isinstance(db, tiled.client.container.Container):
+            if "image_key" in self.digestion_kwargs:
+                tiled_data = db["streams", "primary"].read()
+                for var_name, data_array in tiled_data.data_vars.items():
+                    dictonary[var_name] = data_array.values.flatten().tolist()
+                tiled_image = db["streams", "primary", "bl_det_image"].read().astype(float)
+                dictonary["bl_det_image"] = tiled_image
+                return dictonary
+            else:
+                for var_name, data_array in db["streams", "primary"].read().data_vars.items():
+                    dictonary[var_name] = data_array.values.flatten().tolist()
+                return dictonary
+
+        elif isinstance(db, databroker.v1.Header):
+            data = db.table(fill=True)
+            for i in data:
+                dictonary[i] = data[i].to_list()
+            return dictonary
+
+        else:
+            raise ValueError("Unknown data source.")
 
     def convert_to_dictonary(self, db):
         """
