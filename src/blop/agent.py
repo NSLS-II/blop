@@ -1188,20 +1188,20 @@ class Agent(BaseAgent):
         """
         if isinstance(self.db, tiled.client.container.Container):
             data_vars = {}
-            for key, value in data.items():
-                if key in ["time", "ts_x1", "ts_x2"]:
+            updated_data = {key: value for key, value in data.items() if "ts" not in key}
+            for key, value in updated_data.items():
+                if key in ["time"]:
                     converted_value = pd.to_datetime(value, unit="s", origin="unix")
                     data_vars[key] = xr.DataArray(converted_value)
 
                 elif isinstance(value, (list, np.ndarray)) and isinstance(value[0], np.ndarray):
-                    dims = ("dim_0",)
                     value = np.array(value)
-                    dims += tuple(f"{key}_dim{i}" for i in range(1, len(value.shape)))
-                    data_vars[key] = xr.DataArray(value, dims=dims)
+                    # Start fresh for each variable
+                    var_dims = ("dim_0",) + tuple(f"{key}_dim{i}" for i in range(1, len(value.shape)))
+                    data_vars[key] = xr.DataArray(value, dims=var_dims)
 
                 else:
-                    converted_value = value
-                    data_vars[key] = xr.DataArray(converted_value)
+                    data_vars[key] = xr.DataArray(value)
 
             return xr.Dataset(data_vars)
 
@@ -1214,11 +1214,11 @@ class Agent(BaseAgent):
     def best(self) -> dict:
         """Returns all data for the best point."""
         df = self.convert_back_from_dictionary(self._table)
-        if isinstance(self.db, tiled.client.container.Container):
+        if isinstance(df, xr.Dataset):
             return df.isel({list(df.dims)[0]: self.argmax_best_f()})
-        elif isinstance(self.db, databroker.v1.Broker):
+        elif isinstance(df, pd.DataFrame):
             return df.loc[self.argmax_best_f()]
-        pass
+        return ValueError("Unsupported data type for best point retrieval.")
 
     @property
     def best_inputs(self) -> dict[Hashable, Any]:
