@@ -1,7 +1,6 @@
 import logging
 import os
 import pathlib
-import pprint as pprint
 import time as ttime
 import warnings
 from collections import OrderedDict
@@ -19,7 +18,7 @@ import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
 import tiled.client
 import torch
-import xarray as xr
+from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
@@ -27,6 +26,7 @@ from botorch.models.model import Model  # type: ignore[import-untyped]
 from botorch.models.model_list_gp_regression import ModelListGP  # type: ignore[import-untyped]
 from botorch.models.transforms.input import Normalize  # type: ignore[import-untyped]
 from botorch.posteriors.posterior import Posterior  # type: ignore[import-untyped]
+from databroker import Broker  # type: ignore[import-untyped]
 from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
@@ -35,6 +35,7 @@ from . import plotting, utils
 from .bayesian import acquisition, models
 from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
 from .bayesian.models import construct_single_task_model, train_model
+from .data_access import DatabrokerDataAccess, TiledDataAccess
 from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
@@ -147,9 +148,10 @@ class BaseAgent:
         """
         if index is None:
             return {obj.name: self.raw_targets_dict(obj.name)[obj.name] for obj in self.objectives(**subset_kwargs)}
-        if index in self._table:
-            return {index: torch.tensor(self._table[index], dtype=torch.double)}
-        return {index: torch.tensor([], dtype=torch.double)}
+        key = self.objectives[index].name
+        if key in self._table:
+            return {key: torch.tensor(self._table[key], dtype=torch.double)}
+        return {key: torch.tensor([], dtype=torch.double)}
 
     def raw_targets(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
         """
@@ -326,7 +328,7 @@ class BaseAgent:
     # @property
     def pruned_mask(self) -> torch.Tensor:
         if self.exclude_pruned and "prune" in self._table:
-            return torch.tensor(self._table.prune.values.astype(bool))
+            return torch.tensor(self._table["prune"], dtype=bool)
         return torch.zeros(len(self._table[next(iter(self._table))])).bool()
 
     @property
@@ -501,7 +503,6 @@ class BaseAgent:
 
         # TODO: This is an inefficient approach to caching data. Keep a list, make table at update model time.
         new_table = data
-        # self._table = self.deep_merge(new_table, self._table) if append else new_table
         self._table = {**new_table, **self._table} if append else new_table
         self.update_models(force_train=force_train)
 
@@ -614,7 +615,7 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db,
+        db: Broker | TiledWriter | None = None,
         detectors: Sequence[Signal] | None = None,
         acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
@@ -826,72 +827,7 @@ class Agent(BaseAgent):
 
         self.viewer.dims.axis_labels = self.dofs.names
 
-    def convert_to_dictonary(self, db):
-        """
-        Converts the data that arrives from either databroker as a pd.Dataframe or through
-        tiled as a xr.DataArray into a dictonary
-
-        Parameters
-        ----------
-        db : databroker or tiled
-            The databroker or tiled instance
-        """
-        dictonary = {}
-        if isinstance(db, tiled.client.container.Container):
-            if "image_key" in self.digestion_kwargs:
-                tiled_data = db["streams", "primary"].read()
-                for var_name, data_array in tiled_data.data_vars.items():
-                    dictonary[var_name] = data_array.values.flatten().tolist()
-                tiled_image = db["streams", "primary", "bl_det_image"].read().astype(float)
-                dictonary["bl_det_image"] = tiled_image
-                return dictonary
-            else:
-                for var_name, data_array in db["streams", "primary"].read().data_vars.items():
-                    dictonary[var_name] = data_array.values.flatten().tolist()
-                return dictonary
-
-        elif isinstance(db, databroker.v1.Header):
-            data = db.table(fill=True)
-            for i in data:
-                dictonary[i] = data[i].to_list()
-            return dictonary
-
-        else:
-            raise ValueError("Unknown data source.")
-
-    def convert_to_dictonary(self, db):
-        """
-        Converts the data that arrives from either databroker as a pd.Dataframe or through
-        tiled as a xr.DataArray into a dictonary
-
-        Parameters
-        ----------
-        __________________
-        """
-        dictonary = {}
-        if isinstance(db, tiled.client.container.Container):
-            if "image_key" in self.digestion_kwargs:
-                tiled_data = db["streams", "primary"].read()
-                for var_name, data_array in tiled_data.data_vars.items():
-                    dictonary[var_name] = data_array.values.flatten().tolist()
-                tiled_image = db["streams", "primary", "bl_det_image"].read().astype(float)
-                dictonary["bl_det_image"] = tiled_image
-                return dictonary
-            else:
-                for var_name, data_array in db["streams", "primary"].read().data_vars.items():
-                    dictonary[var_name] = data_array.values.flatten().tolist()
-                return dictonary
-
-        elif isinstance(db, databroker.v1.Header):
-            data = db.table(fill=True)
-            for i in data:
-                dictonary[i] = data[i].to_list()
-            return dictonary
-
-        else:
-            raise ValueError("Unknown data source.")
-
-    def acquire(self, points: dict[str, list[ArrayLike]]) -> Generator[Msg, None, pd.DataFrame]:
+    def acquire(self, points: dict[str, list[ArrayLike]]) -> Generator[Msg, None, dict[str, Any]]:
         """Acquire and digest according to the self's acquisition and digestion plans.
 
         Parameters
@@ -917,7 +853,15 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-            products = self.digestion(self.convert_to_dictonary(self.db[uid]), **self.digestion_kwargs)
+
+            if isinstance(self.db[uid], tiled.client.container.Container):
+                data = TiledDataAccess()
+                products = self.digestion(
+                    data.convert_to_dictonary(self.db[uid], self.digestion_kwargs), **self.digestion_kwargs
+                )
+            else:
+                data = DatabrokerDataAccess()
+                products = self.digestion(data.convert_to_dictonary(self.db[uid]), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -1084,14 +1028,14 @@ class Agent(BaseAgent):
                 else:
                     f.create_dataset(key, data=value)
 
-    def forget(self, last: int | None = None, index: pd.Index | None = None, train: bool = True):
+    def forget(self, last: int | None = None, index: list[int] | None = None, train: bool = True):
         """
         Make the agent forget some data.
 
         Parameters
         ----------
         index :
-            An index of samples to forget about.
+            An list of sample indexes to forget about.
         last : int
             Forget the last n=last points.
         """
@@ -1103,9 +1047,10 @@ class Agent(BaseAgent):
                 key: [item for i, item in enumerate(value) if i not in set(range(num_samples - last, num_samples))]
                 for key, value in self._table.items()
             }
-
         elif index is not None:
-            self._table.drop(index=index, inplace=True)
+            self._table = {
+                key: [item for i, item in enumerate(value) if i not in index] for key, value in self._table.items()
+            }
             self._construct_all_models()
             if train:
                 self._train_all_models()
@@ -1177,47 +1122,16 @@ class Agent(BaseAgent):
         """
         return acquisition.all_acqfs()
 
-    def convert_back_from_dictionary(self, data):
-        """
-        Converts the dictonary back to either a pd.Dataframe or xr.DataArray depending on the type of db
-
-        Parameters
-        ----------
-        data : dict
-            A dictonary containing the data to be converted
-        """
-        if isinstance(self.db, tiled.client.container.Container):
-            data_vars = {}
-            updated_data = {key: value for key, value in data.items() if "ts" not in key}
-            for key, value in updated_data.items():
-                if key in ["time"]:
-                    converted_value = pd.to_datetime(value, unit="s", origin="unix")
-                    data_vars[key] = xr.DataArray(converted_value)
-
-                elif isinstance(value, (list, np.ndarray)) and isinstance(value[0], np.ndarray):
-                    value = np.array(value)
-                    # Start fresh for each variable
-                    var_dims = ("dim_0",) + tuple(f"{key}_dim{i}" for i in range(1, len(value.shape)))
-                    data_vars[key] = xr.DataArray(value, dims=var_dims)
-
-                else:
-                    data_vars[key] = xr.DataArray(value)
-
-            return xr.Dataset(data_vars)
-
-        elif isinstance(self.db, databroker.v1.Broker):
-            return pd.DataFrame(data)
-        else:
-            raise Exception("Not a supported type")
-
     @property
     def best(self) -> dict:
         """Returns all data for the best point."""
-        df = self.convert_back_from_dictionary(self._table)
-        if isinstance(df, xr.Dataset):
+        if isinstance(self.db, tiled.client.container.Container):
+            tiled_data = TiledDataAccess()
+            df = tiled_data.convert_back_from_dictonary(self._table)
             return df.isel({list(df.dims)[0]: self.argmax_best_f()})
-        elif isinstance(df, pd.DataFrame):
-            return df.loc[self.argmax_best_f()]
+        elif isinstance(self.db, databroker.v1.Broker):
+            db_data = DatabrokerDataAccess()
+            return db_data.convert_back_from_dictonary(self._table).loc[self.argmax_best_f()]
         return ValueError("Unsupported data type for best point retrieval.")
 
     @property
