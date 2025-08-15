@@ -28,7 +28,7 @@ dependencies = [
   "scipy",
   "tables",
   "torch",
-  "tiled",
+  "tiled[server, minimal-client]",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
