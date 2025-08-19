@@ -5,6 +5,7 @@ from typing import Literal
 
 import pandas as pd
 from ax import Client
+from ax.analysis import Analysis, AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization, TParameterValue
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from bluesky.plans import list_scan
@@ -246,6 +247,64 @@ class AxAgent:
             trial_index: self.digestion(trial_index, active_objectives, results_df, **self.digestion_kwargs)
             for trial_index in trials.keys()
         }
+
+    def compute_analyses(self, analyses: list[Analysis], display: bool = True) -> list[AnalysisCard]:
+        """
+        Compute analyses for the experiment.
+
+        Parameters
+        ----------
+        analyses : list[Analysis]
+            The Ax analyses to compute
+        display : bool
+            Show plots in an interactive environment.
+
+        Returns
+        -------
+        list[AnalysisCard]
+            The computed analysis cards
+
+        See Also
+        --------
+        ax.analysis : The Ax analysis module which contains many pre-built analyses.
+        ax.analysis.Analysis : The Ax analysis class to create custom analyses.
+        ax.analysis.AnalysisCard : The Ax analysis card class which contains the raw and computed data.
+        """
+        return self.client.compute_analyses(analyses=analyses, display=display)
+
+    def plot_objective(self, x_dof_name: str, y_dof_name: str, objective_name: str) -> list[AnalysisCard]:
+        """
+        Plot the predicted objective as a function of the two DOFs.
+
+        Parameters
+        ----------
+        x_dof_name : str
+            The name of the DOF to plot on the x-axis.
+        y_dof_name : str
+            The name of the DOF to plot on the y-axis.
+        objective_name : str
+            The name of the objective to plot.
+
+        Returns
+        -------
+        list[AnalysisCard]
+            The computed analysis cards
+
+        See Also
+        --------
+        ax.analysis.ContourPlot : Pre-built analysis for plotting the objective as a function of two parameters.
+        ax.analysis.AnalysisCard : The Ax analysis card class which contains the raw and computed data.
+        """
+        return self.client.compute_analyses(
+            analyses=[
+                ContourPlot(
+                    x_parameter_name=x_dof_name,
+                    y_parameter_name=y_dof_name,
+                    metric_name=objective_name,
+                )
+            ],
+            display=True,
+        )
 
     def configure_generation_strategy(
         self,
