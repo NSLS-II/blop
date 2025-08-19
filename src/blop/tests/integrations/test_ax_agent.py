@@ -40,6 +40,7 @@ def test_sim_beamline(RE, db):
     agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
     RE(agent.learn(iterations=25, n=1))
 
+
 def test_plot_objective(RE, db):
     beamline = Beamline(name="bl")
     beamline.det.noise.put(False)
