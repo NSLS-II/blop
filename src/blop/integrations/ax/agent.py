@@ -1,10 +1,12 @@
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Generator
+from typing import Literal
 
 import pandas as pd
 from ax import Client
 from ax.api.types import TOutcome, TParameterization, TParameterValue
+from ax.generation_strategy.generation_strategy import GenerationStrategy
 from bluesky.plans import list_scan
 from bluesky.protocols import Movable, Readable
 from bluesky.utils import Msg
@@ -28,7 +30,7 @@ def default_digestion_function(trial_index: int, objectives: list[Objective], df
     Parameters
     ----------
     trial_index : int
-        The index of the trial in the dataframe.
+        The index of the trial.
     objectives : list[Objective]
         The objectives of the experiment.
     df : pd.DataFrame
@@ -244,3 +246,92 @@ class AxAgent:
             trial_index: self.digestion(trial_index, active_objectives, results_df, **self.digestion_kwargs)
             for trial_index in trials.keys()
         }
+
+    def configure_generation_strategy(
+        self,
+        method: Literal["balanced", "fast", "random_search"] = "fast",
+        initialization_budget: int | None = None,
+        initialization_random_seed: int | None = None,
+        initialize_with_center: bool = True,
+        use_existing_trials_for_initialization: bool = True,
+        min_observed_initialization_trials: int | None = None,
+        allow_exceeding_initialization_budget: bool = False,
+        torch_device: str | None = None,
+    ) -> None:
+        """
+        Implicitly configure the models and algorithms used to generate new points. Based on the
+        settings and the DOF configuration, an appropriate generation strategy is chosen.
+
+        Parameters
+        ----------
+        method : Literal["balanced", "fast", "random_search"], optional
+            Methods for generating new points.
+        initialization_budget : int | None, optional
+            The number of points to generate during the initial exploration phase. Can be set
+            to 0 to disable initialization (when attaching pre-existing data, for example).
+        initialization_random_seed : int | None, optional
+            The random seed for initialization.
+        initialize_with_center : bool, optional
+            Use the first point to sample the center of the search space defined by the DOFs.
+        use_existing_trials_for_initialization : bool, optional
+            Use the pre-existing trials to build the initial models.
+        min_observed_initialization_trials : int | None, optional
+            The minimum number of trials to observe before building the initial models.
+        allow_exceeding_initialization_budget : bool, optional
+            Allow the initialization budget to be exceeded, when determined necessary.
+        torch_device : str | None, optional
+            The device to use for PyTorch tensors (e.g. "cuda", "cpu", etc.).
+
+        See Also
+        --------
+        set_generation_strategy : Explicitly set the generation strategy for the experiment.
+        ax.Client.configure_generation_strategy : The Ax method to configure the generation strategy.
+        """
+        self.client.configure_generation_strategy(
+            method=method,
+            initialization_budget=initialization_budget,
+            initialization_random_seed=initialization_random_seed,
+            initialize_with_center=initialize_with_center,
+            use_existing_trials_for_initialization=use_existing_trials_for_initialization,
+            min_observed_initialization_trials=min_observed_initialization_trials,
+            allow_exceeding_initialization_budget=allow_exceeding_initialization_budget,
+            torch_device=torch_device,
+        )
+
+    def set_generation_strategy(self, generation_strategy: GenerationStrategy) -> None:
+        """
+        Explicitly set the generation strategy for the experiment. This allows for finer-grained
+        control over the models and algorithms used to generate new points.
+
+        Familiarity with Ax and BoTorch internals is recommended prior to using this method.
+
+        Parameters
+        ----------
+        generation_strategy : GenerationStrategy
+            The generation strategy to use for the experiment. See
+            `this tutorial<https://ax.dev/docs/tutorials/modular_botorch/>`_ for more details.
+
+        See Also
+        --------
+        configure_generation_strategy : Configure an implicit generation strategy for the experiment.
+        ax.Client.set_generation_strategy : The Ax method to set the generation strategy.
+        """
+        self.client.set_generation_strategy(generation_strategy)
+
+    def summarize(self) -> pd.DataFrame:
+        """
+        View of the experiment state.
+
+        NOTE: This method is a convenience method for inspecting the experiment state.
+        It is not recommended to use this for downstream analysis.
+
+        Returns
+        -------
+        pd.DataFrame
+            A dataframe of the experiment state containing a parameterization per row.
+
+        See Also
+        --------
+        ax.Client.summarize : The Ax method to summarize the experiment state.
+        """
+        return self.client.summarize()

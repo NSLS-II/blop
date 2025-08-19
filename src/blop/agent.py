@@ -381,8 +381,8 @@ class BaseAgent:
             )
 
             obj.validity_conjugate_model = models.LatentDirichletClassifier(
-                train_inputs=train_inputs[inputs_are_trusted],
-                train_targets=dirichlet_likelihood.transformed_targets.transpose(-1, -2)[inputs_are_trusted].double(),
+                train_X=train_inputs[inputs_are_trusted],
+                train_Y=dirichlet_likelihood.transformed_targets.transpose(-1, -2)[inputs_are_trusted].double(),
                 skew_dims=skew_dims,
                 likelihood=dirichlet_likelihood,
                 input_transform=self.input_normalization,

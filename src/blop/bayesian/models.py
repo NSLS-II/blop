@@ -60,8 +60,8 @@ def construct_single_task_model(
         raise ValueError("'y' must not contain points that are inf or NaN.")
 
     return LatentGP(
-        train_inputs=X,
-        train_targets=y,
+        train_X=X,
+        train_Y=y,
         likelihood=likelihood,
         skew_dims=skew_dims,
         input_transform=input_transform,
@@ -72,19 +72,19 @@ def construct_single_task_model(
 class LatentGP(SingleTaskGP):
     def __init__(
         self,
-        train_inputs: torch.Tensor,
-        train_targets: torch.Tensor,
-        skew_dims: bool | list[tuple[int, ...]] = True,
+        train_X: torch.Tensor,
+        train_Y: torch.Tensor,
         *args: Any,
+        skew_dims: bool | list[tuple[int, ...]] = True,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_inputs, train_targets, *args, **kwargs)
+        super().__init__(train_X, train_Y, *args, **kwargs)
 
         self.mean_module = gpytorch.means.ConstantMean(constant_prior=gpytorch.priors.NormalPrior(loc=0, scale=1))
 
         self.covar_module = kernels.LatentKernel(
-            num_inputs=train_inputs.shape[-1],
-            num_outputs=train_targets.shape[-1],
+            num_inputs=train_X.shape[-1],
+            num_outputs=train_Y.shape[-1],
             skew_dims=skew_dims,
             priors=True,
             scale=True,
@@ -97,13 +97,13 @@ class LatentGP(SingleTaskGP):
 class LatentConstraintModel(LatentGP):
     def __init__(
         self,
-        train_inputs: torch.Tensor,
-        train_targets: torch.Tensor,
-        skew_dims: bool | list[tuple[int, ...]] = True,
+        train_X: torch.Tensor,
+        train_Y: torch.Tensor,
         *args: Any,
+        skew_dims: bool | list[tuple[int, ...]] = True,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
+        super().__init__(train_X, train_Y, *args, skew_dims=skew_dims, **kwargs)
 
         self.trained: bool = False
 
@@ -119,13 +119,13 @@ class LatentConstraintModel(LatentGP):
 class LatentDirichletClassifier(LatentGP):
     def __init__(
         self,
-        train_inputs: torch.Tensor,
-        train_targets: torch.Tensor,
-        skew_dims: bool | list[tuple[int, ...]] = True,
+        train_X: torch.Tensor,
+        train_Y: torch.Tensor,
         *args: Any,
+        skew_dims: bool | list[tuple[int, ...]] = True,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
+        super().__init__(train_X, train_Y, *args, skew_dims=skew_dims, **kwargs)
 
         self.trained: bool = False
 
