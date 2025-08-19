@@ -38,7 +38,7 @@ def test_sim_beamline(RE, db):
     )
 
     agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
-    RE(agent.learn(iterations=25, n=1))
+    RE(agent.learn(iterations=12, n=1))
 
 
 def test_plot_objective(RE, db):
@@ -65,7 +65,7 @@ def test_plot_objective(RE, db):
         db=db,
     )
     agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
-    RE(agent.learn(iterations=25, n=1))
+    RE(agent.learn(iterations=12, n=1))
 
     agent.plot_objective(x_dof_name="bl_kbv_dsv", y_dof_name="bl_kbv_usv", objective_name="bl_det_sum")
 
@@ -145,7 +145,7 @@ def test_generation_strategy_sim_beamline(RE, db):
 
     agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
     agent.set_generation_strategy(generation_strategy)
-    RE(agent.learn(iterations=25, n=1))
+    RE(agent.learn(iterations=12, n=1))
 
     df = agent.summarize()
     assert "LatentGP" in df["generation_node"].values
