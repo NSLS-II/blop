@@ -80,6 +80,11 @@ class BaseAgent:
         sample_center_on_init: bool = False,
         train_every: int = 4,
     ):
+        warnings.warn(
+            "This agent interface is deprecated and will be removed in Blop v1.0.0. Use blop.ax.Agent instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.dofs = DOFList(list(dofs))
         self.objectives = ObjectiveList(list(objectives))
 
@@ -601,6 +606,9 @@ class Agent(BaseAgent):
     ):
         """
         A Bayesian optimization agent.
+
+        .. deprecated:: 0.7.5
+            This class is deprecated and will be removed in Blop v1.0.0. Use :class:`blop.ax.Agent` instead.
 
         Parameters
         ----------

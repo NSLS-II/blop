@@ -3,8 +3,8 @@ import logging
 from ax import ChoiceParameterConfig, RangeParameterConfig
 from ax.api.protocols import IMetric
 
-from ...dofs import DOF
-from ...objectives import Objective
+from ..dofs import DOF
+from ..objectives import Objective
 
 logger = logging.getLogger(__name__)
 
