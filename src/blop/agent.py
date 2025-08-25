@@ -692,6 +692,12 @@ class Agent(BaseAgent):
         self.detectors = list(np.atleast_1d(detectors or []))
 
         self.db = db
+        if isinstance(self.db, tiled.client.container.Container):
+            self.data_access = TiledDataAccess(self.db)
+        elif isinstance(self.db, databroker.Broker):
+            self.data_access = DatabrokerDataAccess(self.db)
+        else:
+            raise ValueError("Cannot run acquistion without databroker or tiled instance!")
 
         self.trigger_delay = trigger_delay
 
@@ -853,15 +859,7 @@ class Agent(BaseAgent):
                 [*self.detectors, *self.dofs.devices],
                 delay=self.trigger_delay,
             )
-
-            if isinstance(self.db[uid], tiled.client.container.Container):
-                data = TiledDataAccess()
-                products = self.digestion(
-                    data.convert_to_dictonary(self.db[uid], self.digestion_kwargs), **self.digestion_kwargs
-                )
-            else:
-                data = DatabrokerDataAccess()
-                products = self.digestion(data.convert_to_dictonary(self.db[uid]), **self.digestion_kwargs)
+            products = self.digestion(self.data_access.get_data(uid), **self.digestion_kwargs)
 
         except KeyboardInterrupt as interrupt:
             raise interrupt
@@ -1125,14 +1123,8 @@ class Agent(BaseAgent):
     @property
     def best(self) -> dict:
         """Returns all data for the best point."""
-        if isinstance(self.db, tiled.client.container.Container):
-            tiled_data = TiledDataAccess()
-            df = tiled_data.convert_back_from_dictonary(self._table)
-            return df.isel({list(df.dims)[0]: self.argmax_best_f()})
-        elif isinstance(self.db, databroker.v1.Broker):
-            db_data = DatabrokerDataAccess()
-            return db_data.convert_back_from_dictonary(self._table).loc[self.argmax_best_f()]
-        return ValueError("Unsupported data type for best point retrieval.")
+        df = {key: [value[self.argmax_best_f()]] for key, value in self._table.items()}
+        return self.data_access.convert_data(df)
 
     @property
     def best_inputs(self) -> dict[Hashable, Any]:
