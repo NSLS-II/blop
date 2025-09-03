@@ -9,16 +9,13 @@ from typing import Any, cast
 
 import bluesky.plan_stubs as bps  # noqa F401
 import botorch  # type: ignore[import-untyped]
-import databroker
 import gpytorch  # type: ignore[import-untyped]
 import h5py  # type: ignore[import-untyped]
 import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy as sp  # type: ignore[import-untyped]
-import tiled.client
 import torch
-from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import Msg
 from botorch.acquisition.acquisition import AcquisitionFunction  # type: ignore[import-untyped]
 from botorch.acquisition.objective import ScalarizedPosteriorTransform  # type: ignore[import-untyped]
@@ -30,6 +27,7 @@ from databroker import Broker  # type: ignore[import-untyped]
 from gpytorch.kernels import Kernel  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 from ophyd import Signal  # type: ignore[import-untyped]
+from tiled.client.container import Container
 
 from . import plotting, utils
 from .bayesian import acquisition, models
@@ -68,6 +66,13 @@ def _validate_dofs_and_objs(dofs: DOFList, objs: ObjectiveList):
 
 
 class BaseAgent:
+    @property
+    def n_samples(self) -> int:
+        """
+        Returns the number of samples in the agent's table.
+        """
+        return len(self._table[next(iter(self._table))])
+
     def __init__(
         self,
         *,
@@ -129,7 +134,7 @@ class BaseAgent:
 
         key = self.dofs[index].name
         if key in self._table:
-            return torch.tensor(self._table[self.dofs[index].name], dtype=torch.double)
+            return torch.tensor(self._table[key], dtype=torch.double)
         return torch.ones(0)
 
     def train_inputs(self, index: str | int | None = None, **subset_kwargs) -> torch.Tensor:
@@ -223,7 +228,7 @@ class BaseAgent:
                 [obj.evaluate_constraint(raw_targets_dict[obj.name]) for obj in constraint_objectives], dim=-1
             )
         else:
-            return torch.ones(size=(len(self._table[next(iter(self._table))]), 0), dtype=torch.bool)
+            return torch.ones(size=(self.n_samples, 0), dtype=torch.bool)
 
     def scalarized_fitnesses(self, weights: str = "default", constrained: bool = True) -> torch.Tensor:
         """
@@ -236,9 +241,7 @@ class BaseAgent:
             f = self.fitness_scalarization(weights=weights).evaluate(self.train_targets(active=True, fitness=True))
             f = torch.where(f.isnan(), -np.inf, f)  # remove all nans
         else:
-            f = torch.zeros(
-                len(self._table[next(iter(self._table))]), dtype=torch.double
-            )  # if there are no fitnesses, use a constant dummy fitness
+            f = torch.zeros(self.n_samples, dtype=torch.double)  # if there are no fitnesses, use a constant dummy fitness
         if constrained:
             # how many constraints are satisfied?
             c = self.evaluated_constraints.sum(dim=-1)
@@ -329,7 +332,7 @@ class BaseAgent:
     def pruned_mask(self) -> torch.Tensor:
         if self.exclude_pruned and "prune" in self._table:
             return torch.tensor(self._table["prune"], dtype=bool)
-        return torch.zeros(len(self._table[next(iter(self._table))])).bool()
+        return torch.zeros(self.n_samples).bool()
 
     @property
     def input_normalization(self) -> Normalize:
@@ -428,38 +431,6 @@ class BaseAgent:
             train_model(obj.model)
             logger.debug(f"trained model '{obj.name}' in {1e3 * (ttime.monotonic() - t0):.00f} ms")
 
-    def deep_merge(self, dict1, dict2):
-        merged = dict1.copy()
-
-        for key, value2 in dict2.items():
-            if key in merged:
-                value1 = merged[key]
-                if isinstance(value1, dict) and isinstance(value2, dict):
-                    merged[key] = self.deep_merge(value1, value2)
-                elif isinstance(value1, list) and isinstance(value2, dict):
-                    merged[key] = value1 + value2
-                else:
-                    merged[key] = value2
-            else:
-                merged[key] = value2
-        return merged
-
-    def deep_merge(self, dict1, dict2):
-        merged = dict1.copy()
-
-        for key, value2 in dict2.items():
-            if key in merged:
-                value1 = merged[key]
-                if isinstance(value1, dict) and isinstance(value2, dict):
-                    merged[key] = self.deep_merge(value1, value2)
-                elif isinstance(value1, list) and isinstance(value2, dict):
-                    merged[key] = value1 + value2
-                else:
-                    merged[key] = value2
-            else:
-                merged[key] = value2
-        return merged
-
     def tell(
         self,
         data: Mapping | None = {},
@@ -495,15 +466,18 @@ class BaseAgent:
                 data = {**x, **y}
             else:
                 raise ValueError("Must supply either x and y, or data.")
-        data = {k: list(np.atleast_1d(v)) for k, v in data.items()}
+        new_table = {k: list(np.atleast_1d(v)) for k, v in data.items()}
         unique_field_lengths = {len(v) for d in data for v in d}
 
         if len(unique_field_lengths) > 1:
             raise ValueError("All supplies values must be the same length!")
 
         # TODO: This is an inefficient approach to caching data. Keep a list, make table at update model time.
-        new_table = data
-        self._table = {**new_table, **self._table} if append else new_table
+        if append:
+            for key, value in new_table.items():
+                self._table.setdefault(key, []).extend(value)
+        else:
+            self._table = new_table
         self.update_models(force_train=force_train)
 
     def ask(
@@ -615,7 +589,7 @@ class Agent(BaseAgent):
         self,
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker | TiledWriter | None = None,
+        db: Broker | Container | None = None,
         detectors: Sequence[Signal] | None = None,
         acquisition_plan: Callable = default_acquisition_plan,
         digestion: Callable = default_digestion_function,
@@ -636,7 +610,7 @@ class Agent(BaseAgent):
         ----------
         dofs : Sequence[DOF]
             The degrees of freedom that the agent can control, which determine the output of the model.
-        db:
+        db: Broker | Container
             A Tiled or Databroker object
         objectives : Sequence[Objective]
             The objectives which the agent will try to optimize.
@@ -691,11 +665,10 @@ class Agent(BaseAgent):
 
         self.detectors = list(np.atleast_1d(detectors or []))
 
-        self.db = db
-        if isinstance(self.db, tiled.client.container.Container):
-            self.data_access = TiledDataAccess(self.db)
-        elif isinstance(self.db, databroker.Broker):
-            self.data_access = DatabrokerDataAccess(self.db)
+        if isinstance(db, Container):
+            self.data_access = TiledDataAccess(db)
+        elif isinstance(db, Broker):
+            self.data_access = DatabrokerDataAccess(db)
         else:
             raise ValueError("Cannot run acquistion without databroker or tiled instance!")
 
@@ -707,7 +680,7 @@ class Agent(BaseAgent):
         self.n_last_trained = 0
 
     @property
-    def table(self) -> pd.DataFrame:
+    def table(self) -> dict[str, Any]:
         return self._table
 
     def __iter__(self) -> Iterator[DOF]:
@@ -773,7 +746,7 @@ class Agent(BaseAgent):
                 if isinstance(dof.search_domain, tuple)
             }
             new_table = yield from self.acquire(center_inputs)
-            new_table[:, "acqf"] = "sample_center_on_init"
+            new_table["acqf"] = ["sample_center_on_init"]
 
         for i in range(iterations):
             if self.verbose:
@@ -842,7 +815,7 @@ class Agent(BaseAgent):
             A 2D numpy array comprising inputs for the active and non-read-only DOFs to sample.
         """
 
-        if self.db is None:
+        if self.data_access is None:
             raise ValueError("Cannot run acquistion without databroker or tiled instance!")
 
         acquisition_dofs = self.dofs(active=True, read_only=False)
@@ -870,7 +843,7 @@ class Agent(BaseAgent):
             logger.warn(f"Error in acquisition/digestion: {repr(error)}")
             products = pd.DataFrame(points)
             for obj in self.objectives(active=True):
-                products.loc[:, obj.name] = np.nan
+                products[obj.name] = np.nan
 
         if len(next(iter(products.values()))) != n:
             raise ValueError("The table returned by the digestion function must be the same length as the sampled inputs!")
@@ -888,7 +861,12 @@ class Agent(BaseAgent):
                     new_table[key] = [s.decode("utf-8") for s in dataset[:]]
                 else:
                     new_table[key] = dataset[:]
-        self._table = {**self._table, **new_table} if append else new_table
+        if append:
+            for key, value in new_table.items():
+                self._table.setdefault(key, []).extend(value)
+        else:
+            self._table = new_table
+
         self.refresh()
 
     def reset(self):
@@ -961,11 +939,12 @@ class Agent(BaseAgent):
         return in_pareto_front & self.evaluated_constraints.all(dim=-1)
 
     @property
-    def pareto_front(self) -> pd.DataFrame:
+    def pareto_front(self) -> Any:
         """
         A subset of the data table containing only points on the Pareto front.
         """
-        return self._table.loc[self.pareto_mask.numpy()]
+        df = {key: np.array(value)[self.pareto_mask.numpy()] for key, value in self._table.items()}
+        return self.data_access.convert_data(df)
 
     @property
     def min_ref_point(self) -> ArrayLike:
@@ -998,7 +977,7 @@ class Agent(BaseAgent):
         if self.verbose:
             logger.info(f"trained models in {ttime.monotonic() - t0:.01f} seconds")
 
-        self.n_last_trained = len(self._table[next(iter(self._table))])
+        self.n_last_trained = self.n_samples
 
     def _get_acquisition_function(
         self, identifier: str, return_metadata: bool = False
@@ -1026,7 +1005,7 @@ class Agent(BaseAgent):
                 else:
                     f.create_dataset(key, data=value)
 
-    def forget(self, last: int | None = None, index: list[int] | None = None, train: bool = True):
+    def forget(self, last: int | None = None, index: pd.Index | None = None, train: bool = True):
         """
         Make the agent forget some data.
 
@@ -1037,18 +1016,16 @@ class Agent(BaseAgent):
         last : int
             Forget the last n=last points.
         """
-        num_samples = len(self._table[next(iter(self._table))])
         if last is not None:
-            if last > num_samples:
-                raise ValueError(f"Cannot forget last {last} data points (only {num_samples} samples have been taken).")
+            if last > self.n_samples:
+                raise ValueError(f"Cannot forget slast {last} data points (only {self.n_samples} samples have been taken).")
             self._table = {
-                key: [item for i, item in enumerate(value) if i not in set(range(num_samples - last, num_samples))]
+                key: [item for i, item in enumerate(value) if i not in set(range(self.n_samples - last, self.n_samples))]
                 for key, value in self._table.items()
             }
         elif index is not None:
-            self._table = {
-                key: [item for i, item in enumerate(value) if i not in index] for key, value in self._table.items()
-            }
+            pd.DataFrame(self._table).drop(index=index, inplace=True)
+            self._table = {key: self._table[key] for key in self._table}
             self._construct_all_models()
             if train:
                 self._train_all_models()
@@ -1121,9 +1098,9 @@ class Agent(BaseAgent):
         return acquisition.all_acqfs()
 
     @property
-    def best(self) -> dict:
+    def best(self) -> Any:
         """Returns all data for the best point."""
-        df = {key: [value[self.argmax_best_f()]] for key, value in self._table.items()}
+        df = {key: value[self.argmax_best_f()] for key, value in self._table.items()}
         return self.data_access.convert_data(df)
 
     @property

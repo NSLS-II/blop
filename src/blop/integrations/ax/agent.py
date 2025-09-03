@@ -2,11 +2,9 @@ import logging
 from collections import defaultdict
 from collections.abc import Callable, Generator
 from typing import Literal
-from typing import Any
 
 import databroker
 import pandas as pd
-import tiled.client.container
 from ax import Client
 from ax.analysis import Analysis, AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization, TParameterValue
@@ -15,7 +13,9 @@ from bluesky.plans import list_scan
 from bluesky.protocols import Movable, Readable
 from bluesky.utils import Msg
 from databroker import Broker
+from tiled.client.container import Container
 
+from ...data_access import DatabrokerDataAccess, TiledDataAccess
 from ...dofs import DOF
 from ...objectives import Objective
 from .adapters import configure_metrics, configure_objectives, configure_parameters
@@ -62,7 +62,7 @@ class AxAgent:
         The degrees of freedom that the agent can control, which determine the output of the model.
     objectives : list[Objective]
         The objectives which the agent will try to optimize.
-    db : databroker or tiled
+    db : Broker | Container
         The databroker or tiled instance to read back data from a Bluesky run.
     digestion : Callable[[pd.DataFrame], dict[str, tuple[float, float]]]
         The function to produce objective values from a dataframe of acquisition results.
@@ -75,7 +75,7 @@ class AxAgent:
         readables: list[Readable],
         dofs: list[DOF],
         objectives: list[Objective],
-        db: Broker,
+        db: Broker | Container,
         digestion: Callable[[pd.DataFrame], dict[str, tuple[float, float]]] = default_digestion_function,
         digestion_kwargs: dict | None = None,
     ):
@@ -85,7 +85,13 @@ class AxAgent:
         self.client = Client()
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs or {}
-        self.db = db
+
+        if isinstance(db, Container):
+            self.data_access = TiledDataAccess(db)
+        elif isinstance(db, databroker.Broker):
+            self.data_access = DatabrokerDataAccess(db)
+        else:
+            raise ValueError("Cannot run acquistion without databroker or tiled instance!")
 
     def configure_experiment(
         self,
@@ -222,34 +228,6 @@ class AxAgent:
 
         return unpacked_list
 
-    def convert_to_dictonary(self, db) -> dict[str, list[Any]]:
-        """
-        Converts the data that arrives from either databroker as a pd.Dataframe or through
-        tiled as a xr.DataArray into a dictonary
-
-        Parameters
-        ----------
-        db : databroker or tiled
-            The databroker or tiled instance
-        """
-        dictonary = {}
-        if isinstance(db, tiled.client.container.Container):
-            tiled_data = db["streams", "primary"].read()
-            for var_name, data_array in tiled_data.data_vars.items():
-                dictonary[var_name] = data_array.values.flatten().tolist()
-            tiled_image = db["streams", "primary", "bl_det_image"].read().astype(float)
-            dictonary["bl_det_image"] = tiled_image
-            return dictonary
-
-        elif isinstance(db, databroker.v1.Header):
-            data = db.table(fill=True)
-            for i in data:
-                dictonary[i] = data[i].to_list()
-            return dictonary
-
-        else:
-            raise ValueError("Unknown data source.")
-
     def acquire(self, trials: dict[int, TParameterization]) -> Generator[Msg, str, dict[int, TOutcome] | None]:
         """
         Acquire data given a set of trials. Deploys the trials in a single Bluesky run and
@@ -272,7 +250,7 @@ class AxAgent:
         """
         plan_args = self._unpack_parameters(trials.values())
         uid = yield from list_scan(self.readables, *plan_args, md={"ax_trial_indices": list(trials.keys())})
-        results_df = self.convert_to_dictonary(self.db[uid])
+        results_df = self.data_access.get_data(uid)
         active_objectives = [objective for objective in self.objectives.values() if objective.active]
         return {
             trial_index: self.digestion(trial_index, active_objectives, results_df, **self.digestion_kwargs)

@@ -29,7 +29,7 @@ def test_agent(agent, RE):
 
     # test forgetting
     RE(agent.learn("qr", n=4))
-    agent.forget(index=[1, 2, 3, 4, 5])
+    agent.forget(last=2)
 
     # test some functions
     agent.refresh()
