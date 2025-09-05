@@ -147,7 +147,11 @@ class Agent:
         .. deprecated:: 0.7.5
             This method is deprecated and will be removed in Blop v1.0.0. Use :meth:`suggest` instead.
         """
-        warnings.warn("The `ask` method is deprecated and will be removed in Blop v1.0.0. Use `suggest` instead.", DeprecationWarning, stacklevel=2)
+        warnings.warn(
+            "The `ask` method is deprecated and will be removed in Blop v1.0.0. Use `suggest` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         return self.suggest(n)
 
     def ingest(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
@@ -176,7 +180,11 @@ class Agent:
         .. deprecated:: 0.7.5
             This method is deprecated and will be removed in Blop v1.0.0. Use :meth:`ingest` instead.
         """
-        warnings.warn("The `tell` method is deprecated and will be removed in Blop v1.0.0. Use `ingest` instead.", DeprecationWarning, stacklevel=2)
+        warnings.warn(
+            "The `tell` method is deprecated and will be removed in Blop v1.0.0. Use `ingest` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.ingest(trials, outcomes=outcomes)
 
     def attach_data(self, data: list[tuple[TParameterization, TOutcome]]) -> None:
@@ -228,7 +236,11 @@ class Agent:
         .. deprecated:: 0.7.5
             This method is deprecated and will be removed in Blop v1.0.0. Use :meth:`optimize` instead.
         """
-        warnings.warn("The `learn` method is deprecated and will be removed in Blop v1.0.0. Use `optimize` instead.", DeprecationWarning, stacklevel=2)
+        warnings.warn(
+            "The `learn` method is deprecated and will be removed in Blop v1.0.0. Use `optimize` instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         yield from self.optimize(iterations, n)
 
     def _unpack_parameters(self, parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
@@ -279,7 +291,9 @@ class Agent:
             for trial_index in trials.keys()
         }
 
-    def compute_analyses(self, analyses: list[Analysis], display: bool = True, **kwargs: dict[str, Any]) -> list[AnalysisCard]:
+    def compute_analyses(
+        self, analyses: list[Analysis], display: bool = True, **kwargs: dict[str, Any]
+    ) -> list[AnalysisCard]:
         """
         Compute analyses for the experiment.
 
@@ -305,7 +319,9 @@ class Agent:
         """
         return self.client.compute_analyses(analyses=analyses, display=display, **kwargs)
 
-    def plot_objective(self, x_dof_name: str, y_dof_name: str, objective_name: str, **kwargs: dict[str, Any]) -> list[AnalysisCard]:
+    def plot_objective(
+        self, x_dof_name: str, y_dof_name: str, objective_name: str, **kwargs: dict[str, Any]
+    ) -> list[AnalysisCard]:
         """
         Plot the predicted objective as a function of the two DOFs.
 

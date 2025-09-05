@@ -4,11 +4,11 @@ from ax.generation_strategy.model_spec import GeneratorSpec
 from ax.generation_strategy.transition_criterion import MinTrials
 from ax.modelbridge.registry import Generators
 from ax.models.torch.botorch_modular.surrogate import ModelConfig, SurrogateSpec
+from blop.integrations.ax.agent import AxAgent
 from botorch.acquisition.logei import qLogNoisyExpectedImprovement
 
 from blop.bayesian.models import LatentGP
 from blop.dofs import DOF
-from blop.integrations.ax.agent import AxAgent
 from blop.objectives import Objective
 from blop.sim import Beamline
 

@@ -1,9 +1,9 @@
 import logging
 import time as ttime
 import uuid
+import warnings
 from collections.abc import Iterable, Sequence
 from typing import Any, Literal, cast, overload
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -136,7 +136,10 @@ class DOF:
         """
         if name is not None:
             warnings.warn(
-                "The 'name' argument is deprecated and will be removed in Blop v1.0.0. The `movable.name` will be used instead.",
+                (
+                    "The 'name' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "The `movable.name` will be used instead."
+                ),
                 DeprecationWarning,
                 stacklevel=2,
             )
@@ -166,7 +169,10 @@ class DOF:
             )
         if travel_expense is not None:
             warnings.warn(
-                "The 'travel_expense' argument is deprecated and will be removed in Blop v1.0.0. It may resurface in a future version.",
+                (
+                    "The 'travel_expense' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "It may resurface in a future version."
+                ),
                 DeprecationWarning,
                 stacklevel=2,
             )
