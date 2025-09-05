@@ -11,7 +11,7 @@ To install the package using the ``pip`` package manager, run the following comm
 
 .. code:: bash
 
-   $ python3 -m pip install blop
+   $ python -m pip install blop
 
 To install the package using the ``conda`` package manager, run the following command:
 
@@ -23,18 +23,25 @@ If you'd like to use the Sirepo backend and ``sirepo-bluesky`` ophyd objects, pl
 follow the `Sirepo/Sirepo-Bluesky installation & configuration instructions
 <https://nsls-ii.github.io/sirepo-bluesky/installation.html>`_.
 
+For Development
+---------------
+
+Install Pixi
+^^^^^^^^^^^^
+
+We use Pixi to manage our development environment. Go to https://pixi.sh/latest/installation/ to install it.
 
 Run tests
----------
+^^^^^^^^^
 
 .. code:: bash
 
-   $ pytest -vv -s -x --pdb
+   $ pixi run -e dev pytest src/blop/tests
 
 
 Build documentation
--------------------
+^^^^^^^^^^^^^^^^^^^
 
 .. code:: bash
 
-   $ make -C docs/ html
+   $ pixi run -e dev make -C docs/ html

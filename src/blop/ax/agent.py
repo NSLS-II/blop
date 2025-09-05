@@ -84,7 +84,6 @@ class Agent:
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs or {}
         self.db = db
-        self.configure_experiment()
 
     def configure_experiment(
         self,
