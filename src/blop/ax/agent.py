@@ -1,7 +1,8 @@
 import logging
+import warnings
 from collections import defaultdict
 from collections.abc import Callable, Generator
-from typing import Literal
+from typing import Any, Literal
 
 import pandas as pd
 from ax import Client
@@ -63,7 +64,7 @@ class Agent:
         The databroker instance to read back data from a Bluesky run.
     digestion : Callable[[pd.DataFrame], dict[str, tuple[float, float]]]
         The function to produce objective values from a dataframe of acquisition results.
-    digestion_kwargs : dict
+    digestion_kwargs : dict | None
         Additional keyword arguments to pass to the digestion function.
     """
 
@@ -83,6 +84,7 @@ class Agent:
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs or {}
         self.db = db
+        self.configure_experiment()
 
     def configure_experiment(
         self,
@@ -90,6 +92,7 @@ class Agent:
         description: str | None = None,
         experiment_type: str | None = None,
         owner: str | None = None,
+        **kwargs: dict[str, Any],
     ) -> None:
         """
         Configure an experiment. Uses the active DOFs and objectives.
@@ -104,6 +107,8 @@ class Agent:
             The type of experiment.
         owner : str, optional
             The owner of the experiment.
+        kwargs : dict[str, Any], optional
+            Additional keyword arguments to pass to the experiment configuration.
 
         See Also
         --------
@@ -116,12 +121,12 @@ class Agent:
         metrics = configure_metrics(self.objectives.values())
 
         self.client.configure_experiment(
-            parameters, name=name, description=description, experiment_type=experiment_type, owner=owner
+            parameters, name=name, description=description, experiment_type=experiment_type, owner=owner, **kwargs
         )
         self.client.configure_optimization(objectives, objective_constraints)
         self.client.configure_metrics(metrics)
 
-    def ask(self, n: int = 1) -> dict[int, TParameterization]:
+    def suggest(self, n: int = 1) -> dict[int, TParameterization]:
         """
         Get the next trial(s) to run.
 
@@ -138,7 +143,15 @@ class Agent:
         """
         return self.client.get_next_trials(n)
 
-    def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
+    def ask(self, n: int = 1) -> dict[int, TParameterization]:
+        """
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. Use :meth:`suggest` instead.
+        """
+        warnings.warn("The `ask` method is deprecated and will be removed in Blop v1.0.0. Use `suggest` instead.", DeprecationWarning, stacklevel=2)
+        return self.suggest(n)
+
+    def ingest(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
         """
         Complete trial(s) by providing the outcomes.
 
@@ -159,6 +172,14 @@ class Agent:
                 trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None
             )
 
+    def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
+        """
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. Use :meth:`ingest` instead.
+        """
+        warnings.warn("The `tell` method is deprecated and will be removed in Blop v1.0.0. Use `ingest` instead.", DeprecationWarning, stacklevel=2)
+        self.ingest(trials, outcomes=outcomes)
+
     def attach_data(self, data: list[tuple[TParameterization, TOutcome]]) -> None:
         """
         Attach data to the experiment in the form of new trials. Useful for
@@ -178,9 +199,12 @@ class Agent:
             trial_index = self.client.attach_trial(parameters=parameters)
             self.client.complete_trial(trial_index=trial_index, raw_data=raw_data, progression=0)
 
-    def learn(self, iterations: int = 1, n: int = 1) -> Generator[dict[int, TOutcome], None, None]:
+    def optimize(self, iterations: int = 1, n: int = 1) -> Generator[dict[int, TOutcome], None, None]:
         """
-        Learn by running trials and providing the outcomes.
+        Optimize your objectives by running trials and ingesting the outcomes.
+
+        Will automaically take `n` trials per iteration, deploy them in a single Bluesky run,
+        retrieve the outcomes, and ingest them into the experiment.
 
         Parameters
         ----------
@@ -196,9 +220,17 @@ class Agent:
             A generator that yields the outcomes of the trials.
         """
         for _ in range(iterations):
-            trials = self.ask(n)
+            trials = self.suggest(n)
             data = yield from self.acquire(trials)
-            self.tell(trials, data)
+            self.ingest(trials, data)
+
+    def learn(self, iterations: int = 1, n: int = 1) -> Generator[dict[int, TOutcome], None, None]:
+        """
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. Use :meth:`optimize` instead.
+        """
+        warnings.warn("The `learn` method is deprecated and will be removed in Blop v1.0.0. Use `optimize` instead.", DeprecationWarning, stacklevel=2)
+        yield from self.optimize(iterations, n)
 
     def _unpack_parameters(self, parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
         """Unpack the parameterizations into Bluesky plan arguments."""
@@ -248,7 +280,7 @@ class Agent:
             for trial_index in trials.keys()
         }
 
-    def compute_analyses(self, analyses: list[Analysis], display: bool = True) -> list[AnalysisCard]:
+    def compute_analyses(self, analyses: list[Analysis], display: bool = True, **kwargs: dict[str, Any]) -> list[AnalysisCard]:
         """
         Compute analyses for the experiment.
 
@@ -258,6 +290,8 @@ class Agent:
             The Ax analyses to compute
         display : bool
             Show plots in an interactive environment.
+        kwargs : dict[str, Any], optional
+            Additional keyword arguments to pass to the analysis.
 
         Returns
         -------
@@ -270,9 +304,9 @@ class Agent:
         ax.analysis.Analysis : The Ax analysis class to create custom analyses.
         ax.analysis.AnalysisCard : The Ax analysis card class which contains the raw and computed data.
         """
-        return self.client.compute_analyses(analyses=analyses, display=display)
+        return self.client.compute_analyses(analyses=analyses, display=display, **kwargs)
 
-    def plot_objective(self, x_dof_name: str, y_dof_name: str, objective_name: str) -> list[AnalysisCard]:
+    def plot_objective(self, x_dof_name: str, y_dof_name: str, objective_name: str, **kwargs: dict[str, Any]) -> list[AnalysisCard]:
         """
         Plot the predicted objective as a function of the two DOFs.
 
@@ -284,6 +318,8 @@ class Agent:
             The name of the DOF to plot on the y-axis.
         objective_name : str
             The name of the objective to plot.
+        kwargs : dict[str, Any], optional
+            Additional keyword arguments to pass to the analysis.
 
         Returns
         -------
@@ -304,6 +340,7 @@ class Agent:
                 )
             ],
             display=True,
+            **kwargs,
         )
 
     def configure_generation_strategy(
@@ -316,6 +353,7 @@ class Agent:
         min_observed_initialization_trials: int | None = None,
         allow_exceeding_initialization_budget: bool = False,
         torch_device: str | None = None,
+        **kwargs: dict[str, Any],
     ) -> None:
         """
         Implicitly configure the models and algorithms used to generate new points. Based on the
@@ -340,6 +378,8 @@ class Agent:
             Allow the initialization budget to be exceeded, when determined necessary.
         torch_device : str | None, optional
             The device to use for PyTorch tensors (e.g. "cuda", "cpu", etc.).
+        kwargs : dict[str, Any], optional
+            Additional keyword arguments to pass to the generation strategy configuration.
 
         See Also
         --------
@@ -355,9 +395,10 @@ class Agent:
             min_observed_initialization_trials=min_observed_initialization_trials,
             allow_exceeding_initialization_budget=allow_exceeding_initialization_budget,
             torch_device=torch_device,
+            **kwargs,
         )
 
-    def set_generation_strategy(self, generation_strategy: GenerationStrategy) -> None:
+    def set_generation_strategy(self, generation_strategy: GenerationStrategy, **kwargs: dict[str, Any]) -> None:
         """
         Explicitly set the generation strategy for the experiment. This allows for finer-grained
         control over the models and algorithms used to generate new points.
@@ -369,20 +410,27 @@ class Agent:
         generation_strategy : GenerationStrategy
             The generation strategy to use for the experiment. See
             `this tutorial<https://ax.dev/docs/tutorials/modular_botorch/>`_ for more details.
+        kwargs : dict[str, Any]
+            Additional keyword arguments to pass to the generation strategy configuration.
 
         See Also
         --------
         configure_generation_strategy : Configure an implicit generation strategy for the experiment.
         ax.Client.set_generation_strategy : The Ax method to set the generation strategy.
         """
-        self.client.set_generation_strategy(generation_strategy)
+        self.client.set_generation_strategy(generation_strategy, **kwargs)
 
-    def summarize(self) -> pd.DataFrame:
+    def summarize(self, **kwargs: dict[str, Any]) -> pd.DataFrame:
         """
         View of the experiment state.
 
         NOTE: This method is a convenience method for inspecting the experiment state.
         It is not recommended to use this for downstream analysis.
+
+        Parameters
+        ----------
+        kwargs : dict[str, Any], optional
+            Additional keyword arguments to pass to the summarize method.
 
         Returns
         -------
@@ -393,4 +441,4 @@ class Agent:
         --------
         ax.Client.summarize : The Ax method to summarize the experiment state.
         """
-        return self.client.summarize()
+        return self.client.summarize(**kwargs)
