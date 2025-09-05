@@ -1,6 +1,6 @@
 	
 [build-system]
-requires = ["hatchling", "hatch-vcs", "setuptools_scm"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -8,10 +8,17 @@ name = "blop"
 description = "Beamline optimization with machine learning"
 readme = { file = "README.md", content-type = "text/markdown" }
 authors = [
-  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" },
+  { name = "Max Rakitin", email = "mrakitin@bnl.gov" },
+  { name = "Thomas Morris", email = "tmorris@bnl.gov" },
+  { name = "Thomas Hopkins", email = "thopkins1@bnl.gov" },
 ]
 maintainers = [
-  { name = "Brookhaven National Laboratory", email = "tmorris@bnl.gov" },
+  { name = "Max Rakitin", email = "mrakitin@bnl.gov" },
+  { name = "Thomas Morris", email = "tmorris@bnl.gov" },
+  { name = "Thomas Hopkins", email = "thopkins1@bnl.gov" },
+  { name = "Jessica Moylan", email = "jmoylan@bnl.gov" },
+  { name = "Jennefer Maldonado", email = "jmaldonad@bnl.gov" },
+  { name = "Roman Chernikov", email = "rcherniko@bnl.gov" },
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -34,9 +41,10 @@ classifiers = [
   "Development Status :: 4 - Beta",
   "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Topic :: Scientific/Engineering :: Physics",
 ]
 dynamic = ["version"]
@@ -91,9 +99,6 @@ only-include = ["src/blop"]
 
 [tool.hatch.build.targets.wheel.sources]
 "src" = ""
-
-[tool.setuptools_scm]
-version_file = "src/blop/_version.py"
 
 [tool.hatch]
 version.source = "vcs"
