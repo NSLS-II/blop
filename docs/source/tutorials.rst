@@ -2,10 +2,17 @@ Tutorials
 =========
 
 .. toctree::
-   :maxdepth: 3
+   :maxdepth: 2
 
    tutorials/kb-mirrors.ipynb
    tutorials/xrt-blop-demo.ipynb
+
+Deprecated
+----------
+
+.. toctree::
+   :maxdepth: 2
+
    tutorials/deprecated/introduction.ipynb
    tutorials/deprecated/hyperparameters.ipynb
    tutorials/deprecated/pareto-fronts.ipynb

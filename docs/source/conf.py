@@ -47,7 +47,7 @@ extensions = [
     "matplotlib.sphinxext.plot_directive",
     "numpydoc",
     "sphinx_copybutton",
-    "nbsphinx",
+    "myst_nb",
 ]
 
 # Configuration options for plot_directive. See:
@@ -66,7 +66,13 @@ templates_path = ["_templates"]
 # You can specify multiple suffix as a list of string:
 #
 # source_suffix = ['.rst', '.md']
-source_suffix = ".rst"
+source_suffix = {
+    ".rst": "restructuredtext",
+    ".ipynb": "myst-nb",
+}
+
+# Set the timeout for notebook execution
+nb_execution_timeout = 600
 
 # The master toctree document.
 master_doc = "index"
@@ -126,6 +132,9 @@ html_static_path = ["_static"]
 
 # Output file base name for HTML help builder.
 htmlhelp_basename = "blop"
+
+# Add require.js to the HTML output
+html_js_files = ["https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"]
 
 
 # -- Options for LaTeX output ---------------------------------------------

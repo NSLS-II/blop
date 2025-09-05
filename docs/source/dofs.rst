@@ -1,59 +1,162 @@
 Degrees of freedom (DOFs)
 +++++++++++++++++++++++++
 
-Continuous degrees of freedom
------------------------------
+Degrees of freedom (DOFs) define the parameters that your optimization agent can control or monitor during experiments. They represent the input variables that influence your objectives and determine the search space for optimization.
 
-A degree of freedom is a variable that affects our optimization objective. We can define a simple DOF as
+Basic DOF Definition
+====================
 
-.. code-block:: python
-
-    from blop import DOF
-
-    dof = DOF(name="x1", description="my first DOF", search_domain=(lower, upper))
-
-This will instantiate a bunch of stuff under the hood, so that our agent knows how to move things and where to search.
-Typically, this will correspond to a real, physical device available in Python. In that case, we can pass the DOF an ophyd device in place of a name
+A DOF requires either a ``name`` (for virtual parameters) or a ``device`` (for real hardware), plus a ``search_domain`` that defines the optimization bounds:
 
 .. code-block:: python
 
     from blop import DOF
 
-    dof = DOF(device=my_ophyd_device, description="a real piece of hardware", search_domain=(lower, upper))
+    # Simple continuous DOF with name
+    x_dof = DOF(name="x1", search_domain=(-5.0, 5.0))
+    
+    # DOF connected to real hardware
+    motor_dof = DOF(device=my_motor, search_domain=(10.0, 50.0))
 
-In this case, the agent will control the device as it sees fit, moving it between the search bounds.
+The agent will vary these parameters within their search domains to optimize your objectives.
 
-Sometimes, a DOF may be something we can't directly control (e.g. a changing synchrotron current or a changing sample temperature) but want our agent to be aware of.
-In this case, we can define a read-only DOF as
+Continuous DOFs
+===============
 
-.. code-block:: python
-
-    from blop import DOF
-
-    dof = DOF(device=a_read_only_ophyd_device, description="a thermometer or something", read_only=True, trust_domain=(lower, upper))
-
-and the agent will use the received values to model its objective, but won't try to move it.
-We can also pass a set of ``trust_domain``, so that our agent will ignore experiments where the DOF value jumps outside of the interval.
-
-
-Discrete degrees of freedom
----------------------------
-
-In addition to degrees of freedom that vary continuously between a lower and upper bound, we can define discrete degrees of freedom.
-One kind is a binary degree of freedom, where the input can take one of two values, e.g.
+Continuous DOFs represent parameters that can take any real value within a specified range. This is the most common type for physical devices like motors, voltages, or temperatures:
 
 .. code-block:: python
 
-    discrete_dof = DOF(name="x1", description="A discrete DOF", type="discrete", search_domain={"in", "out"})
+    # Temperature control
+    temp_dof = DOF(name="temperature", search_domain=(20.0, 80.0))
+    
+    # Motor position
+    motor_dof = DOF(device=motor_device, search_domain=(-10.0, 10.0))
 
-Another is an ordinal degree of freedom, which takes more than two discrete values but has some ordering, e.g.
+The agent will intelligently sample points within these bounds and can interpolate between them to find optimal values.
+
+Discrete DOFs
+=============
+
+For parameters that can only take specific discrete values, you can define discrete DOFs using sets:
+
+Binary DOFs
+-----------
+
+Binary DOFs have exactly two possible values:
 
 .. code-block:: python
 
-    ordinal_dof = DOF(name="x1", description="An ordinal DOF", type="ordinal", search_domain={"low", "medium", "high"})
+    # Shutter open/closed
+    shutter_dof = DOF(name="shutter", search_domain={"open", "closed"})
 
-The last is a categorical degree of freedom, which can take many different discrete values with no ordering, e.g.
+Ordinal DOFs  
+------------
+
+Ordinal DOFs have multiple discrete values with a meaningful order:
 
 .. code-block:: python
 
-    categorical_dof = DOF(name="x1", description="A categorical DOF", type="categorical", search_domain={"banana", "mango", "papaya"})
+    # Gain settings with order
+    gain_dof = DOF(name="gain", type="ordinal", search_domain={"low", "medium", "high"})
+
+Categorical DOFs
+----------------
+
+Categorical DOFs have multiple discrete values without inherent order:
+
+.. code-block:: python
+
+    # Filter selection
+    filter_dof = DOF(name="filter", type="categorical", 
+                     search_domain={"red", "green", "blue", "clear"})
+
+The agent will explore all possible discrete values but understands the relationships (or lack thereof) between them.
+
+Read-Only DOFs
+==============
+
+Sometimes you want the agent to be aware of parameters it cannot control, such as environmental conditions or diagnostic readings:
+
+.. code-block:: python
+
+    # Monitor beam current (can't control it)
+    current_dof = DOF(device=beam_current_monitor, read_only=True)
+    
+    # Monitor temperature (for modeling purposes)
+    temp_monitor = DOF(name="ambient_temp", read_only=True)
+
+Read-only DOFs are included in the agent's models as fixed parameters but are never moved during optimization.
+
+Transforms
+==========
+
+For parameters that vary over many orders of magnitude, logarithmic transforms can improve optimization:
+
+.. code-block:: python
+
+    # Intensity varies from 1e-6 to 1e6
+    intensity_dof = DOF(name="laser_power", 
+                       search_domain=(1e-6, 1e6), 
+                       transform="log")
+
+This helps the agent sample more effectively across the full range of values.
+
+Bluesky Integration
+===================
+
+DOFs are designed to work seamlessly with the Bluesky ecosystem for experiment control. When you connect a DOF to a hardware device, the agent uses Bluesky protocols to move and read the device:
+
+.. code-block:: python
+
+    # Connect DOF to a Bluesky motor
+    from ophyd import EpicsMotor
+    
+    motor = EpicsMotor("XF:28IDC-OP:1{Slt:MB-Ax:X}Mtr", name="slit_motor")
+    slit_dof = DOF(device=motor, search_domain=(-5.0, 5.0))
+
+When the agent optimizes, it automatically:
+
+1. **Generates Bluesky plans** - Uses ``list_scan`` and other Bluesky plans to coordinate device movements
+2. **Moves devices safely** - Respects device limits and follows proper motion protocols  
+3. **Coordinates with RunEngine** - Integrates with your existing Bluesky setup and metadata collection
+4. **Handles readbacks** - Automatically reads device positions and includes them in your data
+
+The DOF device parameter accepts any object that implements Bluesky's ``NamedMovable`` protocol, making it compatible with the full range of Bluesky devices including motors, temperature controllers, voltage sources, and custom devices.
+
+For read-only DOFs, the agent will read device values during data collection but never attempt to move them, making it safe to include diagnostic devices, environmental monitors, or other read-only hardware.
+
+Usage with Agent
+================
+
+Once you've defined your DOFs, pass them to the agent along with your objectives:
+
+.. code-block:: python
+
+    from blop.ax import Agent
+
+    dofs = [
+        DOF(name="x_position", search_domain=(-5.0, 5.0)),
+        DOF(device=motor_y, search_domain=(0.0, 10.0)),
+        DOF(name="gain", type="ordinal", search_domain={"low", "medium", "high"}),
+        DOF(device=temperature_monitor, read_only=True)
+    ]
+
+    agent = Agent(
+        readables=[detector1, detector2],
+        dofs=dofs,
+        objectives=objectives,
+        db=databroker_instance,
+        digestion=your_digestion_function
+    )
+
+The agent automatically converts your blop DOFs to the appropriate Ax parameter configuration, handling continuous ranges, discrete choices, and read-only parameters transparently.
+
+Best Practices
+==============
+
+- **Reasonable Bounds**: Set search domains that cover the physically meaningful range without being excessive
+- **Transform When Needed**: Use logarithmic transforms for parameters spanning multiple orders of magnitude  
+- **Include Context**: Use read-only DOFs for environmental factors that affect your experiment
+- **Start Simple**: Begin with a few continuous DOFs and add complexity as needed
+- **Physical Limits**: Ensure search domains respect the physical limits of your hardware

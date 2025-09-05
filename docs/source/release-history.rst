@@ -2,6 +2,14 @@
 Release History
 ===============
 
+v0.8.0 (2025-09-xx)
+-------------------
+* Migration to using Ax as a backend for the agent
+* Deprecate various methods on the agent that are no longer needed
+* Overhaul the documentation to be more comprehensive
+* Migrate tutorials to use the new Ax agent
+* Ophyd-async compatibility with Ax agent
+
 v0.7.4 (2025-03-04)
 -------------------
 * Add missing files for documentation

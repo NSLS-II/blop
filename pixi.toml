@@ -58,10 +58,10 @@ sphinx-copybutton = "*"
 sphinx_rtd_theme = "*"
 pandas-stubs = "*"
 types-pyyaml = "*"
-nbsphinx = ">=0.9.7,<0.10"
 ipython = ">=9.4.0, <10"
 ipykernel = "*"
 jupyter = ">=1.1.1, <2"
+myst-nb = "*"
 
 [feature.gui.dependencies]
 nicegui = "*"
