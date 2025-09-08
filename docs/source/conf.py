@@ -73,6 +73,10 @@ source_suffix = {
 
 # Set the timeout for notebook execution
 nb_execution_timeout = 600
+nb_render_image_options = {
+    "width": "100%",  # Make images/plots take full width
+    "align": "center",
+}
 
 # The master toctree document.
 master_doc = "index"
@@ -134,7 +138,15 @@ html_static_path = ["_static"]
 htmlhelp_basename = "blop"
 
 # Add require.js to the HTML output
-html_js_files = ["https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"]
+html_js_files = [
+    "https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js",
+    "https://cdnjs.cloudflare.com/ajax/libs/plotly.js/1.33.1/plotly.min.js",
+]
+
+# Add custom CSS to fix .content height constraint for plotly plots
+html_css_files = [
+    "fix-content-height.css",
+]
 
 
 # -- Options for LaTeX output ---------------------------------------------
