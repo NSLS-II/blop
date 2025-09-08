@@ -1019,7 +1019,7 @@ class Agent(BaseAgent):
         if last is not None:
             if last > self.n_samples:
                 raise ValueError(f"Cannot forget last {last} data points (only {self.n_samples} samples have been taken).")
-            self._table = {key: value[: self.n_samples - last] for key, value in self._table.items()}
+            self._table = {key: value[:-last] for key, value in self._table.items()}
         elif index is not None:
             df = pd.DataFrame(self._table).drop(index=index)
             self._table = {key: df[key].values for key in df.columns}
