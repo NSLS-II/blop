@@ -32,7 +32,7 @@ from tiled.client.container import Container
 from . import plotting, utils
 from .bayesian import acquisition, models
 from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
-from .bayesian.models import construct_model, train_model
+from .bayesian.models import construct_single_task_model, train_model
 from .data_access import DatabrokerDataAccess, TiledDataAccess
 from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
@@ -276,7 +276,7 @@ class BaseAgent:
             # A dummy model that outputs noise, for when there are only constraints.
             dummy_X = self.sample(n=256, normalize=True).squeeze(-2)
             dummy_Y = torch.rand(size=(*dummy_X.shape[:-1], 1), dtype=torch.double)
-            return construct_model(X=dummy_X, Y=dummy_Y, min_noise=1e2, max_noise=2e2)
+            return construct_single_task_model(X=dummy_X, y=dummy_Y, min_noise=1e2, max_noise=2e2)
         if len(active_fitness_objectives) == 1:
             return active_fitness_objectives[0].model
         return ModelListGP(*[obj.model for obj in active_fitness_objectives])
@@ -366,9 +366,9 @@ class BaseAgent:
 
         trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
 
-        obj._model = construct_model(
+        obj._model = construct_single_task_model(
             X=train_inputs[trusted],
-            Y=train_targets[trusted],
+            y=train_targets[trusted],
             min_noise=obj.min_noise,
             max_noise=obj.max_noise,
             skew_dims=self._latent_dim_tuples(obj.name),
@@ -1019,10 +1019,10 @@ class Agent(BaseAgent):
         if last is not None:
             if last > self.n_samples:
                 raise ValueError(f"Cannot forget last {last} data points (only {self.n_samples} samples have been taken).")
-            self._table = {key: value[-last:] for key, value in self._table.items()}
+            self._table = {key: value[: self.n_samples - last] for key, value in self._table.items()}
         elif index is not None:
             df = pd.DataFrame(self._table).drop(index=index)
-            self._table = {key: df[key].tolist() for key in df.columns}
+            self._table = {key: df[key].values for key in df.columns}
             self._construct_all_models()
             if train:
                 self._train_all_models()
@@ -1103,7 +1103,7 @@ class Agent(BaseAgent):
     @property
     def best_inputs(self) -> dict[Hashable, Any]:
         """Returns the value of each DOF at the best point."""
-        return pd.DataFrame(self._table).loc[self.argmax_best_f(), :][self.dofs.names].to_dict()
+        return pd.DataFrame(self._table)[self.dofs.names].iloc[self.argmax_best_f()].to_dict()
 
     def go_to(self, **positions: Any) -> Generator[Any, None, None]:
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as
