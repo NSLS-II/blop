@@ -32,7 +32,7 @@ from tiled.client.container import Container
 from . import plotting, utils
 from .bayesian import acquisition, models
 from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
-from .bayesian.models import construct_single_task_model, train_model
+from .bayesian.models import construct_model, train_model
 from .data_access import DatabrokerDataAccess, TiledDataAccess
 from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
@@ -276,7 +276,7 @@ class BaseAgent:
             # A dummy model that outputs noise, for when there are only constraints.
             dummy_X = self.sample(n=256, normalize=True).squeeze(-2)
             dummy_Y = torch.rand(size=(*dummy_X.shape[:-1], 1), dtype=torch.double)
-            return construct_single_task_model(X=dummy_X, y=dummy_Y, min_noise=1e2, max_noise=2e2)
+            return construct_model(X=dummy_X, Y=dummy_Y, min_noise=1e2, max_noise=2e2)
         if len(active_fitness_objectives) == 1:
             return active_fitness_objectives[0].model
         return ModelListGP(*[obj.model for obj in active_fitness_objectives])
@@ -366,9 +366,9 @@ class BaseAgent:
 
         trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
 
-        obj._model = construct_single_task_model(
+        obj._model = construct_model(
             X=train_inputs[trusted],
-            y=train_targets[trusted],
+            Y=train_targets[trusted],
             min_noise=obj.min_noise,
             max_noise=obj.max_noise,
             skew_dims=self._latent_dim_tuples(obj.name),
@@ -467,7 +467,7 @@ class BaseAgent:
             else:
                 raise ValueError("Must supply either x and y, or data.")
         new_table = {k: list(np.atleast_1d(v)) for k, v in data.items()}
-        unique_field_lengths = {len(v) for d in data for v in d}
+        unique_field_lengths = {len(v) for v in data.values()}
 
         if len(unique_field_lengths) > 1:
             raise ValueError("All supplies values must be the same length!")
@@ -1018,14 +1018,11 @@ class Agent(BaseAgent):
         """
         if last is not None:
             if last > self.n_samples:
-                raise ValueError(f"Cannot forget slast {last} data points (only {self.n_samples} samples have been taken).")
-            self._table = {
-                key: [item for i, item in enumerate(value) if i not in set(range(self.n_samples - last, self.n_samples))]
-                for key, value in self._table.items()
-            }
+                raise ValueError(f"Cannot forget last {last} data points (only {self.n_samples} samples have been taken).")
+            self._table = {key: value[-last:] for key, value in self._table.items()}
         elif index is not None:
-            pd.DataFrame(self._table).drop(index=index, inplace=True)
-            self._table = {key: self._table[key] for key in self._table}
+            df = pd.DataFrame(self._table).drop(index=index)
+            self._table = {key: df[key].tolist() for key in df.columns}
             self._construct_all_models()
             if train:
                 self._train_all_models()
@@ -1106,7 +1103,7 @@ class Agent(BaseAgent):
     @property
     def best_inputs(self) -> dict[Hashable, Any]:
         """Returns the value of each DOF at the best point."""
-        return self._table[self.argmax_best_f()][self.dofs.names].to_dict()
+        return pd.DataFrame(self._table).loc[self.argmax_best_f(), :][self.dofs.names].to_dict()
 
     def go_to(self, **positions: Any) -> Generator[Any, None, None]:
         """Set all settable DOFs to a given position. DOF/value pairs should be supplied as kwargs, e.g. as
