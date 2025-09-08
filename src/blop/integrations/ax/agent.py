@@ -3,6 +3,7 @@ from collections import defaultdict
 from collections.abc import Callable, Generator
 from typing import Literal
 
+import databroker
 import pandas as pd
 from ax import Client
 from ax.analysis import Analysis, AnalysisCard, ContourPlot
@@ -12,7 +13,9 @@ from bluesky.plans import list_scan
 from bluesky.protocols import Movable, Readable
 from bluesky.utils import Msg
 from databroker import Broker
+from tiled.client.container import Container
 
+from ...data_access import DatabrokerDataAccess, TiledDataAccess
 from ...dofs import DOF
 from ...objectives import Objective
 from .adapters import configure_metrics, configure_objectives, configure_parameters
@@ -34,8 +37,8 @@ def default_digestion_function(trial_index: int, objectives: list[Objective], df
         The index of the trial.
     objectives : list[Objective]
         The objectives of the experiment.
-    df : pd.DataFrame
-        The dataframe containing the results of the experiment.
+    df : dict[str, list[Any]]
+        A dictonary containing the results of the experiment.
 
     Returns
     -------
@@ -43,7 +46,7 @@ def default_digestion_function(trial_index: int, objectives: list[Objective], df
         A dictionary mapping objective names to their mean and standard error. Since there
         is a single trial, the standard error is None.
     """
-    return {objective.name: (df.loc[(trial_index % len(df)) + 1, objective.name], None) for objective in objectives}
+    return {objective.name: (df[objective.name][(trial_index % len(df[objective.name]))], None) for objective in objectives}
 
 
 class AxAgent:
@@ -59,8 +62,8 @@ class AxAgent:
         The degrees of freedom that the agent can control, which determine the output of the model.
     objectives : list[Objective]
         The objectives which the agent will try to optimize.
-    db : Broker
-        The databroker instance to read back data from a Bluesky run.
+    db : Broker | Container
+        The databroker or tiled instance to read back data from a Bluesky run.
     digestion : Callable[[pd.DataFrame], dict[str, tuple[float, float]]]
         The function to produce objective values from a dataframe of acquisition results.
     digestion_kwargs : dict
@@ -72,7 +75,7 @@ class AxAgent:
         readables: list[Readable],
         dofs: list[DOF],
         objectives: list[Objective],
-        db: Broker,
+        db: Broker | Container,
         digestion: Callable[[pd.DataFrame], dict[str, tuple[float, float]]] = default_digestion_function,
         digestion_kwargs: dict | None = None,
     ):
@@ -82,7 +85,13 @@ class AxAgent:
         self.client = Client()
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs or {}
-        self.db = db
+
+        if isinstance(db, Container):
+            self.data_access = TiledDataAccess(db)
+        elif isinstance(db, databroker.Broker):
+            self.data_access = DatabrokerDataAccess(db)
+        else:
+            raise ValueError("Cannot run acquistion without databroker or tiled instance!")
 
     def configure_experiment(
         self,
@@ -241,7 +250,7 @@ class AxAgent:
         """
         plan_args = self._unpack_parameters(trials.values())
         uid = yield from list_scan(self.readables, *plan_args, md={"ax_trial_indices": list(trials.keys())})
-        results_df = self.db[uid].table(fill=True)
+        results_df = self.data_access.get_data(uid)
         active_objectives = [objective for objective in self.objectives.values() if objective.active]
         return {
             trial_index: self.digestion(trial_index, active_objectives, results_df, **self.digestion_kwargs)

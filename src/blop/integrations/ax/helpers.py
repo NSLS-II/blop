@@ -6,6 +6,10 @@ import pandas as pd
 from ax.service.ax_client import AxClient
 from bluesky.plans import list_scan
 from bluesky.protocols import NamedMovable, Readable
+from databroker import Broker
+from tiled.client.container import Container
+
+from ...data_access import DatabrokerDataAccess, TiledDataAccess
 
 
 def create_blop_experiment(ax_client: AxClient, parameters: list[dict[str, Any]], *args, **kwargs) -> None:
@@ -27,7 +31,7 @@ def create_blop_experiment(ax_client: AxClient, parameters: list[dict[str, Any]]
 
 def create_bluesky_evaluator(
     RE,
-    db,
+    db: Broker | Container,
     readables: list[Readable],
     movables: list[NamedMovable],
     evaluation_function: Callable[[pd.DataFrame], dict[str, tuple[float, float]]],
@@ -40,8 +44,8 @@ def create_bluesky_evaluator(
     -----------
     RE : RunEngine
         The Bluesky RunEngine
-    db : databroker
-        The databroker/tiled instance
+    db : Broker | Container
+        The databroker or tiled instance to read back data from a Bluesky run.
     movables : List
         List of Bluesky motors/devices to optimize
     detectors : List
@@ -59,6 +63,13 @@ def create_bluesky_evaluator(
     """
     plan_function = plan or list_scan
 
+    if isinstance(db, Container):
+        data_access = TiledDataAccess(db)
+    elif isinstance(db, Broker):
+        data_access = DatabrokerDataAccess(db)
+    else:
+        raise ValueError("Cannot run acquistion without databroker or tiled instance!")
+
     def evaluate(parameterization: dict[str, float] | dict[str, list[float]]) -> dict[str, tuple[float, float]]:
         # Prepare the parameters for the plan
         unpacked = []
@@ -75,10 +86,10 @@ def create_bluesky_evaluator(
                 raise ValueError(f"Parameter {m.name} not found in parameterization. Parameterization: {parameterization}")
 
         # Run the plan
-        uid = RE(plan_function(readables, *unpacked))
+        (uid,) = RE(plan_function(readables, *unpacked))
 
         # Fetch the data
-        results_df = db[uid][0].table(fill=True)
+        results_df = data_access.get_data(uid)
 
         # Evaluate the data
         return evaluation_function(results_df)
