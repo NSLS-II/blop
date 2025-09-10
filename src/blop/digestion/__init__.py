@@ -7,7 +7,16 @@ def default_digestion_function(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def beam_stats_digestion(df: pd.DataFrame, image_key: str, **kwargs) -> pd.DataFrame:
+def beam_stats_digestion(df, image_key: str, **kwargs) -> dict:
     # Get the beam stats for each image in the dataframe and add them as new columns
-    df = pd.concat([df, df[image_key].apply(lambda img: pd.Series(get_beam_stats(img, **kwargs)))], axis=1)
+    stats_list_of_dicts = [get_beam_stats(img, **kwargs) for img in df[image_key]]
+    processed_stats = {}
+    if stats_list_of_dicts:
+        for key in stats_list_of_dicts[0].keys():
+            processed_stats[key] = []
+
+        for stat_dict in stats_list_of_dicts:
+            for key, value in stat_dict.items():
+                processed_stats[key].append(value)
+        df.update(processed_stats)
     return df

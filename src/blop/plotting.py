@@ -28,7 +28,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
 
     x_dof = agent.dofs(active=True)[0]
-    x_values = agent.table.loc[:, x_dof.device.name].values
+    x_values = agent.table[x_dof.device.name]
 
     test_inputs = agent.sample(n=256, method="grid")
     test_model_inputs = agent.dofs.transform(test_inputs)
@@ -113,8 +113,8 @@ def _plot_objs_many_dofs(
 
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
-    x_values = agent.table.loc[:, x_dof.device.name].values
-    y_values = agent.table.loc[:, y_dof.device.name].values
+    x_values = agent.table[x_dof.device.name]
+    y_values = agent.table[y_dof.device.name]
 
     # test_inputs has shape (*input_shape, 1, n_active_dofs)
     # test_x and test_y should be squeezeable
@@ -137,11 +137,12 @@ def _plot_objs_many_dofs(
 
         # mask for nan values, uses unfilled o marker
         mask = np.isnan(values)
-
         values_ax = agent.obj_axes[obj_index, 0].scatter(
-            x_values[~mask], y_values[~mask], c=values[~mask], s=size, norm=val_norm, cmap=cmap
+            np.array(x_values)[~mask], np.array(y_values)[~mask], c=values[~mask], s=size, norm=val_norm, cmap=cmap
         )
-        agent.obj_axes[obj_index, 0].scatter(x_values[mask], y_values[mask], marker="o", ec="k", fc="w", s=size)
+        agent.obj_axes[obj_index, 0].scatter(
+            np.array(x_values)[mask], np.array(y_values)[mask], marker="o", ec="k", fc="w", s=size
+        )
 
         # mean and sigma will have shape (*input_shape,)
         test_posterior = obj.model.posterior(test_model_inputs)
@@ -405,7 +406,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * len(agent.objectives)), constrained_layout=True)
 
     x_dof = agent.dofs(active=True)[0]
-    x_values = agent.table.loc[:, x_dof.device.name].values
+    x_values = agent.table[x_dof.device.name]
 
     test_inputs = agent.sample(method="grid")
     constraint = agent.constraint(agent.dofs.transform(test_inputs))[..., 0]
@@ -466,7 +467,7 @@ def _plot_valid_many_dofs(agent, axes=(0, 1), shading="nearest", cmap=DEFAULT_CO
 
 
 def _plot_history(agent, x_key="index", show_all_objs=False):
-    x = getattr(agent.table, x_key).values
+    x = list(range(0, len(agent.table[next(iter(agent.table))])))
 
     num_obj_plots = 1
     if show_all_objs:
@@ -479,7 +480,7 @@ def _plot_history(agent, x_key="index", show_all_objs=False):
     )
     hist_axes = np.atleast_1d(hist_axes)
 
-    unique_strategies, _, acqf_inverse = np.unique(agent.table.acqf, return_index=True, return_inverse=True)
+    unique_strategies, _, acqf_inverse = np.unique(agent.table["acqf"], return_index=True, return_inverse=True)
 
     sample_colors = np.array(DEFAULT_COLOR_LIST)[acqf_inverse]
 
