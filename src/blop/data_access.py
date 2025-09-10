@@ -47,7 +47,7 @@ class TiledDataAccess(DataAccess):
         data_vars = {}
         updated_data = {key: value for key, value in new_data.items() if "ts" not in key and "time" not in key}
         for key, value in updated_data.items():
-            if isinstance(value, (list, np.ndarray)) and isinstance(value[0], np.ndarray):
+            if isinstance(value, list | np.ndarray) and isinstance(value[0], np.ndarray):
                 if len(value.shape) == 2:
                     value = np.expand_dims(value, axis=0)
                 var_dims = ("dim_0",) + tuple(f"{key}_dim{i}" for i in range(1, len(value.shape)))
@@ -76,7 +76,7 @@ class DatabrokerDataAccess(DataAccess):
         """Convert a dictionary back to a pandas DataFrame, handling scalars and arrays."""
         dataframe = pd.DataFrame()
         for key, value in new_data.items():
-            if np.isscalar(value) or (isinstance(value, (list, np.ndarray)) and isinstance(value[0], np.ndarray)):
+            if np.isscalar(value) or (isinstance(value, list | np.ndarray) and isinstance(value[0], np.ndarray)):
                 dataframe[key] = pd.Series([value])
             else:
                 dataframe[key] = pd.Series(value)

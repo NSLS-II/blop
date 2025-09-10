@@ -1000,7 +1000,7 @@ class Agent(BaseAgent):
             for key, value in self._table.items():
                 if isinstance(value[0], pd.Timestamp):
                     f.create_dataset(key, data=[ts.value for ts in value], dtype="int64")
-                elif isinstance(value[0], (np.str_, str)):
+                elif isinstance(value[0], np.str_ | str):
                     f.create_dataset(key, data=np.array(value, dtype="S"))
                 else:
                     f.create_dataset(key, data=value)
