@@ -4,9 +4,9 @@ from ax.generation_strategy.model_spec import GeneratorSpec
 from ax.generation_strategy.transition_criterion import MinTrials
 from ax.modelbridge.registry import Generators
 from ax.models.torch.botorch_modular.surrogate import ModelConfig, SurrogateSpec
-from blop.integrations.ax.agent import AxAgent
 from botorch.acquisition.logei import qLogNoisyExpectedImprovement
 
+from blop.ax.agent import Agent
 from blop.bayesian.models import LatentGP
 from blop.dofs import DOF
 from blop.objectives import Objective
@@ -34,14 +34,14 @@ def test_ax_agent(RE, backend, setup):
         Objective(name="bl_det_wid_y", target="min", transform="log"),
     ]
 
-    agent = AxAgent(
+    agent = Agent(
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
         db=setup,
     )
 
-    agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
+    agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
     RE(agent.learn(iterations=12, n=1))
 
 
@@ -66,13 +66,13 @@ def test_plot_objective(RE, backend, setup):
         Objective(name="bl_det_wid_y", target="min", transform="log"),
     ]
 
-    agent = AxAgent(
+    agent = Agent(
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
         db=setup,
     )
-    agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
+    agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
     RE(agent.learn(iterations=12, n=1))
 
     agent.plot_objective(x_dof_name="bl_kbv_dsv", y_dof_name="bl_kbv_usv", objective_name="bl_det_sum")
@@ -99,7 +99,7 @@ def test_generation_strategy_sim_beamline(RE, backend, setup):
         Objective(name="bl_det_wid_y", target="min", transform="log"),
     ]
 
-    agent = AxAgent(
+    agent = Agent(
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
@@ -155,7 +155,7 @@ def test_generation_strategy_sim_beamline(RE, backend, setup):
         ],
     )
 
-    agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
+    agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
     agent.set_generation_strategy(generation_strategy)
     RE(agent.learn(iterations=12, n=1))
 

@@ -10,4 +10,3 @@ Tutorials
    tutorials/passive-dofs.ipynb
    tutorials/kb-mirrors.ipynb
    tutorials/xrt-blop-demo.ipynb
-   tutorials/ax-blop-demo.ipynb
