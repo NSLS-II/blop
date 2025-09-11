@@ -1,6 +1,6 @@
+import warnings
 from collections.abc import Iterable, Sequence
 from typing import Any, Literal, cast, overload
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -110,7 +110,8 @@ class Objective:
             Default: None
         weight: float
             .. deprecated:: 0.7.5
-                This argument is deprecated and will be removed in Blop v1.0.0. Use a digestion function to weight your objectives.
+                This argument is deprecated and will be removed in Blop v1.0.0.
+                Use a digestion function to weight your objectives.
 
             The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
             Default: 1.
@@ -167,13 +168,19 @@ class Objective:
             )
         if transform:
             warnings.warn(
-                "The 'transform' argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have transforms. Use digestion functions to transform your objectives.",
+                (
+                    "The 'transform' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "Only DOFs will have transforms. Use digestion functions to transform your objectives."
+                ),
                 DeprecationWarning,
                 stacklevel=2,
             )
         if weight:
             warnings.warn(
-                "The 'weight' argument is deprecated and will be removed in Blop v1.0.0. Use a digestion function to weight your objectives.",
+                (
+                    "The 'weight' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "Use a digestion function to weight your objectives."
+                ),
                 DeprecationWarning,
                 stacklevel=2,
             )
