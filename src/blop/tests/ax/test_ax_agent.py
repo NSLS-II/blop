@@ -10,11 +10,15 @@ from botorch.acquisition.logei import qLogNoisyExpectedImprovement
 from blop.bayesian.models import LatentGP
 from blop.dofs import DOF
 from blop.objectives import Objective
-from blop.sim import Beamline
+from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
 
 
-def test_sim_beamline(RE, db):
-    beamline = Beamline(name="bl")
+def test_ax_agent(RE, backend, setup):
+    if backend == "databroker":
+        beamline = DatabrokerBeamline(name="bl")
+
+    elif backend == "tiled":
+        beamline = TiledBeamline(name="bl")
     beamline.det.noise.put(False)
 
     dofs = [
@@ -34,15 +38,19 @@ def test_sim_beamline(RE, db):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        db=setup,
     )
 
     agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
     RE(agent.learn(iterations=12, n=1))
 
 
-def test_plot_objective(RE, db):
-    beamline = Beamline(name="bl")
+def test_plot_objective(RE, backend, setup):
+    if backend == "databroker":
+        beamline = DatabrokerBeamline(name="bl")
+
+    elif backend == "tiled":
+        beamline = TiledBeamline(name="bl")
     beamline.det.noise.put(False)
 
     dofs = [
@@ -62,7 +70,7 @@ def test_plot_objective(RE, db):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        db=setup,
     )
     agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
     RE(agent.learn(iterations=12, n=1))
@@ -70,8 +78,12 @@ def test_plot_objective(RE, db):
     agent.plot_objective(x_dof_name="bl_kbv_dsv", y_dof_name="bl_kbv_usv", objective_name="bl_det_sum")
 
 
-def test_generation_strategy_sim_beamline(RE, db):
-    beamline = Beamline(name="bl")
+def test_generation_strategy_sim_beamline(RE, backend, setup):
+    if backend == "databroker":
+        beamline = DatabrokerBeamline(name="bl")
+
+    elif backend == "tiled":
+        beamline = TiledBeamline(name="bl")
     beamline.det.noise.put(False)
 
     dofs = [
@@ -91,7 +103,7 @@ def test_generation_strategy_sim_beamline(RE, db):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        db=setup,
     )
 
     # Create a custom generations strategy that uses the Sobol
