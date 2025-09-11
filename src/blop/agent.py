@@ -32,7 +32,7 @@ from tiled.client.container import Container
 from . import plotting, utils
 from .bayesian import acquisition, models
 from .bayesian.acquisition import _construct_acqf, parse_acqf_identifier
-from .bayesian.models import construct_single_task_model, train_model
+from .bayesian.models import construct_model, train_model
 from .data_access import DatabrokerDataAccess, TiledDataAccess
 from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
@@ -276,7 +276,7 @@ class BaseAgent:
             # A dummy model that outputs noise, for when there are only constraints.
             dummy_X = self.sample(n=256, normalize=True).squeeze(-2)
             dummy_Y = torch.rand(size=(*dummy_X.shape[:-1], 1), dtype=torch.double)
-            return construct_single_task_model(X=dummy_X, y=dummy_Y, min_noise=1e2, max_noise=2e2)
+            return construct_model(X=dummy_X, Y=dummy_Y, min_noise=1e2, max_noise=2e2)
         if len(active_fitness_objectives) == 1:
             return active_fitness_objectives[0].model
         return ModelListGP(*[obj.model for obj in active_fitness_objectives])
@@ -366,9 +366,9 @@ class BaseAgent:
 
         trusted = inputs_are_trusted & targets_are_trusted & ~self.pruned_mask()
 
-        obj._model = construct_single_task_model(
+        obj._model = construct_model(
             X=train_inputs[trusted],
-            y=train_targets[trusted],
+            Y=train_targets[trusted],
             min_noise=obj.min_noise,
             max_noise=obj.max_noise,
             skew_dims=self._latent_dim_tuples(obj.name),
@@ -1000,7 +1000,7 @@ class Agent(BaseAgent):
             for key, value in self._table.items():
                 if isinstance(value[0], pd.Timestamp):
                     f.create_dataset(key, data=[ts.value for ts in value], dtype="int64")
-                elif isinstance(value[0], (np.str_, str)):
+                elif isinstance(value[0], np.str_ | str):
                     f.create_dataset(key, data=np.array(value, dtype="S"))
                 else:
                     f.create_dataset(key, data=value)
