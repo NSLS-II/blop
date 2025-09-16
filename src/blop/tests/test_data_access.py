@@ -8,8 +8,8 @@ from databroker import Broker
 from tiled.client.container import Container
 
 from blop import DOF, Objective
+from blop.ax import Agent
 from blop.data_access import DatabrokerDataAccess, TiledDataAccess
-from blop.integrations.ax.agent import AxAgent
 from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
 
 from .conftest import create_agent_from_config
@@ -112,7 +112,7 @@ def test_ax_agent_data_access(RE_backend):
         Objective(name="bl_det_sum", target="max"),
     ]
 
-    agent = AxAgent(
+    agent = Agent(
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
