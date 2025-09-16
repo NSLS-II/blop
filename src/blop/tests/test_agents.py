@@ -22,7 +22,6 @@ def test_agent_core_functionality(agent, RE):
     agent.redigest()
 
 
-# Test agent configurations separately - reduce parameterization
 @pytest.mark.parametrize("agent", SIMPLE_AGENTS, indirect=True)
 def test_simple_agents(agent, RE):
     """Test simple agents (1D and 2D unconstrained)."""
@@ -146,7 +145,6 @@ def test_forgetting_mechanism(RE, setup):
     assert len(agent.raw_inputs()) < initial_data_points
 
 
-# Single benchmark test instead of parameterized
 def test_benchmark(RE, setup):
     """Test benchmarking functionality."""
     from blop import DOF

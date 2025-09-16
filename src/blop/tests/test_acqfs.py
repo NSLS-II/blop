@@ -5,9 +5,8 @@ from blop import DOF
 from .conftest import SIMPLE_AGENTS, create_agent_from_config
 
 
-# Test analytic acquisition functions with fewer combinations
 @pytest.mark.parametrize("acqf", ["ei", "pi", "em", "ucb"])
-@pytest.mark.parametrize("agent", SIMPLE_AGENTS[:1], indirect=True)  # Just test with one simple agent
+@pytest.mark.parametrize("agent", SIMPLE_AGENTS[:1], indirect=True)
 def test_analytic_acqfs_simple_agent(agent, RE, acqf):
     """Test analytic acquisition functions with a simple agent."""
     RE(agent.learn("qr", n=16))
@@ -16,9 +15,8 @@ def test_analytic_acqfs_simple_agent(agent, RE, acqf):
     assert hasattr(agent, acqf)
 
 
-# Test Monte Carlo acquisition functions with fewer combinations
 @pytest.mark.parametrize("acqf", ["qei", "qpi", "qem", "qucb"])
-@pytest.mark.parametrize("agent", SIMPLE_AGENTS[:1], indirect=True)  # Just test with one simple agent
+@pytest.mark.parametrize("agent", SIMPLE_AGENTS[:1], indirect=True)
 def test_monte_carlo_acqfs_simple_agent(agent, RE, acqf):
     """Test Monte Carlo acquisition functions with a simple agent."""
     RE(agent.learn("qr", n=16))
