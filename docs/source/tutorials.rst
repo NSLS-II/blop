@@ -14,6 +14,7 @@ Deprecated
    :maxdepth: 2
 
    tutorials/deprecated/introduction.ipynb
+   tutorials/deprecated/hyperparameters.ipynb
    tutorials/deprecated/pareto-fronts.ipynb
    tutorials/deprecated/passive-dofs.ipynb
    tutorials/deprecated/kb-mirrors.ipynb
