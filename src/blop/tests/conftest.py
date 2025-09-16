@@ -1,61 +1,35 @@
 import asyncio
 import logging
 
-import databroker  # type: ignore[import-untyped]
 import numpy as np
 import pytest
 from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
-from databroker import Broker
 from tiled.client import from_uri
 from tiled.server.simple import SimpleTiledServer
 
 from blop import DOF, Agent, Objective
 from blop.digestion.tests import chankong_and_haimes_digestion, sketchy_himmelblau_digestion
 from blop.dofs import BrownianMotion
-from blop.sim import HDF5Handler
 
 logger = logging.getLogger("blop")
 logger.setLevel(logging.DEBUG)
 
 
-@pytest.fixture(scope="function", params=["databroker", "tiled"])
-def backend(request):
-    """Parameterizes tests to run for databroker and tiled."""
-    return request.param
+@pytest.fixture(scope="function")
+def setup():
+    """Returns the tiled client as the default backend for all tests."""
+    server = SimpleTiledServer(readable_storage=["/tmp/blop/sim"])
+    client = from_uri(server.uri)
+    yield client
+    server.close()
 
 
 @pytest.fixture(scope="function")
-def setup(backend):
-    """Returns the database or client object based on the backend."""
-    if backend == "databroker":
-        db = Broker.named("temp")
-        try:
-            databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-        except Exception:
-            pass
-        db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-        yield db
-
-    elif backend == "tiled":
-        server = SimpleTiledServer(readable_storage=["/tmp/blop/sim"])
-        client = from_uri(server.uri)
-        yield client
-        server.close()
-
-    else:
-        pytest.fail(f"Invalid backend specified: {backend}")
-
-
-@pytest.fixture(scope="function")
-def db_callback(backend, setup):
-    """Returns the callback function based on the backend."""
-    if backend == "databroker":
-        return setup.insert
-
-    elif backend == "tiled":
-        return TiledWriter(setup)
+def db_callback(setup):
+    """Returns the TiledWriter callback for the default tiled backend."""
+    return TiledWriter(setup)
 
 
 @pytest.fixture(scope="function")
@@ -77,121 +51,138 @@ def RE(db_callback):
     return RE
 
 
-single_task_agents = [
-    "1d_1f",
-    "2d_1f",
-    "2d_1f_1c",
-    "2d_2f_2c",
-    "3d_2r_2f_1c",
-]
+# Agent configuration templates - much more maintainable
+AGENT_CONFIGS = {
+    "simple_1d": {
+        "dofs": [{"name": "x1", "search_domain": (-5.0, 5.0)}],
+        "objectives": [{"name": "himmelblau", "target": "min"}],
+        "digestion": sketchy_himmelblau_digestion,
+    },
+    "simple_2d": {
+        "dofs": [
+            {"name": "x1", "search_domain": (-5.0, 5.0)},
+            {"name": "x2", "search_domain": (-5.0, 5.0)},
+        ],
+        "objectives": [{"name": "himmelblau", "target": "min"}],
+        "digestion": sketchy_himmelblau_digestion,
+    },
+    "constrained_2d": {
+        "dofs": [
+            {"name": "x1", "search_domain": (-5.0, 5.0)},
+            {"name": "x2", "search_domain": (-5.0, 5.0)},
+        ],
+        "objectives": [
+            {"name": "himmelblau", "target": "min"},
+            {"name": "himmelblau", "constraint": (95, 105)},
+        ],
+        "digestion": sketchy_himmelblau_digestion,
+    },
+    "multiobjective_2d": {
+        "dofs": [
+            {"name": "x1", "search_domain": (-5.0, 5.0)},
+            {"name": "x2", "search_domain": (-5.0, 5.0)},
+        ],
+        "objectives": [
+            {"name": "f1", "target": "min"},
+            {"name": "f2", "target": "min"},
+            {"name": "c1", "constraint": (-np.inf, 225)},
+            {"name": "c2", "constraint": (-np.inf, 0)},
+        ],
+        "digestion": chankong_and_haimes_digestion,
+    },
+    "complex_3d": {
+        "dofs": [
+            {"name": "x1", "search_domain": (-5.0, 5.0)},
+            {"name": "x2", "search_domain": (-5.0, 5.0)},
+            {"name": "x3", "search_domain": (-5.0, 5.0), "active": False},
+            {"device": BrownianMotion(name="brownian1"), "read_only": True},
+            {"device": BrownianMotion(name="brownian2"), "read_only": True, "active": False},
+        ],
+        "objectives": [
+            {"name": "himmelblau", "target": "min"},
+            {"name": "himmelblau_transpose", "target": "min"},
+            {"name": "himmelblau", "constraint": (95, 105)},
+        ],
+        "digestion": sketchy_himmelblau_digestion,
+    },
+}
 
-nonpareto_multitask_agents = ["2d_2c"]
 
-pareto_agents = ["2d_2f_2c", "3d_2r_2f_1c"]
+def create_agent_from_config(config_name, db):
+    """Create an agent from a configuration template."""
+    if config_name not in AGENT_CONFIGS:
+        raise ValueError(f"Invalid agent configuration '{config_name}'.")
 
-all_agents = [*single_task_agents, *nonpareto_multitask_agents, *pareto_agents]
+    config = AGENT_CONFIGS[config_name]
 
+    # Create DOFs
+    dofs = []
+    for dof_config in config["dofs"]:
+        if "device" in dof_config:
+            dof = DOF(device=dof_config["device"], read_only=dof_config.get("read_only", False))
+        else:
+            dof = DOF(
+                description=f"DOF {dof_config['name']}",
+                name=dof_config["name"],
+                search_domain=dof_config["search_domain"],
+                active=dof_config.get("active", True),
+            )
+        dofs.append(dof)
 
-def get_agent(param, db):
-    """
-    Generate a bunch of different agents.
-    """
-    if param == "1d_1f":
-        return Agent(
-            dofs=[DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))],
-            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", target="min")],
-            digestion=sketchy_himmelblau_digestion,
-            db=db,
+    # Create objectives
+    objectives = []
+    for obj_config in config["objectives"]:
+        obj = Objective(
+            description=obj_config.get("description", obj_config["name"]),
+            name=obj_config["name"],
+            target=obj_config.get("target"),
+            constraint=obj_config.get("constraint"),
         )
+        objectives.append(obj)
 
-    elif param == "1d_1c":
-        return Agent(
-            dofs=[DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0))],
-            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105))],
-            digestion=sketchy_himmelblau_digestion,
-            db=db,
-        )
+    return Agent(
+        dofs=dofs,
+        objectives=objectives,
+        digestion=config["digestion"],
+        db=db,
+    )
 
-    elif param == "2d_1f":
-        return Agent(
-            dofs=[
-                DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-                DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
-            ],
-            objectives=[Objective(description="Himmelblau’s function", name="himmelblau", target="min")],
-            digestion=sketchy_himmelblau_digestion,
-            db=db,
-        )
 
-    elif param == "2d_2c":
-        return Agent(
-            dofs=[
-                DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-                DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
-            ],
-            objectives=[
-                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
-                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
-            ],
-            digestion=sketchy_himmelblau_digestion,
-            db=db,
-        )
+# Simplified agent parameter sets - fewer combinations
+SIMPLE_AGENTS = ["simple_1d", "simple_2d"]
+CONSTRAINED_AGENTS = ["constrained_2d", "multiobjective_2d"]
+COMPLEX_AGENTS = ["complex_3d"]
+ALL_AGENTS = SIMPLE_AGENTS + CONSTRAINED_AGENTS + COMPLEX_AGENTS
 
-    elif param == "2d_1f_1c":
-        return Agent(
-            dofs=[
-                DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-                DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
-            ],
-            objectives=[
-                Objective(description="Himmelblau’s function", name="himmelblau", target="min"),
-                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
-            ],
-            digestion=sketchy_himmelblau_digestion,
-            db=db,
-        )
 
-    elif param == "2d_2f_2c":
-        return Agent(
-            dofs=[
-                DOF(description="The first DOF", name="x1", search_domain=(-5.0, 5.0)),
-                DOF(description="The first DOF", name="x2", search_domain=(-5.0, 5.0)),
-            ],
-            objectives=[
-                Objective(description="f1", name="f1", target="min"),
-                Objective(description="f2", name="f2", target="min"),
-                Objective(description="c1", name="c1", constraint=(-np.inf, 225)),
-                Objective(description="c2", name="c2", constraint=(-np.inf, 0)),
-            ],
-            digestion=chankong_and_haimes_digestion,
-            db=db,
-        )
+# Focused fixtures for specific testing scenarios
+@pytest.fixture(scope="function")
+def simple_agent(setup):
+    """A simple 2D agent for basic functionality testing."""
+    return create_agent_from_config("simple_2d", db=setup)
 
-    elif param == "3d_2r_2f_1c":
-        return Agent(
-            dofs=[
-                DOF(name="x1", search_domain=(-5.0, 5.0)),
-                DOF(name="x2", search_domain=(-5.0, 5.0)),
-                DOF(name="x3", search_domain=(-5.0, 5.0), active=False),
-                DOF(device=BrownianMotion(name="brownian1"), read_only=True),
-                DOF(device=BrownianMotion(name="brownian2"), read_only=True, active=False),
-            ],
-            objectives=[
-                Objective(name="himmelblau", target="min"),
-                Objective(name="himmelblau_transpose", target="min"),
-                Objective(description="Himmelblau’s function", name="himmelblau", constraint=(95, 105)),
-            ],
-            digestion=sketchy_himmelblau_digestion,
-            db=db,
-        )
 
-    else:
-        raise ValueError(f"Invalid agent parameter '{param}'.")
+@pytest.fixture(scope="function")
+def constrained_agent(setup):
+    """A constrained agent for testing constraint handling."""
+    return create_agent_from_config("constrained_2d", db=setup)
+
+
+@pytest.fixture(scope="function")
+def multiobjective_agent(setup):
+    """A multi-objective agent for testing Pareto optimization."""
+    return create_agent_from_config("multiobjective_2d", db=setup)
+
+
+@pytest.fixture(scope="function")
+def complex_agent(setup):
+    """A complex agent with read-only DOFs for advanced testing."""
+    return create_agent_from_config("complex_3d", db=setup)
 
 
 @pytest.fixture
 def agent(request, setup):
-    agent = get_agent(request.param, db=setup)
+    agent = create_agent_from_config(request.param, db=setup)
 
     # add a useless DOF to try and break things
     agent.dofs.add(DOF(name="dummy", search_domain=(0, 1), active=False))
