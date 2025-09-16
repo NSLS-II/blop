@@ -80,6 +80,7 @@ target/
 
 # VSCode
 .vscode/
+.cursor/
 
 # Ipython Notebook
 .ipynb_checkpoints
