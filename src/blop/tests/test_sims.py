@@ -2,15 +2,11 @@ import numpy as np
 
 from blop import DOF, Agent, Objective
 from blop.digestion import beam_stats_digestion
-from blop.sim import DatabrokerBeamline, TiledBeamline
+from blop.sim import TiledBeamline
 
 
-def test_kb_simulation(RE, backend, setup):
-    if backend == "databroker":
-        beamline = DatabrokerBeamline(name="bl")
-
-    elif backend == "tiled":
-        beamline = TiledBeamline(name="bl")
+def test_kb_simulation(RE, setup):
+    beamline = TiledBeamline(name="bl")
     beamline.det.noise.put(False)
 
     dofs = [
