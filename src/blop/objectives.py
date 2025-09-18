@@ -1,3 +1,4 @@
+import warnings
 from collections.abc import Iterable, Sequence
 from typing import Any, Literal, cast, overload
 
@@ -76,10 +77,16 @@ class Objective:
         Parameters
         ----------
         name: str
-            The name of the objective to optimize.. This is used as a key to index observed data.
+            The name of the objective to optimize. This is used as a key to index observed data.
         description: str
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
+
             A longer description for the objective.
         type: Literal["continuous", "binary", "ordinal", "categorical"]
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have types.
+
             Describes the type of the outcome to be optimized. An outcome can be
             - Continuous, meaning any real number.
             - Binary, meaning that it can take one of two values (e.g. [on, off])
@@ -95,35 +102,118 @@ class Objective:
             only be 'satisfied' if it lies within the constraint. Each Objective must have either a target or a constraint.
             Default: None
         transform: Optional[Literal["log", "logit", "arctanh"]]
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have transforms. Use
+                digestion functions to transform your objectives.
+
             One of "log", "logit", or "arctanh", to transform the outcomes and make them more Gaussian.
             Default: None
         weight: float
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
+                Use a digestion function to weight your objectives.
+
             The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
             Default: 1.
         active: bool
-            If True, the agent will care about this Objective during optimization.
+            If True, optimize this objective. Otherwise, monitor the objective, only.
             Default: True
         trust_domain: Union[tuple[float, float], set[int], set[str]]
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0. Use constraints instead.
+
             A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An outcome outside
             the trust_domain will not be trusted and will be ignored as 'invalid'. By default, all values are trusted.
             Default: None
         min_noise: float
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
+
             The minimum relative noise level of the fitted model.
             Default: 1e-6
         max_noise: float
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
+
             The maximum relative noise level of the fitted model.
             Default: 1e0
         units: str
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
+
             A label representing the units of the outcome (e.g., millimeters or counts)
             Default: None
         latent_groups: list of tuples of strs, optional
             An agent will fit latent dimensions to all DOFs with the same latent_group. All other DOFs will be modeled
-            independently.
+            independently. Only used for LatentGPs.
             Default: None
         min_points_to_train: int
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
+
             How many new points to wait for before retraining model hyperparameters.
             Default: 4
         """
+        if description:
+            warnings.warn(
+                "The 'description' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if type:
+            warnings.warn(
+                "The 'type' argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have types.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if transform:
+            warnings.warn(
+                (
+                    "The 'transform' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "Only DOFs will have transforms. Use digestion functions to transform your objectives."
+                ),
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if weight:
+            warnings.warn(
+                (
+                    "The 'weight' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "Use a digestion function to weight your objectives."
+                ),
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if trust_domain:
+            warnings.warn(
+                "The 'trust_domain' argument is deprecated and will be removed in Blop v1.0.0. Use constraints instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if min_noise:
+            warnings.warn(
+                "The 'min_noise' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if max_noise:
+            warnings.warn(
+                "The 'max_noise' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if units:
+            warnings.warn(
+                "The 'units' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if min_points_to_train:
+            warnings.warn(
+                "The 'min_points_to_train' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         self.name = name
         self.units = units
@@ -280,6 +370,9 @@ class Objective:
     def summary(self) -> pd.Series:
         """
         Return a Series summarizing the state of the Objectives.
+
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. Objectives will not have a summary.
         """
         series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype=object)
         for attr in series.index:
@@ -337,6 +430,10 @@ class Objective:
 
     @property
     def model(self) -> Model | None:
+        """
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. Models will not be stored in individaul Objectives.
+        """
         return self._model.eval() if self._model else None
 
     @property

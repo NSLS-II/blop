@@ -1,12 +1,14 @@
 import logging
 import time as ttime
 import uuid
+import warnings
 from collections.abc import Iterable, Sequence
 from typing import Any, Literal, cast, overload
 
 import numpy as np
 import pandas as pd
 import torch
+from bluesky.protocols import NamedMovable
 from ophyd import Signal, SignalRO  # type: ignore[import-untyped]
 
 from .utils.sets import element_of, intersection, is_subset, validate_set
@@ -47,6 +49,7 @@ class DOF:
         active: bool = True,
         read_only: bool = False,
         transform: Literal["log", "logit", "arctanh"] | None = None,
+        movable: NamedMovable | None = None,
         device: Signal | None = None,
         tags: list[str] = None,
         travel_expense: float = 1,
@@ -57,8 +60,12 @@ class DOF:
         Parameters
         ----------
         name: str
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0. The `movable.name` will be used instead.
             The name of the input. This is used as a key to index observed data.
         description: str, optional
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
             A longer, more descriptive name for the DOF.
         type: Literal["continuous", "binary", "ordinal", "categorical"]
             Describes the type of the input to be optimized. An outcome can be
@@ -81,6 +88,8 @@ class DOF:
             Must span a equal or larger range than the trust domain.
             Default: (-np.inf, np.inf)
         active: Optional[bool]
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0. Inactive DOFs are no longer supported.
             If True, the agent will try to use the DOF in its optimization. If False, the agent will
             still read the DOF but not include it any model or acquisition function.
             Default: True
@@ -100,19 +109,79 @@ class DOF:
         transform: Optional[Literal["log", "logit", "arctanh"]]
             A transform to apply to the objective, to make the process outputs more Gaussian.
             Default: None
+        movable: Optional[NamedMovable]
+            A `bluesky.protocols.NamedMovable`. If not supplied, a dummy `bluesky.protocols.NamedMovable` will be generated.
+            Default: None
         device: Optional[Signal]
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
+                Use `movable` which must be a `bluesky.protocols.NamedMovable` instead.
             An `ophyd.Signal`. If not supplied, a dummy `ophyd.Signal` will be generated.
             Default: None
         tags: Optional[list[str]]
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0.
             A list of tags. These make it easier to subset large groups of DOFs.
             Default: []
         travel_expense: Optional[float]
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0. It may resurface in a future version.
             The relative cost of moving the DOF from the current position to the new position.
             Default: 1
         units: Optional[str]
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0.
             The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
             Default: None
         """
+        if name is not None:
+            warnings.warn(
+                (
+                    "The 'name' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "The `movable.name` will be used instead."
+                ),
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if description is not None:
+            warnings.warn(
+                "The 'description' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if device is not None:
+            warnings.warn(
+                "The 'device' argument is deprecated and will be removed in Blop v1.0.0. Use 'movable' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if not active:
+            warnings.warn(
+                "Inactive DOFs are deprecated and will be removed in Blop v1.0.0. DOFs will always be active.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if tags is not None:
+            warnings.warn(
+                "The 'tags' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if travel_expense is not None:
+            warnings.warn(
+                (
+                    "The 'travel_expense' argument is deprecated and will be removed in Blop v1.0.0. "
+                    "It may resurface in a future version."
+                ),
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if units is not None:
+            warnings.warn(
+                "The 'units' argument is deprecated and will be removed in Blop v1.0.0.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # these should be set first, as they are just variables
         self.name = name
@@ -121,7 +190,7 @@ class DOF:
         self.active = active
         self.read_only = read_only
         self.transform = transform
-        self.device = device
+        self.device = movable or device
         self.tags = tags or []
         self.travel_expense = travel_expense
         self.units = units
@@ -313,6 +382,10 @@ class DOF:
     def readback(self) -> Any:
         """
         The current value of the DOF.
+
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. DOFs will not have a readback
+            since Ophyd will no longer be a direct dependency. Instead, use `bluesky.plan_stubs.rd` on your `movable`.
         """
         if not self.device:
             raise ValueError("DOF has no device.")
@@ -322,6 +395,9 @@ class DOF:
     def summary(self) -> pd.Series:
         """
         Return a Series summarizing the state of the DOF.
+
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. DOFs will not have a summary.
         """
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
         for attr in series.index:
@@ -333,22 +409,35 @@ class DOF:
     def label_with_units(self) -> str:
         """
         A label for a plot, perhaps.
+
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. DOFs will not have a label with units.
         """
         return f"{self.description}{f' [{self.units}]' if self.units else ''}"
 
     @property
     def has_model(self) -> bool:
+        """
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. Models will not be stored in individaul DOFs.
+        """
         return hasattr(self, "model")
 
     def activate(self) -> None:
         """
         Activate the DOF
+
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. DOFs will always be active.
         """
         self.active = True
 
     def deactivate(self) -> None:
         """
         Deactivate the DOF
+
+        .. deprecated:: 0.7.5
+            This method is deprecated and will be removed in Blop v1.0.0. DOFs will always be active.
         """
         self.active = False
 
@@ -542,9 +631,17 @@ class DOFList(Sequence[DOF]):
 class BrownianMotion(SignalRO):
     """
     Read-only degree of freedom simulating brownian motion
+
+    .. deprecated:: 0.7.5
+        This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
     """
 
     def __init__(self, name: str | None = None, theta: float = 0.95, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         name = name if name is not None else str(uuid.uuid4())
 
         super().__init__(*args, name=name, **kwargs)
@@ -566,9 +663,17 @@ class BrownianMotion(SignalRO):
 class TimeReadback(SignalRO):
     """
     Returns the current timestamp.
+
+    .. deprecated:: 0.7.5
+        This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(*args, **kwargs)
 
     def get(self) -> float:
@@ -578,9 +683,17 @@ class TimeReadback(SignalRO):
 class ConstantReadback(SignalRO):
     """
     Returns a constant every time you read it (more useful than you'd think).
+
+    .. deprecated:: 0.7.5
+        This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
     """
 
     def __init__(self, constant: float = 1, *args: Any, **kwargs: Any) -> None:
+        warnings.warn(
+            "This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(*args, **kwargs)
 
         self.constant = constant

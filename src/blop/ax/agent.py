@@ -15,9 +15,9 @@ from bluesky.utils import Msg
 from databroker import Broker
 from tiled.client.container import Container
 
-from ...data_access import DatabrokerDataAccess, TiledDataAccess
-from ...dofs import DOF
-from ...objectives import Objective
+from ..data_access import DatabrokerDataAccess, TiledDataAccess
+from ..dofs import DOF
+from ..objectives import Objective
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ def default_digestion_function(trial_index: int, objectives: list[Objective], df
     return {objective.name: (df[objective.name][(trial_index % len(df[objective.name]))], None) for objective in objectives}
 
 
-class AxAgent:
+class Agent:
     """
     An agent interface that uses Ax as the backend for optimization and experiment tracking.
 
