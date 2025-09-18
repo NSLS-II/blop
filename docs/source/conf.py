@@ -16,9 +16,10 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
-# import os
-# import sys
-# sys.path.insert(0, os.path.abspath('.'))
+import os
+import sys
+sys.path.insert(0, os.path.abspath('../..'))
+sys.path.insert(0, os.path.abspath('../../src'))
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -56,8 +57,15 @@ plot_html_show_source_link = False
 plot_html_show_formats = False
 
 # Generate the API documentation when building
-autosummary_generate = True
+autosummary_generate = False
 numpydoc_show_class_members = False
+
+# Autodoc configuration
+autodoc_default_flags = ['members', 'undoc-members', 'show-inheritance']
+autodoc_member_order = 'bysource'
+autoclass_content = 'both'
+autodoc_typehints = 'description'
+autodoc_typehints_description_target = 'documented'
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -78,6 +86,7 @@ nb_render_image_options = {
     "align": "center",
 }
 
+nb_execution_mode = "off"
 # The master toctree document.
 master_doc = "index"
 

@@ -71,6 +71,16 @@ This is useful in optimization problems like
     flux_objective = Objective(name="beam_flux", target=(1.0, np.inf), transform="log")
 
 
+API Reference
+-------------
+
+.. autoclass:: blop.objectives.Objective
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :inherited-members:
+   :no-index:
+
 
 Validity
 --------

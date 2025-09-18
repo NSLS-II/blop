@@ -79,19 +79,21 @@ class Objective:
         name: str
             The name of the objective to optimize. This is used as a key to index observed data.
         description: str
+            A longer description for the objective.
+
             .. deprecated:: 0.7.5
                 This argument is deprecated and will be removed in Blop v1.0.0.
-
-            A longer description for the objective.
         type: Literal["continuous", "binary", "ordinal", "categorical"]
-            .. deprecated:: 0.7.5
-                This argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have types.
+            Describes the type of the outcome to be optimized. An outcome can be:
 
-            Describes the type of the outcome to be optimized. An outcome can be
             - Continuous, meaning any real number.
             - Binary, meaning that it can take one of two values (e.g. [on, off])
             - Ordinal, meaning ordered categories (e.g. [low, medium, high])
             - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
+
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have types.
+
             Default: "continuous"
         target: str
             One of "min" or "max". The agent will respectively minimize or maximize the outcome. Each Objective
@@ -102,57 +104,57 @@ class Objective:
             only be 'satisfied' if it lies within the constraint. Each Objective must have either a target or a constraint.
             Default: None
         transform: Optional[Literal["log", "logit", "arctanh"]]
+            One of "log", "logit", or "arctanh", to transform the outcomes and make them more Gaussian.
+            Default: None
+
             .. deprecated:: 0.7.5
                 This argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have transforms. Use
                 digestion functions to transform your objectives.
-
-            One of "log", "logit", or "arctanh", to transform the outcomes and make them more Gaussian.
-            Default: None
         weight: float
+            The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
+            Default: 1.
+
             .. deprecated:: 0.7.5
                 This argument is deprecated and will be removed in Blop v1.0.0.
                 Use a digestion function to weight your objectives.
-
-            The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
-            Default: 1.
         active: bool
             If True, optimize this objective. Otherwise, monitor the objective, only.
             Default: True
         trust_domain: Union[tuple[float, float], set[int], set[str]]
-            .. deprecated:: 0.7.5
-                This argument is deprecated and will be removed in Blop v1.0.0. Use constraints instead.
-
             A tuple of floats for continuous outcomes, or a set of outcomes for discrete outcomes. An outcome outside
             the trust_domain will not be trusted and will be ignored as 'invalid'. By default, all values are trusted.
             Default: None
-        min_noise: float
-            .. deprecated:: 0.7.5
-                This argument is deprecated and will be removed in Blop v1.0.0.
 
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0. Use constraints instead.
+        min_noise: float
             The minimum relative noise level of the fitted model.
             Default: 1e-6
-        max_noise: float
+
             .. deprecated:: 0.7.5
                 This argument is deprecated and will be removed in Blop v1.0.0.
-
+        max_noise: float
             The maximum relative noise level of the fitted model.
             Default: 1e0
-        units: str
+
             .. deprecated:: 0.7.5
                 This argument is deprecated and will be removed in Blop v1.0.0.
-
+        units: str
             A label representing the units of the outcome (e.g., millimeters or counts)
             Default: None
+
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
         latent_groups: list of tuples of strs, optional
             An agent will fit latent dimensions to all DOFs with the same latent_group. All other DOFs will be modeled
             independently. Only used for LatentGPs.
             Default: None
         min_points_to_train: int
-            .. deprecated:: 0.7.5
-                This argument is deprecated and will be removed in Blop v1.0.0.
-
             How many new points to wait for before retraining model hyperparameters.
             Default: 4
+
+            .. deprecated:: 0.7.5
+                This argument is deprecated and will be removed in Blop v1.0.0.
         """
         if description:
             warnings.warn(

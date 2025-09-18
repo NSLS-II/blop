@@ -377,7 +377,7 @@ class Agent:
         ----------
         generation_strategy : GenerationStrategy
             The generation strategy to use for the experiment. See
-            `this tutorial<https://ax.dev/docs/tutorials/modular_botorch/>`_ for more details.
+            `this tutorial <https://ax.dev/docs/tutorials/modular_botorch/>`_ for more details.
 
         See Also
         --------

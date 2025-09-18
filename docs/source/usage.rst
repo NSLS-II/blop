@@ -4,6 +4,7 @@ Usage
 .. toctree::
    :maxdepth: 2
 
-   objectives.rst
-   dofs.rst
-   agent.rst
+   objectives
+   dofs
+   ax-agent
+   agent

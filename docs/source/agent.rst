@@ -1,20 +1,27 @@
 Agent
 +++++
 
+.. warning::
+   The ``blop.agent.Agent`` class is **deprecated** and will be removed in Blop v1.0.0.
+   Use ``blop.ax.Agent`` instead for new code.
+
 The blop ``Agent`` takes care of the entire optimization loop, from data acquisition to model fitting.
+
+Usage Example
+-------------
 
 .. code-block:: python
 
     from blop import DOF, Objective, Agent
 
     dofs = [
-        DOF(name="x1", description="the first DOF", search_domain=(-10, 10))
-        DOF(name="x2", description="another DOF", search_domain=(-5, 5))
+        DOF(name="x1", description="the first DOF", search_domain=(-10, 10)),
+        DOF(name="x2", description="another DOF", search_domain=(-5, 5)),
         DOF(name="x3", description="yet another DOF", search_domain=(0, 1))
     ]
 
-    objective = [
-        Objective(name="y1", description="something to minimize", target="min")
+    objectives = [
+        Objective(name="y1", description="something to minimize", target="min"),
         Objective(name="y2", description="something to maximize", target="max")
     ]
 
@@ -33,3 +40,13 @@ The ``Agent`` learns with Bluesky plans emitted by the ``agent.learn()`` method,
 .. code-block:: python
 
     RE(agent.learn("qr", n=16)) # the agent chooses 16 quasi-random points, samples them, and fits models to them
+
+API Reference
+-------------
+
+.. autoclass:: blop.agent.Agent
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :inherited-members:
+   :no-index:
