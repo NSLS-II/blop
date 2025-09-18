@@ -86,8 +86,8 @@ nb_render_image_options = {
     "width": "100%",  # Make images/plots take full width
     "align": "center",
 }
+nb_execution_mode = "auto"
 
-nb_execution_mode = "off"
 # The master toctree document.
 master_doc = "index"
 
