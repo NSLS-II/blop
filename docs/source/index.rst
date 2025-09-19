@@ -11,6 +11,7 @@ blop Documentation
 
    installation
    usage
+   api
    tutorials
    release-history
    min_versions

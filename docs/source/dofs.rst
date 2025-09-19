@@ -57,3 +57,14 @@ The last is a categorical degree of freedom, which can take many different discr
 .. code-block:: python
 
     categorical_dof = DOF(name="x1", description="A categorical DOF", type="categorical", search_domain={"banana", "mango", "papaya"})
+
+
+API Reference
+-------------
+
+.. autoclass:: blop.dofs.DOF
+   :members:
+   :undoc-members:
+   :show-inheritance:
+   :inherited-members:
+   :no-index:

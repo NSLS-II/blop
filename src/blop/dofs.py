@@ -60,13 +60,15 @@ class DOF:
         Parameters
         ----------
         name: str
+            The name of the input. This is used as a key to index observed data.
+
             .. deprecated:: 0.7.5
                 This argument is deprecated and will be removed in Blop v1.0.0. The `movable.name` will be used instead.
-            The name of the input. This is used as a key to index observed data.
         description: str, optional
+            A longer, more descriptive name for the DOF.
+
             .. deprecated:: 0.7.5
                 This argument is deprecated and will be removed in Blop v1.0.0.
-            A longer, more descriptive name for the DOF.
         type: Literal["continuous", "binary", "ordinal", "categorical"]
             Describes the type of the input to be optimized. An outcome can be
             - Continuous, meaning any real number.
@@ -88,23 +90,20 @@ class DOF:
             Must span a equal or larger range than the trust domain.
             Default: (-np.inf, np.inf)
         active: Optional[bool]
-            .. deprecated:: 0.7.5
-                This attribute is deprecated and will be removed in Blop v1.0.0. Inactive DOFs are no longer supported.
             If True, the agent will try to use the DOF in its optimization. If False, the agent will
             still read the DOF but not include it any model or acquisition function.
             Default: True
+
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0. Inactive DOFs are no longer supported.
         read_only: Optional[bool]
             If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
-            device is read-only. The behavior of the DOF on each sample for read only/not read-only are
-                          not read-only        read-only
-                     +---------------------+---------------+
-              active |  read, input, move  |  read, input  |
-                     +---------------------+---------------+
-            inactive |  read               |  read         |
-                     +---------------------+---------------+
-            'read': the agent will read the input on every acquisition (all dofs are always read)
-            'move': the agent will try to set and optimize over these (there must be at least one of these)
-            'input' means that the agent will use the value to make its posterior
+            device is read-only. The behavior of the DOF on each sample for read only/not read-only are:
+
+            - 'read': the agent will read the input on every acquisition (all dofs are always read)
+            - 'move': the agent will try to set and optimize over these (there must be at least one of these)
+            - 'input' means that the agent will use the value to make its posterior
+
             Default: False
         transform: Optional[Literal["log", "logit", "arctanh"]]
             A transform to apply to the objective, to make the process outputs more Gaussian.
@@ -113,26 +112,30 @@ class DOF:
             A `bluesky.protocols.NamedMovable`. If not supplied, a dummy `bluesky.protocols.NamedMovable` will be generated.
             Default: None
         device: Optional[Signal]
+            An `ophyd.Signal`. If not supplied, a dummy `ophyd.Signal` will be generated.
+            Default: None
+
             .. deprecated:: 0.7.5
                 This attribute is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
                 Use `movable` which must be a `bluesky.protocols.NamedMovable` instead.
-            An `ophyd.Signal`. If not supplied, a dummy `ophyd.Signal` will be generated.
-            Default: None
         tags: Optional[list[str]]
-            .. deprecated:: 0.7.5
-                This attribute is deprecated and will be removed in Blop v1.0.0.
             A list of tags. These make it easier to subset large groups of DOFs.
             Default: []
-        travel_expense: Optional[float]
-            .. deprecated:: 0.7.5
-                This attribute is deprecated and will be removed in Blop v1.0.0. It may resurface in a future version.
-            The relative cost of moving the DOF from the current position to the new position.
-            Default: 1
-        units: Optional[str]
+
             .. deprecated:: 0.7.5
                 This attribute is deprecated and will be removed in Blop v1.0.0.
+        travel_expense: Optional[float]
+            The relative cost of moving the DOF from the current position to the new position.
+            Default: 1
+
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0. It may resurface in a future version.
+        units: Optional[str]
             The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
             Default: None
+
+            .. deprecated:: 0.7.5
+                This attribute is deprecated and will be removed in Blop v1.0.0.
         """
         if name is not None:
             warnings.warn(
@@ -325,6 +328,7 @@ class DOF:
         """
         The total domain, determined by the DOF type and transform; the user can't control this.
         This is what we fall back on as the trust_domain if None is supplied.
+
         If the DOF is continuous:
             If there is a transform, return the domain of the transform
             Else, return (-inf, inf)
