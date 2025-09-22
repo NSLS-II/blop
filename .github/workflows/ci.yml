@@ -16,6 +16,42 @@ jobs:
 
   check:
     uses: ./.github/workflows/_check.yml
+  
+  build:
+    name: Build Jupyter Notebooks and HTML
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Install pixi and activate environment
+        uses: prefix-dev/setup-pixi@v0.8.14
+        with:
+          pixi-version: v0.46.0
+          environments: dev
+          cache: false
+          activate-environment: dev
+
+      - name: Build HTML
+        run: make -C docs/ html
+
+      - name: Build jupyterlite
+        run: pixi run build_wasm
+
+      - name: Upload executed notebooks as GitHub artifact (for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: executed-notebooks
+          path: _build/jupyter_execute
+          if-no-files-found: error
+
+      - name: Upload HTML as GitHub artifact (for debugging)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _build/html
 
   lint:
     needs: check
