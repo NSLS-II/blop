@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This is a script which copies the contents of the tutorials
-# directory into a build directory (_build/ipynbs).
+# directory into a build directory (build/ipynbs).
 # The notebook markdown files are converted to ipynbs with other
 # files (non-executable md files, static images, etc) are copied
 # directly.

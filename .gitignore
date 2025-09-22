@@ -1,3 +1,5 @@
+build/*
+
 # setuptools_scm
 src/*/_version.py
 
@@ -84,6 +86,9 @@ target/
 
 # Ipython Notebook
 .ipynb_checkpoints
+
+# Jupyterlite Database
+.jupyterlite.doit.db
 
 # pixi environments
 .pixi
