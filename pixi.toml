@@ -99,29 +99,34 @@ python = "3.11.*"
 python = "3.12.*"
 
 [feature.jupyterlite-host.dependencies]
-jupyterlite-core = "*"
+jupyterlab = "~=4.2.4"
+jupyterlite-core = "==0.4.0"
 jupyterlite-xeus = "*"
-notebook = "*"
-jupyterlab-myst = "*"
-jupytext = "*"
-ipympl = "*"
-jupyterlab = ">=4.4.7,<5"
+notebook = "~=7.2.1"
+jupyterlab-myst = ">=2.4"
+jupytext = ">=1.16"
+ipympl = ">=0.9"
 
 [feature.jupyterlite-runtime.dependencies]
 xeus-python = "*"
-python = "*"
-matplotlib = "*"
-ipympl = "*"
-jupytext = "*"
+python = ">=3.11"
+matplotlib = ">=3.9"
+ipympl = ">=0.9"
+jupytext = ">=1.16"
+
+[feature.jupyterlite-host.tasks]
+setup_wasm = {cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"]}
+convert_ipynbs = {cmd = "bash convert_all_jupyterlite.sh", inputs = ["docs/source/tutorials/"], outputs = ["docs/build/ipynbs"]}
+
 
 [feature.jupyterlite-host.tasks.build_wasm]
-cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents build/ipynbs/tutorials --output-dir build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
+cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
 depends-on = ["setup_wasm", "convert_ipynbs"]
-outputs = ["build/html/jupyterlite/"]
+outputs = ["docs/build/html/jupyterlite/"]
 inputs = ["pixi.lock", "tutorials/"]
 
 [feature.jupyterlite-host.tasks.start_wasm]
-cmd = "python -m http.server 8000 -d build/html/jupyterlite/"
+cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
 depends-on = ["build_wasm"]
 
 [feature.dev.activation]
@@ -139,7 +144,7 @@ gui = {features=["gui"], solve-group="all"}
 napari = {features=["napari"], solve-group="all"}
 pre-commit = {features=["pre-commit"], no-default-feature = true}
 jupyterlite-host = {features=["jupyterlite-host"], solve-group="all"}
-jupyterlite-runtime = {features=["jupyterlite-runtime"], solve-group="all"}
+jupyterlite-runtime = {features=["jupyterlite-runtime"]}
 sirepo = {features=["sirepo"], solve-group="all"}
 xrt = {features=["xrt"], solve-group="all"}
 py310 = { features = ["py310", "dev"] }

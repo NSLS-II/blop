@@ -12,7 +12,7 @@
 # Find Markdown files convert.
 files_to_process=$(find docs/source/tutorials -type f)
 
-OUTDIR="build/ipynbs"
+OUTDIR="docs/build/ipynbs"
 
 # Identify Markdown files that are Jupytext and convert them all.
 for file in ${files_to_process}; do
