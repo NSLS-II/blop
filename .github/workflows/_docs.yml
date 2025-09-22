@@ -44,6 +44,21 @@ jobs:
       - name: Build Docs
         run: make -C docs/ html
 
+      - name: Build jupyterlite
+        run: pixi run build_wasm
+
+      - name: Upload executed notebooks as GitHub artifact (for debugging)
+        uses: actions/upload-artifact@v4
+        with:
+          name: executed-notebooks
+          path: build/jupyter_execute
+          if-no-files-found: error
+
+      - name: Upload HTML as GitHub artifact (for debugging)
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/html
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.REPOSITORY_NAME }}-docs
