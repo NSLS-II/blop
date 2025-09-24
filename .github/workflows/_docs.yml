@@ -51,7 +51,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: executed-notebooks
-          path: build/jupyter_execute
+          path: docs/build/jupyter_execute
           if-no-files-found: error
 
       - name: Upload HTML as GitHub artifact (for debugging)
