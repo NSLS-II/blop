@@ -29,4 +29,3 @@ To than confirm that your tutorial is still working as expected, you can run the
 ```bash
 pixi run test
 ```
-
