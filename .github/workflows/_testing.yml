@@ -33,6 +33,10 @@ jobs:
           environments: ${{ matrix.python-version }}
           cache: false
           activate-environment: ${{ matrix.python-version }}
+      
+      - name: Test Notebooks
+        run: |
+          bash ./test.sh 
 
       - name: Test with pytest
         run: |

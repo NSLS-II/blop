@@ -47,16 +47,18 @@ jobs:
       - name: Build jupyterlite
         run: pixi run build_wasm
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload JupyterLite docs artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.REPOSITORY_NAME }}-docs
+          name: jupyterlite-docs
           path: docs/build/jupyter_execute
           if-no-files-found: error
 
-      # - uses: actions/upload-artifact@v4
-      #   with:
-      #     name: ${{ env.REPOSITORY_NAME }}-docs
-      #     path: docs/build/html/
+      - name: Upload HTML docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.REPOSITORY_NAME }}-docs
+          path: docs/build/html/
 
       - name: Deploy documentation to nsls-ii.github.io
         # if: github.repository_owner == 'NSLS-II' && github.ref_name == 'main'
