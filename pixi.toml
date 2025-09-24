@@ -7,6 +7,8 @@ version = "0.1.0"
 
 [tasks]
 run_tutorials = {cmd="pixi run -e dev jupyter lab"}
+
+[feature.dev.tasks]
 test = {cmd="pixi run -e dev bash ./test.sh"}
 
 [dependencies]
@@ -116,7 +118,6 @@ jupytext = ">=1.16"
 [feature.docs.tasks]
 setup_wasm = {cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"]}
 convert_ipynbs = {cmd = "bash convert_all_jupyterlite.sh", inputs = ["docs/source/tutorials/"], outputs = ["docs/build/ipynbs"]}
-
 
 [feature.docs.tasks.build_wasm]
 cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
