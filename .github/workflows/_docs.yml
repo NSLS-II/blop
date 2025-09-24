@@ -47,17 +47,16 @@ jobs:
       - name: Build jupyterlite
         run: pixi run build_wasm
 
-      - name: Upload executed notebooks as GitHub artifact (for debugging)
-        uses: actions/upload-artifact@v4
-        with:
-          name: executed-notebooks
-          path: docs/build/jupyter_execute
-          if-no-files-found: error
-
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.REPOSITORY_NAME }}-docs
-          path: docs/build/html/
+          path: docs/build/jupyter_execute
+          if-no-files-found: error
+
+      # - uses: actions/upload-artifact@v4
+      #   with:
+      #     name: ${{ env.REPOSITORY_NAME }}-docs
+      #     path: docs/build/html/
 
       - name: Deploy documentation to nsls-ii.github.io
         # if: github.repository_owner == 'NSLS-II' && github.ref_name == 'main'
