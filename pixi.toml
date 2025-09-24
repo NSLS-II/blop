@@ -70,6 +70,13 @@ nbsphinx = ">=0.9.7,<0.10"
 ipython = ">=9.4.0, <10"
 ipykernel = "*"
 jupyter = ">=1.1.1, <2"
+jupyterlab = "~=4.2.4"
+jupyterlite-core = "==0.4.0"
+jupyterlite-xeus = "*"
+notebook = "~=7.2.1"
+jupyterlab-myst = ">=2.4"
+jupytext = ">=1.16"
+ipympl = ">=0.9"
 
 [feature.docs.pypi-dependencies]
 myst-nb = ">=1.3.0, <2"
@@ -98,14 +105,6 @@ python = "3.11.*"
 [feature.py312.dependencies]
 python = "3.12.*"
 
-[feature.jupyterlite-host.dependencies]
-jupyterlab = "~=4.2.4"
-jupyterlite-core = "==0.4.0"
-jupyterlite-xeus = "*"
-notebook = "~=7.2.1"
-jupyterlab-myst = ">=2.4"
-jupytext = ">=1.16"
-ipympl = ">=0.9"
 
 [feature.jupyterlite-runtime.dependencies]
 xeus-python = "*"
@@ -114,18 +113,18 @@ matplotlib = ">=3.9"
 ipympl = ">=0.9"
 jupytext = ">=1.16"
 
-[feature.jupyterlite-host.tasks]
+[feature.docs.tasks]
 setup_wasm = {cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"]}
 convert_ipynbs = {cmd = "bash convert_all_jupyterlite.sh", inputs = ["docs/source/tutorials/"], outputs = ["docs/build/ipynbs"]}
 
 
-[feature.jupyterlite-host.tasks.build_wasm]
+[feature.docs.tasks.build_wasm]
 cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
 depends-on = ["setup_wasm", "convert_ipynbs"]
 outputs = ["docs/build/html/jupyterlite/"]
 inputs = ["pixi.lock", "tutorials/"]
 
-[feature.jupyterlite-host.tasks.start_wasm]
+[feature.docs.tasks.start_wasm]
 cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
 depends-on = ["build_wasm"]
 
@@ -143,7 +142,6 @@ docs = {features=["docs", "ax", "xrt"], solve-group="all"}
 gui = {features=["gui"], solve-group="all"}
 napari = {features=["napari"], solve-group="all"}
 pre-commit = {features=["pre-commit"], no-default-feature = true}
-jupyterlite-host = {features=["jupyterlite-host"], solve-group="all"}
 jupyterlite-runtime = {features=["jupyterlite-runtime"]}
 sirepo = {features=["sirepo"], solve-group="all"}
 xrt = {features=["xrt"], solve-group="all"}
