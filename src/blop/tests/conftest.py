@@ -119,7 +119,7 @@ def create_agent_from_config(config_name, db):
     dofs = []
     for dof_config in config["dofs"]:
         if "device" in dof_config:
-            dof = DOF(device=dof_config["device"], read_only=dof_config.get("read_only", False))
+            dof = DOF(movable=dof_config["device"], read_only=dof_config.get("read_only", False))
         else:
             dof = DOF(
                 description=f"DOF {dof_config['name']}",

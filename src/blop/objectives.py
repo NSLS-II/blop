@@ -162,7 +162,7 @@ class Objective:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if type:
+        if type is not None and type != "continuous":
             warnings.warn(
                 "The 'type' argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have types.",
                 DeprecationWarning,
@@ -177,7 +177,7 @@ class Objective:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if weight:
+        if weight is not None and weight != 1:
             warnings.warn(
                 (
                     "The 'weight' argument is deprecated and will be removed in Blop v1.0.0. "
@@ -192,13 +192,13 @@ class Objective:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if min_noise:
+        if min_noise is not None and min_noise != 1e-6:
             warnings.warn(
                 "The 'min_noise' argument is deprecated and will be removed in Blop v1.0.0.",
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if max_noise:
+        if max_noise is not None and max_noise != 1e0:
             warnings.warn(
                 "The 'max_noise' argument is deprecated and will be removed in Blop v1.0.0.",
                 DeprecationWarning,
@@ -210,7 +210,7 @@ class Objective:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if min_points_to_train:
+        if min_points_to_train is not None and min_points_to_train != 4:
             warnings.warn(
                 "The 'min_points_to_train' argument is deprecated and will be removed in Blop v1.0.0.",
                 DeprecationWarning,
