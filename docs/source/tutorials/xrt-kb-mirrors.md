@@ -151,7 +151,7 @@ agent.configure_experiment(
 ```
 
 ```{code-cell} ipython3
-RE(agent.learn(iterations=25))
+RE(agent.learn(iterations=10))
 ```
 
 ```{code-cell} ipython3
