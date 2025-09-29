@@ -3,9 +3,9 @@ Tutorials
 
 .. toctree::
    :maxdepth: 2
-   tutorials/README
-   tutorials/sim-kb-mirrors.ipynb
-   tutorials/xrt-kb-mirrors.ipynb
+   tutorials/README.md
+   tutorials/sim-kb-mirrors.md
+   tutorials/xrt-kb-mirrors.md
 
 Deprecated
 ----------
@@ -13,8 +13,8 @@ Deprecated
 .. toctree::
    :maxdepth: 2
 
-   tutorials/deprecated/introduction.ipynb
-   tutorials/deprecated/hyperparameters.ipynb
-   tutorials/deprecated/pareto-fronts.ipynb
-   tutorials/deprecated/passive-dofs.ipynb
-   tutorials/deprecated/kb-mirrors.ipynb
+   tutorials/deprecated/introduction.md
+   tutorials/deprecated/hyperparameters.md
+   tutorials/deprecated/pareto-fronts.md
+   tutorials/deprecated/passive-dofs.md
+   tutorials/deprecated/kb-mirrors.md
