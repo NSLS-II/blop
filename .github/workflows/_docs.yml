@@ -41,6 +41,10 @@ jobs:
           cache: false
           activate-environment: docs
 
+      - name: Test Notebooks
+        run: |
+          bash ./test.sh 
+
       - name: Build Docs
         run: make -C docs/ html
 
