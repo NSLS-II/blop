@@ -7,7 +7,7 @@ This repository contains tutorials that are designed to be run using Jupyter Lab
 To run and experiment with the tutorial code, you'll need to open them inside Jupyter Lab. To do this, run: 
 
 ```bash
-pixi run start_tutorials
+pixi run run_tutorials
 ```
 This will launch Jupyter Lab in your browser, where you can navigate to and run the tutorial notebooks.
 
@@ -27,5 +27,5 @@ jupytext --to myst <path_to_tutorial>
 To than confirm that your tutorial is still working as expected, you can run the following which will only test the tutorials in the ```docs/source/tutorials``` directory 
 
 ```bash
-pixi run test
+pixi run local_test
 ```

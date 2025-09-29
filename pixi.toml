@@ -114,6 +114,9 @@ matplotlib = ">=3.9"
 ipympl = ">=0.9"
 jupytext = ">=1.16"
 
+[feature.dev.tasks]
+local_test = {cmd = "pixi run -e docs bash ./test.sh"}
+
 [feature.docs.tasks]
 test = {cmd="bash ./test.sh"}
 setup_wasm = {cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"]}
