@@ -3,7 +3,7 @@ Tutorials
 
 .. toctree::
    :maxdepth: 2
-
+   tutorials/README
    tutorials/sim-kb-mirrors.ipynb
    tutorials/xrt-kb-mirrors.ipynb
 
