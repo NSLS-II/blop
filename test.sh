@@ -27,8 +27,10 @@ for file in ${files_to_process}; do
     notebook_files+=("${notebook_file}")
 done
 
-pytest --dist=loadfile -n auto --nbval-lax -vv --suppress-no-test-exit-code --durations=10 docs/source/tutorials
-
+pytest --nbval-lax -vv --suppress-no-test-exit-code --durations=10 \
+    --nbval-cell-timeout=400 \
+    docs/source/tutorials
+    
 _exitval="$?"
 
 if [[ $_exitval > 0 ]]; then

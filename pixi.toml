@@ -51,7 +51,6 @@ notebook = "~=7.2.1"
 jupyterlab-myst = ">=2.4"
 jupytext = ">=1.16"
 ipympl = ">=0.9"
-pytest-xdist = ">=3.8.0,<4"
 
 [feature.ax.pypi-dependencies]
 ax-platform = ">=1.0.0, <2"
