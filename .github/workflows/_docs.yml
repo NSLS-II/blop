@@ -42,8 +42,7 @@ jobs:
           activate-environment: docs
 
       - name: Test Notebooks
-        run: |
-          bash ./test.sh 
+        run: pixi run test 
 
       - name: Build Docs
         run: make -C docs/ html
