@@ -16,7 +16,7 @@ jobs:
 
   check:
     uses: ./.github/workflows/_check.yml
-
+   
   lint:
     needs: check
     if: needs.check.outputs.branch-pr == ''

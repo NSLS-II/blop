@@ -4,6 +4,7 @@
 [![Testing](https://github.com/NSLS-II/blop/actions/workflows/ci.yml/badge.svg)](https://github.com/NSLS-II/blop/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/blop.svg)](https://pypi.python.org/pypi/blop)
 [![Conda](https://img.shields.io/conda/vn/conda-forge/bloptools.svg)](https://anaconda.org/conda-forge/bloptools)
+[![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/NSLS-II/blop/HEAD)
 
 * Free software: 3-clause BSD license
 * Documentation: <https://NSLS-II.github.io/blop>.
