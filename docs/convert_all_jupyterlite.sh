@@ -10,7 +10,7 @@
 # jupyterlite.
 
 # Find Markdown files convert.
-files_to_process=$(find docs -type f)
+files_to_process=$(find docs/source/tutorials -type f)
 
 OUTDIR="docs/build/ipynbs"
 

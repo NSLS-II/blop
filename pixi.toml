@@ -1,12 +1,9 @@
 [workspace]
 authors = ["jessica-moylan <jessicamoylan10@gmail.com>", "Thomas Hopkins <thopkins1@bnl.gov>"]
-channels = ["conda-forge", "pytorch"]
+channels = ["https://repo.prefix.dev/emscripten-forge-dev", "https://repo.prefix.dev/conda-forge", "conda-forge", "pytorch"]
 name = "blop"
-platforms = ["linux-64"]
+platforms = ["linux-64", "emscripten-wasm32"]
 version = "0.7.5"
-
-[tasks]
-run_tutorials = {cmd="pixi run -e dev jupyter lab"}
 
 [dependencies]
 python = ">=3.10.0,<3.13"
@@ -24,6 +21,9 @@ pytorch = ">=2.8.0,<3"
 matplotlib-base = ">=3.10.6,<4"
 pyqt = ">=5.15.11,<6"
 
+[feature.dev]
+platforms = ["linux-64"]
+
 [feature.dev.dependencies]
 pytest = "*"
 h5py = ">=3.14.0,<4"
@@ -36,40 +36,51 @@ pre-commit = ">=4.3.0,<5"
 ipython = ">=9.6.0,<10"
 pandas-stubs = ">=2.3.2.250926,<3"
 pyright = ">=1.1.406,<2"
+xeus-python = "*"
+ipympl = ">=0.9"
+jupytext = ">=1.16"
+jupyterlab = ">=4.4.9,<5"
+jupyterlite-core = ">=0.6.4,<0.7"
+notebook = ">=7.4.7,<8"
+jupyterlab-myst = ">=2.4.2,<3"
+jupyterlite-xeus = ">=4.2.2,<5"
 
 [feature.dev.pypi-dependencies]
 blop = { path = ".", editable = true }
 
-[feature.jupyterlite-runtime.dependencies]
+[feature.dev.tasks]
+build-docs = "make -C docs/ html"
+test-tutorials = "bash docs/test.sh"
+convert-tutorials = { cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/source/tutorials"], outputs = ["docs/build/ipynbs"] }
+setup-jupyter-env = { cmd = "pixi install -e jupyter", inputs = ["pixi.lock"] }
+
+[feature.dev.tasks.build-tutorials]
+cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/dev --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
+depends-on = ["setup-jupyter-env", "convert-tutorials"]
+inputs = ["pixi.lock", "docs/source/tutorials"]
+outputs = ["docs/build/html/jupyterlite"]
+
+[feature.dev.tasks.serve-tutorials]
+cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
+depends-on = ["build-tutorials"]
+
+[feature.dev.activation]
+# Workaround overrides JupyterLab configuration (at the environment level) to
+# make double-clicking on a Jupytext Markdown file open that file as a
+# notebook. This is important for the development workflow for contributors.
+scripts = ["docs/activate.sh"]
+
+[feature.jupyter]
+channels = ["https://repo.mamba.pm/emscripten-forge", "conda-forge"]
+platforms = ["emscripten-wasm32"]
+
+[feature.jupyter.dependencies]
 xeus-python = "*"
 python = ">=3.11"
 matplotlib = ">=3.9"
 ipympl = ">=0.9"
 jupytext = ">=1.16"
 
-[feature.dev.tasks]
-local_test = {cmd = "pixi run -e docs bash ./docs/test.sh"}
-
-[feature.docs.tasks]
-test = {cmd="bash ./docs/test.sh"}
-setup_wasm = {cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"]}
-convert_ipynbs = {cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/"], outputs = ["docs/build/ipynbs"]}
-
-[feature.docs.tasks.build_wasm]
-cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
-depends-on = ["setup_wasm", "convert_ipynbs"]
-outputs = ["docs/build/html/jupyterlite/"]
-inputs = ["pixi.lock", "tutorials/"]
-
-[feature.docs.tasks.start_wasm]
-cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
-depends-on = ["build_wasm"]
-
-[feature.dev.activation]
-# Workaround overrides JupyterLab configuration (at the environment level) to
-# make double-clicking on a Jupytext Markdown file open that file as a
-# notebook. This is important for the development workflow for contributors.
-scripts = ["activate.sh"]
-
 [environments]
 dev = ["dev"]
+jupyter = ["jupyter"]
