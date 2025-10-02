@@ -1,9 +1,9 @@
 from ax.generation_strategy.generation_node import GenerationNode
 from ax.generation_strategy.generation_strategy import GenerationStrategy
-from ax.generation_strategy.model_spec import GeneratorSpec
+from ax.generation_strategy.generator_spec import GeneratorSpec
 from ax.generation_strategy.transition_criterion import MinTrials
-from ax.modelbridge.registry import Generators
-from ax.models.torch.botorch_modular.surrogate import ModelConfig, SurrogateSpec
+from ax.adapter.registry import Generators
+from ax.generators.torch.botorch_modular.surrogate import ModelConfig, SurrogateSpec
 from botorch.acquisition.logei import qLogNoisyExpectedImprovement
 
 from blop.ax.agent import Agent
@@ -102,8 +102,8 @@ def test_generation_strategy_sim_beamline(RE, setup):
         nodes=[
             GenerationNode(
                 node_name="Sobol",
-                model_specs=[
-                    GeneratorSpec(model_enum=Generators.SOBOL, model_kwargs={"seed": 0}),
+                generator_specs=[
+                    GeneratorSpec(generator_enum=Generators.SOBOL, model_kwargs={"seed": 0}),
                 ],
                 transition_criteria=[
                     MinTrials(
@@ -115,9 +115,9 @@ def test_generation_strategy_sim_beamline(RE, setup):
             ),
             GenerationNode(
                 node_name="LatentGP",
-                model_specs=[
+                generator_specs=[
                     GeneratorSpec(
-                        model_enum=Generators.BOTORCH_MODULAR,
+                        generator_enum=Generators.BOTORCH_MODULAR,
                         model_kwargs={
                             "surrogate_spec": SurrogateSpec(
                                 model_configs=[
