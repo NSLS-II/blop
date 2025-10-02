@@ -5,6 +5,9 @@ name = "blop"
 platforms = ["linux-64"]
 version = "0.7.5"
 
+[tasks]
+run_tutorials = {cmd="pixi run -e dev jupyter lab"}
+
 [dependencies]
 python = ">=3.10.0,<3.13"
 botorch = ">=0.14.0,<0.15"
@@ -36,6 +39,37 @@ pyright = ">=1.1.406,<2"
 
 [feature.dev.pypi-dependencies]
 blop = { path = ".", editable = true }
+
+[feature.jupyterlite-runtime.dependencies]
+xeus-python = "*"
+python = ">=3.11"
+matplotlib = ">=3.9"
+ipympl = ">=0.9"
+jupytext = ">=1.16"
+
+[feature.dev.tasks]
+local_test = {cmd = "pixi run -e docs bash ./docs/test.sh"}
+
+[feature.docs.tasks]
+test = {cmd="bash ./docs/test.sh"}
+setup_wasm = {cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"]}
+convert_ipynbs = {cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/"], outputs = ["docs/build/ipynbs"]}
+
+[feature.docs.tasks.build_wasm]
+cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
+depends-on = ["setup_wasm", "convert_ipynbs"]
+outputs = ["docs/build/html/jupyterlite/"]
+inputs = ["pixi.lock", "tutorials/"]
+
+[feature.docs.tasks.start_wasm]
+cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
+depends-on = ["build_wasm"]
+
+[feature.dev.activation]
+# Workaround overrides JupyterLab configuration (at the environment level) to
+# make double-clicking on a Jupytext Markdown file open that file as a
+# notebook. This is important for the development workflow for contributors.
+scripts = ["activate.sh"]
 
 [environments]
 dev = ["dev"]
