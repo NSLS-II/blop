@@ -100,7 +100,7 @@ depends-on = ["build_wasm"]
 # Workaround overrides JupyterLab configuration (at the environment level) to
 # make double-clicking on a Jupytext Markdown file open that file as a
 # notebook. This is important for the development workflow for contributors.
-scripts = ["activate.sh"]
+scripts = ["docs/activate.sh"]
 
 [environments]
 dev = ["dev"]
