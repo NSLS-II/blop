@@ -9,9 +9,11 @@ blop Documentation
 .. toctree::
    :maxdepth: 2
 
+   overview
    installation
-   usage
-   api
+   basic_usage
+   advanced_usage
    tutorials
    release-history
    min_versions
+
