@@ -116,16 +116,16 @@ from blop.dofs import DOF
 from blop.objectives import Objective
 
 dofs = [
-    DOF(device=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(device=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(device=beamline.kbh_dsh, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(device=beamline.kbh_ush, type="continuous", search_domain=(-5.0, 5.0)),
+    DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
+    DOF(movable=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
+    DOF(movable=beamline.kbh_dsh, type="continuous", search_domain=(-5.0, 5.0)),
+    DOF(movable=beamline.kbh_ush, type="continuous", search_domain=(-5.0, 5.0)),
 ]
 
 objectives = [
     Objective(name="bl_det_sum", target="max"),
-    Objective(name="bl_det_wid_x", target="min", transform="log"),
-    Objective(name="bl_det_wid_y", target="min", transform="log"),
+    Objective(name="bl_det_wid_x", target="min"),
+    Objective(name="bl_det_wid_y", target="min"),
 ]
 
 agent = Agent(

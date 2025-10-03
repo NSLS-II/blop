@@ -137,7 +137,7 @@ class DOF:
             .. deprecated:: 0.7.5
                 This attribute is deprecated and will be removed in Blop v1.0.0.
         """
-        if name is not None:
+        if name:
             warnings.warn(
                 (
                     "The 'name' argument is deprecated and will be removed in Blop v1.0.0. "
@@ -146,7 +146,7 @@ class DOF:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if description is not None:
+        if description:
             warnings.warn(
                 "The 'description' argument is deprecated and will be removed in Blop v1.0.0.",
                 DeprecationWarning,
@@ -164,13 +164,13 @@ class DOF:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if tags is not None:
+        if tags:
             warnings.warn(
                 "The 'tags' argument is deprecated and will be removed in Blop v1.0.0.",
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if travel_expense is not None:
+        if travel_expense is not None and travel_expense != 1:
             warnings.warn(
                 (
                     "The 'travel_expense' argument is deprecated and will be removed in Blop v1.0.0. "
@@ -179,7 +179,7 @@ class DOF:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        if units is not None:
+        if units:
             warnings.warn(
                 "The 'units' argument is deprecated and will be removed in Blop v1.0.0.",
                 DeprecationWarning,

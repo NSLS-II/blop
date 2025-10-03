@@ -111,28 +111,16 @@ else:
     beamline = DatabrokerBeamline(name="bl")
 time.sleep(1)
 dofs = [
-    DOF(description="KBV R", device=beamline.kbv_dsv, search_domain=(R1 - dR1, R1 + dR1)),
-    DOF(description="KBH R", device=beamline.kbh_dsh, search_domain=(R2 - dR2, R2 + dR2)),
+    DOF(movable=beamline.kbv_dsv, search_domain=(R1 - dR1, R1 + dR1)),
+    DOF(movable=beamline.kbh_dsh, search_domain=(R2 - dR2, R2 + dR2)),
 ]
 ```
 
 ```{code-cell} ipython3
 objectives = [
-    Objective(name="bl_det_sum", target="max", transform="log", trust_domain=(20, 1e12)),
-    Objective(
-        name="bl_det_wid_x",
-        target="min",
-        transform="log",
-        # trust_domain=(0, 1e12),
-        # latent_groups=[("bl_kbh_dsh", "bl_kbv_dsv")],
-    ),
-    Objective(
-        name="bl_det_wid_y",
-        target="min",
-        transform="log",
-        # trust_domain=(0, 1e12),
-        # latent_groups=[("bl_kbh_dsh", "bl_kbv_dsv")],
-    ),
+    Objective(name="bl_det_sum", target="max"),
+    Objective(name="bl_det_wid_x", target="min"),
+    Objective(name="bl_det_wid_y", target="min"),
 ]
 ```
 
