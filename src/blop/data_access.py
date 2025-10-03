@@ -31,7 +31,7 @@ class TiledDataAccess(DataAccess):
     def get_data(self, uid: str) -> dict[str, Any]:
         """Retrieve data from a tiled database"""
         external_data = {}
-        internal_data = self.data[uid]["streams"]["primary"].parts["internal"].read()
+        internal_data = self.data[uid]["streams"]["primary"].base["internal"].read()
         for index in list(self.data[uid]["streams"]["primary"].get_contents().keys())[1:]:
             external_data[index] = self.data[uid]["streams"]["primary"][index].read()
         return self._convert_to_dictonary(internal_data, external_data)
