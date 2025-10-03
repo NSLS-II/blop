@@ -32,7 +32,45 @@ def train_model(
                 raise e
 
 
-def construct_model(
+def construct_single_task_model(
+    X: torch.Tensor,
+    Y: torch.Tensor,
+    skew_dims: list[tuple[int, ...]] | None = None,
+    min_noise: float = 1e-6,
+    max_noise: float = 1e0,
+) -> "LatentGP":
+    """
+    Construct an untrained model for an objective.
+    """
+
+    skew_dims = skew_dims if skew_dims is not None else [(i,) for i in range(X.shape[-1])]
+
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+        noise_constraint=gpytorch.constraints.Interval(
+            torch.tensor(min_noise),
+            torch.tensor(max_noise),
+        ),
+    )
+
+    input_transform = botorch.models.transforms.input.Normalize(d=X.shape[-1])
+    outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)  # , batch_shape=torch.Size((1,)))
+
+    if not X.isfinite().all():
+        raise ValueError("'X' must not contain points that are inf or NaN.")
+    if not Y.isfinite().all():
+        raise ValueError("'y' must not contain points that are inf or NaN.")
+
+    return LatentGP(
+        train_X=X,
+        train_Y=Y,
+        likelihood=likelihood,
+        skew_dims=skew_dims,
+        input_transform=input_transform,
+        outcome_transform=outcome_transform,
+    )
+
+
+def construct_multi_task_model(
     X: torch.Tensor,
     Y: torch.Tensor,
     skew_dims: list[tuple[int, ...]] | None = None,

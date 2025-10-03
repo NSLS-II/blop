@@ -44,7 +44,18 @@ jobs:
       - name: Build Docs
         run: make -C docs/ html
 
-      - uses: actions/upload-artifact@v4
+      - name: Build jupyterlite
+        run: pixi run build_wasm
+
+      - name: Upload JupyterLite docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jupyterlite-docs
+          path: docs/build/jupyter_execute
+          if-no-files-found: error
+
+      - name: Upload HTML docs artifact
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.REPOSITORY_NAME }}-docs
           path: docs/build/html/

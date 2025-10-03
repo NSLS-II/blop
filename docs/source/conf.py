@@ -88,6 +88,12 @@ nb_render_image_options = {
 }
 nb_execution_mode = "auto"
 
+# MyST-NB output rendering configuration
+nb_merge_streams = True  # Merge consecutive stdout/stderr outputs into single blocks
+nb_render_text = {
+    "lexer": "ipython3",
+}  # Render text outputs with IPython syntax highlighting
+
 # The master toctree document.
 master_doc = "index"
 
