@@ -71,15 +71,17 @@ Homepage = "https://github.com/NSLS-II/blop"
 Documentation = "https://nsls-ii.github.io/blop"
 "Bug Reports" = "https://github.com/NSLS-II/blop/issues"
 
-
-[tool.hatch.build.targets.wheel]
-only-include = ["src/blop"]
-
-[tool.hatch.build.targets.wheel.sources]
-"src" = ""
-
 [tool.hatch]
 version.source = "vcs"
+
+[tool.hatch.build]
+artifacts = ["src/blop/_version.py"]
+
+[tool.hatch.build.targets.wheel]
+sources = ["src"]
+
+[tool.hatch.build.hooks.vcs]
+version-file = "src/blop/_version.py"
 
 [tool.hatch.version.raw-options]
 local_scheme = "no-local-version"
