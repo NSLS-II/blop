@@ -11,8 +11,7 @@ jobs:
       - uses: prefix-dev/setup-pixi@v0.8.14
         with:
           pixi-version: v0.46.0
-          environments: pre-commit
+          environments: dev
           cache: false
-          activate-environment: pre-commit
-      - name: Run pre-commit hooks
-        run: pre-commit run --all-files
+      - name: Run checks
+        run: pixi run check
