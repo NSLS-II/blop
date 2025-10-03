@@ -60,7 +60,7 @@ ipympl = ">=0.9"
 jupytext = ">=1.16"
 
 [feature.dev.tasks]
-lint = "pre-commit run --all-files"
+check = "pre-commit run --all-files"
 unit-tests = "pytest src/blop/tests"
 
 [feature.docs.tasks]
