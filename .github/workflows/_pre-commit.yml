@@ -14,4 +14,4 @@ jobs:
           environments: dev
           cache: false
       - name: Run checks
-        run: pixi run check
+        run: pixi run -e dev check
