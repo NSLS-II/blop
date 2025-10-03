@@ -26,7 +26,7 @@ dependencies = [
   "ax-platform>=1.0.0,<1.1",
   "bluesky",
   "databroker>=1.2.0,<1.3",
-  "tiled>=0.1.0b30,<0.1.0b34",
+  "tiled[client,minimal-server]>=0.1.0b30,<0.1.0b34",
   "torch",
   "matplotlib",
   "pyqt5",
