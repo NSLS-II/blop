@@ -1,8 +1,8 @@
 [workspace]
 authors = ["jessica-moylan <jessicamoylan10@gmail.com>", "Thomas Hopkins <thopkins1@bnl.gov>"]
-channels = ["https://repo.prefix.dev/emscripten-forge-dev", "https://repo.prefix.dev/conda-forge", "conda-forge", "pytorch"]
+channels = ["conda-forge", "pytorch"]
 name = "blop"
-platforms = ["linux-64", "emscripten-wasm32"]
+platforms = ["linux-64"]
 version = "0.7.5"
 
 [dependencies]
@@ -48,39 +48,52 @@ jupyterlite-xeus = ">=4.2.2,<5"
 [feature.dev.pypi-dependencies]
 blop = { path = ".", editable = true }
 
-[feature.dev.tasks]
-build-docs = "make -C docs/ html"
-test-tutorials = "bash docs/test.sh"
-convert-tutorials = { cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/source/tutorials"], outputs = ["docs/build/ipynbs"] }
-setup-jupyter-env = { cmd = "pixi install -e jupyter", inputs = ["pixi.lock"] }
-
-[feature.dev.tasks.build-tutorials]
-cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/dev --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
-depends-on = ["setup-jupyter-env", "convert-tutorials"]
-inputs = ["pixi.lock", "docs/source/tutorials"]
-outputs = ["docs/build/html/jupyterlite"]
-
-[feature.dev.tasks.serve-tutorials]
-cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
-depends-on = ["build-tutorials"]
-
-[feature.dev.activation]
-# Workaround overrides JupyterLab configuration (at the environment level) to
-# make double-clicking on a Jupytext Markdown file open that file as a
-# notebook. This is important for the development workflow for contributors.
-scripts = ["docs/activate.sh"]
-
-[feature.jupyter]
-channels = ["https://repo.mamba.pm/emscripten-forge", "conda-forge"]
-platforms = ["emscripten-wasm32"]
-
 [feature.jupyter.dependencies]
+ipython = ">=9.4.0, <10"
+ipykernel = "*"
+jupyter = ">=1.1.1, <2"
+jupyterlab = "~=4.2.4"
+jupyterlite-core = "==0.4.0"
+jupyterlite-xeus = "*"
+notebook = "~=7.2.1"
+jupyterlab-myst = ">=2.4"
+jupytext = ">=1.16"
+ipympl = ">=0.9"
+
+[feature.jupyterlite-runtime.dependencies]
 xeus-python = "*"
 python = ">=3.11"
 matplotlib = ">=3.9"
 ipympl = ">=0.9"
 jupytext = ">=1.16"
 
+[feature.dev.tasks]
+lint = "pre-commit run --all-files"
+unit-tests = "pytest src/blop/tests"
+
+[feature.docs.tasks]
+build-docs = "make -C docs/ html"
+test-tutorials = "bash docs/test.sh"
+setup_wasm = { cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"] }
+convert_ipynbs = { cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/"], outputs = ["docs/build/ipynbs"] }
+
+[feature.docs.tasks.build_wasm]
+cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
+depends-on = ["setup_wasm", "convert_ipynbs"]
+outputs = ["docs/build/html/jupyterlite/"]
+inputs = ["pixi.lock", "tutorials/"]
+
+[feature.docs.tasks.start_wasm]
+cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
+depends-on = ["build_wasm"]
+
+[feature.docs.activation]
+# Workaround overrides JupyterLab configuration (at the environment level) to
+# make double-clicking on a Jupytext Markdown file open that file as a
+# notebook. This is important for the development workflow for contributors.
+scripts = ["activate.sh"]
+
 [environments]
 dev = ["dev"]
-jupyter = ["jupyter"]
+docs = ["dev", "jupyter"]
+jupyterlite-runtime = ["jupyterlite-runtime"]
