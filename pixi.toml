@@ -1,44 +1,49 @@
 [workspace]
 authors = ["jessica-moylan <jessicamoylan10@gmail.com>", "Thomas Hopkins <thopkins1@bnl.gov>"]
-channels = ["conda-forge"]
+channels = ["conda-forge", "pytorch"]
 name = "blop"
 platforms = ["linux-64"]
-version = "0.1.0"
-
-[tasks]
-run_tutorials = {cmd="pixi run -e dev jupyter lab"}
+version = "0.7.5"
 
 [dependencies]
 python = ">=3.10.0,<3.13"
 python-tsp = ">=0.5.0,<0.6"
-scipy = ">=1.15.0,<2"
-bluesky-base = "*"
-matplotlib-base = ">=3.10.3, <4"
-numpy = "*"
-ophyd = ">=1.10.7, <2"
-area-detector-handlers = ">=0.0.10, <0.0.11"
-h5py = "*"
-tiled = ">=0.1.0b30, <0.2"
-databroker = ">=1.2.0, <1.3"
-jupyterlab = "*"
-jupytext = ">=1.17.3,<2"
+ax-platform = ">=1.0.0,<1.1"
+bluesky-base = ">=1.14.4,<2"
+databroker = ">=1.2.0,<1.3"
+tiled = ">=0.1.0b30,<0.1.0b34"
+pytorch = ">=2.8.0,<3"
+matplotlib-base = ">=3.10.6,<4"
+pyqt = ">=5.15.11,<6"
+ophyd = ">=1.11.0,<2"
+botorch = ">=0.14.0,<0.16"
+gpytorch = ">=1.14,<2"
+scipy = ">=1.15.2,<2"
+numpy = ">=2.2.6,<3"
+h5py = ">=3.14.0,<4"
+area-detector-handlers = ">=0.0.10,<0.0.11"
 
 [pypi-dependencies]
-botorch = ">=0.14.0, <0.15"
-gpytorch = ">=1.14, <2"
-pytest-custom_exit_code = "*"
-tables = ">=3.9.0, <4"
-torch = ">=2.7.1, <3"
-blop = {path = ".", editable = true}
+xrt = ">=1.6.1,<2"
+
+[feature.dev.dependencies]
+pytest = "*"
+ipykernel = ">=6.30.1,<7"
+ruff = ">=0.13.2,<0.14"
+nbstripout = ">=0.8.1,<0.9"
+pre-commit = ">=4.3.0,<5"
+pandas-stubs = ">=2.3.2.250926,<3"
+pyright = ">=1.1.406,<2"
+coverage = ">=7.10.7,<8"
 
 [feature.dev.pypi-dependencies]
-ax-platform = ">=1.0.0, <2"
-pytest-coverage = ">=0.0, <0.1"
-coverage = ">=7.10.1, <8"
-pytest = ">=8.4.1, <9"
-ipython = ">=8.0.0, <10"
-jupyter = ">=1.1.1, <2"
-mypy = ">=1.17.1, <2"
+blop = { path = ".", editable = true }
+
+[feature.docs.dependencies]
+numpydoc = ">=1.9.0,<2"
+sphinx-copybutton = ">=0.5.2,<0.6"
+myst-nb = ">=1.3.0,<2"
+furo = ">=2024.8.6,<2025"
 
 [feature.jupyter.dependencies]
 ipython = ">=9.4.0, <10"
@@ -52,51 +57,12 @@ jupyterlab-myst = ">=2.4"
 jupytext = ">=1.16"
 ipympl = ">=0.9"
 
-[feature.ax.pypi-dependencies]
-ax-platform = ">=1.0.0, <2"
-
-[feature.pre-commit.dependencies]
-ruff = "*"
-import-linter = "*"
-nbstripout = "*"
-pre-commit = ">=4.2.0"
-
-[feature.pre-commit.pypi-dependencies]
-blop = {path = ".", editable = true}
-
-[feature.docs.dependencies]
-furo = "*"
-pre-commit = "*"
-pre-commit-hooks = "*"
-sphinx = "*"
-twine = "*"
-numpydoc = "*"
-pandoc = "*"
-sphinx-copybutton = "*"
-sphinx_rtd_theme = "*"
-pandas-stubs = "*"
-types-pyyaml = "*"
-nbsphinx = ">=0.9.7,<0.10"
-
-
-[feature.docs.pypi-dependencies]
-myst-nb = ">=1.3.0, <2"
-nbval = "*"
-
-[feature.gui.dependencies]
-nicegui = "*"
-
-[feature.napari.dependencies]
-napari = "*"
-
-[feature.sirepo.pypi-dependencies]
-sirepo-bluesky = "*"
-
-[feature.xrt.dependencies]
-xrt = "*"
-
-[feature.adaptive.pypi-dependencies]
-bluesky-adaptive = "*"
+[feature.jupyterlite-runtime.dependencies]
+xeus-python = "*"
+python = ">=3.11"
+matplotlib = ">=3.9"
+ipympl = ">=0.9"
+jupytext = ">=1.16"
 
 [feature.py310.dependencies]
 python = "3.10.*"
@@ -107,48 +73,39 @@ python = "3.11.*"
 [feature.py312.dependencies]
 python = "3.12.*"
 
-[feature.jupyterlite-runtime.dependencies]
-xeus-python = "*"
-python = ">=3.11"
-matplotlib = ">=3.9"
-ipympl = ">=0.9"
-jupytext = ">=1.16"
-
 [feature.dev.tasks]
-local_test = {cmd = "pixi run -e docs bash ./docs/test.sh"}
+check = "pre-commit run --all-files"
+unit-tests = "pytest src/blop/tests"
 
 [feature.docs.tasks]
-test = {cmd="bash ./docs/test.sh"}
-setup_wasm = {cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"]}
-convert_ipynbs = {cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/"], outputs = ["docs/build/ipynbs"]}
+build-docs = "make -C docs/ html"
 
-[feature.docs.tasks.build_wasm]
+[feature.jupyter.tasks]
+start-jupyter = "jupyter lab"
+test-tutorials = "bash docs/test.sh"
+setup_wasm = { cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"] }
+convert_ipynbs = { cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/"], outputs = ["docs/build/ipynbs"] }
+
+[feature.jupyter.tasks.build_wasm]
 cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
 depends-on = ["setup_wasm", "convert_ipynbs"]
 outputs = ["docs/build/html/jupyterlite/"]
 inputs = ["pixi.lock", "tutorials/"]
 
-[feature.docs.tasks.start_wasm]
+[feature.jupyter.tasks.start_wasm]
 cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
 depends-on = ["build_wasm"]
 
-[feature.dev.activation]
+[feature.jupyter.activation]
 # Workaround overrides JupyterLab configuration (at the environment level) to
 # make double-clicking on a Jupytext Markdown file open that file as a
 # notebook. This is important for the development workflow for contributors.
-scripts = ["activate.sh"]
+scripts = ["docs/activate.sh"]
 
 [environments]
-adaptive = {features=["adaptive"], solve-group="all"}
-ax = {features=["ax"], solve-group="all"}
-dev = {features=["dev", "xrt"], solve-group="all"}
-docs = {features=["docs", "ax", "xrt", "jupyter"], solve-group="all"}
-gui = {features=["gui"], solve-group="all"}
-napari = {features=["napari"], solve-group="all"}
-pre-commit = {features=["pre-commit"], no-default-feature = true}
-jupyterlite-runtime = {features=["jupyterlite-runtime"]}
-sirepo = {features=["sirepo"], solve-group="all"}
-xrt = {features=["xrt"], solve-group="all"}
-py310 = { features = ["py310", "dev"] }
-py311 = { features = ["py311", "dev"] }
-py312 = { features = ["py312", "dev"] }
+dev = ["dev"]
+docs = ["docs", "dev", "jupyter"]
+jupyterlite-runtime = ["jupyterlite-runtime"]
+py310 = ["dev", "py310"]
+py311 = ["dev", "py311"]
+py312 = ["dev", "py312"]
