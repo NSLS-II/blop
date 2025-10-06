@@ -58,13 +58,6 @@ jupyterlab-myst = ">=2.4"
 jupytext = ">=1.16"
 ipympl = ">=0.9"
 
-[feature.jupyterlite-runtime.dependencies]
-xeus-python = "*"
-python = ">=3.11"
-matplotlib = ">=3.9"
-ipympl = ">=0.9"
-jupytext = ">=1.16"
-
 [feature.py310.dependencies]
 python = "3.10.*"
 
@@ -84,18 +77,6 @@ build-docs = "make -C docs/ html"
 [feature.jupyter.tasks]
 start-jupyter = "jupyter lab"
 test-tutorials = "bash docs/test.sh"
-setup_wasm = { cmd = "pixi install -e jupyterlite-runtime", inputs = ["pixi.lock"] }
-convert_ipynbs = { cmd = "bash docs/convert_all_jupyterlite.sh", inputs = ["docs/"], outputs = ["docs/build/ipynbs"] }
-
-[feature.jupyter.tasks.build_wasm]
-cmd = "jupyter lite build --XeusAddon.prefix=.pixi/envs/jupyterlite-runtime --contents docs/build/ipynbs --output-dir docs/build/html/jupyterlite --settings-overrides=.binder/overrides.json --log-level DEBUG"
-depends-on = ["setup_wasm", "convert_ipynbs"]
-outputs = ["docs/build/html/jupyterlite/"]
-inputs = ["pixi.lock", "tutorials/"]
-
-[feature.jupyter.tasks.start_wasm]
-cmd = "python -m http.server 8000 -d docs/build/html/jupyterlite/"
-depends-on = ["build_wasm"]
 
 [feature.jupyter.activation]
 # Workaround overrides JupyterLab configuration (at the environment level) to
@@ -106,7 +87,6 @@ scripts = ["docs/activate.sh"]
 [environments]
 dev = ["dev"]
 docs = ["docs", "dev", "jupyter"]
-jupyterlite-runtime = ["jupyterlite-runtime"]
 py310 = ["dev", "py310"]
 py311 = ["dev", "py311"]
 py312 = ["dev", "py312"]
