@@ -1,5 +1,5 @@
-Installation instructions
-=========================
+Installation
+============
 
 For users
 ---------
@@ -55,12 +55,16 @@ If you don't want to use Pixi, you can view the configuration in the ``pixi.toml
 Static checks
 ^^^^^^^^^^^^^
 
+For linting, formatting, and static code analysis.
+
 .. code:: bash
 
    $ pixi run check
 
 Run tests
 ^^^^^^^^^
+
+For running the unit and integration tests.
 
 .. code:: bash
 
@@ -69,6 +73,8 @@ Run tests
 
 Build documentation
 ^^^^^^^^^^^^^^^^^^^
+
+For building this documentation.
 
 .. code:: bash
 
