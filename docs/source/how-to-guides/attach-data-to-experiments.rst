@@ -92,4 +92,3 @@ Verify the data you attached is correct.
 .. code-block:: python
 
     agent.summarize()
-

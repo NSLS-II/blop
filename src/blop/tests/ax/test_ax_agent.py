@@ -1,3 +1,4 @@
+import numpy as np
 from ax.generation_strategy.generation_node import GenerationNode
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from ax.generation_strategy.model_spec import GeneratorSpec
@@ -5,7 +6,6 @@ from ax.generation_strategy.transition_criterion import MinTrials
 from ax.modelbridge.registry import Generators
 from ax.models.torch.botorch_modular.surrogate import ModelConfig, SurrogateSpec
 from botorch.acquisition.logei import qLogNoisyExpectedImprovement
-import numpy as np
 
 from blop.ax.agent import Agent
 from blop.bayesian.models import LatentGP
@@ -174,18 +174,24 @@ def test_attach_data(setup):
     agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
 
     data = [
-        ({
-            "bl_kbv_dsv": 0.1,
-            "bl_kbv_usv": 0.0,
-        }, {
-            "bl_det_sum": 250.0,
-        }),
-        ({
-            "bl_kbv_dsv": 1.3,
-            "bl_kbv_usv": 1.2,
-        }, {
-            "bl_det_sum": 234.0,
-        }),
+        (
+            {
+                "bl_kbv_dsv": 0.1,
+                "bl_kbv_usv": 0.0,
+            },
+            {
+                "bl_det_sum": 250.0,
+            },
+        ),
+        (
+            {
+                "bl_kbv_dsv": 1.3,
+                "bl_kbv_usv": 1.2,
+            },
+            {
+                "bl_det_sum": 234.0,
+            },
+        ),
     ]
 
     agent.attach_data(data)
