@@ -1,3 +1,4 @@
+import numpy as np
 from ax.generation_strategy.generation_node import GenerationNode
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from ax.generation_strategy.model_spec import GeneratorSpec
@@ -149,3 +150,55 @@ def test_generation_strategy_sim_beamline(RE, setup):
 
     df = agent.summarize()
     assert "LatentGP" in df["generation_node"].values
+
+
+def test_attach_data(setup):
+    beamline = TiledBeamline(name="bl")
+    beamline.det.noise.put(False)
+
+    dofs = [
+        DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
+        DOF(movable=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
+    ]
+
+    objectives = [
+        Objective(name="bl_det_sum", target="max"),
+    ]
+
+    agent = Agent(
+        readables=[beamline.det],
+        dofs=dofs,
+        objectives=objectives,
+        db=setup,
+    )
+    agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
+
+    data = [
+        (
+            {
+                "bl_kbv_dsv": 0.1,
+                "bl_kbv_usv": 0.0,
+            },
+            {
+                "bl_det_sum": 250.0,
+            },
+        ),
+        (
+            {
+                "bl_kbv_dsv": 1.3,
+                "bl_kbv_usv": 1.2,
+            },
+            {
+                "bl_det_sum": 234.0,
+            },
+        ),
+    ]
+
+    agent.attach_data(data)
+
+    agent.configure_generation_strategy()
+    df = agent.summarize()
+    assert len(df) == 2
+    assert np.all(df["bl_kbv_dsv"].values == [0.1, 1.3])
+    assert np.all(df["bl_kbv_usv"].values == [0.0, 1.2])
+    assert np.all(df["bl_det_sum"].values == [250.0, 234.0])

@@ -40,7 +40,7 @@ from tiled.server import SimpleTiledServer
 logging.getLogger("httpx").setLevel(logging.WARNING)
 ```
 
-First, we will start up a Tiled server. This will act as our data access service which Bluesky will write to and that we Blop can read from.
+First, we will start up a Tiled server. This will act as our data access service which Bluesky will write to and that Blop can read from.
 
 ```{code-cell} ipython3
 tiled_server = SimpleTiledServer()
@@ -138,7 +138,7 @@ readables = []
 Additional readables are typically added as a list of devices that produce data, such as detectors, to help with computing the desired outcome via the digestion function.
 ```
 
-Next, we will define the digestion function. The data that will be available to the digestion function will always be collection readables (specified either implicitly or explicitly).
+Next, we will define the digestion function. The data that will be available to the digestion function will always be a collection of readables (specified either implicitly or explicitly).
 
 ```{code-cell} ipython3
 def himmelblau_2d_digestion(trial_index: int, data: dict[str, Any]) -> float:
