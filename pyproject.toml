@@ -37,6 +37,7 @@ dependencies = [
   "numpy",
   "h5py",
   "area-detector-handlers",
+  "bluesky-tiled-plugins",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
