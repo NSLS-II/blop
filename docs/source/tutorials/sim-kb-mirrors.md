@@ -65,6 +65,7 @@ tiled_server = SimpleTiledServer(readable_storage=[DETECTOR_STORAGE])
 tiled_client = from_uri(tiled_server.uri)
 tiled_writer = TiledWriter(tiled_client)
 
+
 def setup_re_env(db_type="default", root_dir="/default/path", method="tiled"):
     RE = RunEngine({})
     bec = best_effort.BestEffortCallback()
