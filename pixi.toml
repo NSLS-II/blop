@@ -25,6 +25,7 @@ area-detector-handlers = ">=0.0.10,<0.0.11"
 
 [pypi-dependencies]
 xrt = ">=1.6.1,<2"
+bluesky-tiled-plugins = ">=2.0.0b69, <3"
 
 [feature.dev.dependencies]
 pytest = "*"

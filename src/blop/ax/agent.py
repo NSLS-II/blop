@@ -1,7 +1,7 @@
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Generator
-from typing import Literal
+from typing import Any, Concatenate, Literal, ParamSpec
 
 import databroker
 import pandas as pd
@@ -16,37 +16,15 @@ from databroker import Broker
 from tiled.client.container import Container
 
 from ..data_access import DatabrokerDataAccess, TiledDataAccess
+from ..digestion_function import default_digestion_function
 from ..dofs import DOF
 from ..objectives import Objective
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
 
-
-def default_digestion_function(trial_index: int, objectives: list[Objective], df: pd.DataFrame) -> TOutcome:
-    """
-    Simple digestion function.
-
-    Assumes the following:
-    - Objective names are the same as the names of the columns in the dataframe.
-    - Each row in the dataframe corresponds to a single trial.
-
-    Parameters
-    ----------
-    trial_index : int
-        The index of the trial.
-    objectives : list[Objective]
-        The objectives of the experiment.
-    df : dict[str, list[Any]]
-        A dictonary containing the results of the experiment.
-
-    Returns
-    -------
-    TOutcome
-        A dictionary mapping objective names to their mean and standard error. Since there
-        is a single trial, the standard error is None.
-    """
-    return {objective.name: (df[objective.name][(trial_index % len(df[objective.name]))], None) for objective in objectives}
+P = ParamSpec("P")
+DigestionFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome]
 
 
 class Agent:
@@ -64,7 +42,7 @@ class Agent:
         The objectives which the agent will try to optimize.
     db : Broker | Container
         The databroker or tiled instance to read back data from a Bluesky run.
-    digestion : Callable[[pd.DataFrame], dict[str, tuple[float, float]]]
+    digestion : DigestionFunction
         The function to produce objective values from a dataframe of acquisition results.
     digestion_kwargs : dict
         Additional keyword arguments to pass to the digestion function.
@@ -76,7 +54,7 @@ class Agent:
         dofs: list[DOF],
         objectives: list[Objective],
         db: Broker | Container,
-        digestion: Callable[[pd.DataFrame], dict[str, tuple[float, float]]] = default_digestion_function,
+        digestion: DigestionFunction = default_digestion_function,
         digestion_kwargs: dict | None = None,
     ):
         self.readables = readables
@@ -129,6 +107,10 @@ class Agent:
         )
         self.client.configure_optimization(objectives, objective_constraints)
         self.client.configure_metrics(metrics)
+
+        # If the digestion function is the default, we need to pass the active objectives to the digestion function
+        if self.digestion == default_digestion_function:
+            self.digestion_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
 
     def ask(self, n: int = 1) -> dict[int, TParameterization]:
         """
@@ -250,12 +232,8 @@ class Agent:
         """
         plan_args = self._unpack_parameters(trials.values())
         uid = yield from list_scan(self.readables, *plan_args, md={"ax_trial_indices": list(trials.keys())})
-        results_df = self.data_access.get_data(uid)
-        active_objectives = [objective for objective in self.objectives.values() if objective.active]
-        return {
-            trial_index: self.digestion(trial_index, active_objectives, results_df, **self.digestion_kwargs)
-            for trial_index in trials.keys()
-        }
+        results = self.data_access.get_data(uid)
+        return {trial_index: self.digestion(trial_index, results, **self.digestion_kwargs) for trial_index in trials.keys()}
 
     def compute_analyses(self, analyses: list[Analysis], display: bool = True) -> list[AnalysisCard]:
         """
