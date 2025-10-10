@@ -15,6 +15,7 @@ from blop.dofs import BrownianMotion
 
 logger = logging.getLogger("blop")
 logger.setLevel(logging.DEBUG)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @pytest.fixture(scope="function")

@@ -49,6 +49,7 @@ Create an agent
         objectives=objectives,
         ... # Other arguments
     )
+    agent.configure_experiment(name="experiment_name", description="experiment_description")
 
 Transform your data to the correct format
 -----------------------------------------
@@ -79,6 +80,14 @@ Attach your data to the experiment
 
 The next time you get a suggestion from the agent, it will re-train the model(s) with the new data.
 
+(Optional) Configure the generation strategy
+--------------------------------------------
+
+If no trials have been run yet, you need to configure the generation strategy before summarizing the data.
+
+.. code-block:: python
+
+    agent.configure_generation_strategy()
 
 Sanity check the data you attached
 ----------------------------------
