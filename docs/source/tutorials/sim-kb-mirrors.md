@@ -36,6 +36,7 @@ Here we prepare the `RunEngine`.
 
 ```{code-cell} ipython3
 from datetime import datetime
+import logging
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
@@ -52,6 +53,11 @@ from tiled.server import SimpleTiledServer
 
 from blop.sim import HDF5Handler
 from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
+
+# Suppress most logs from interacting with tiled
+logging.getLogger("tiled").setLevel(logging.WARNING)
+logging.getLogger("uvicorn").setLevel(logging.WARNING)
+logging.getLogger("uvicorn.access")setLevel(logging.WARNING)
 
 DETECTOR_STORAGE = "/tmp/blop/sim"
 ```
