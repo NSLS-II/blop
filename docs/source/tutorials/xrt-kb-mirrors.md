@@ -49,10 +49,8 @@ from blop.ax import Agent
 from blop.sim import HDF5Handler
 from blop.sim.xrt_beamline import DatabrokerBeamline, TiledBeamline
 
-# Suppress most logs from interacting with tiled
-logging.getLogger("tiled").setLevel(logging.WARNING)
-logging.getLogger("uvicorn").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.access")setLevel(logging.WARNING)
+# Suppress noisy logs from httpx 
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 DETECTOR_STORAGE = "/tmp/blop/sim"
 ```

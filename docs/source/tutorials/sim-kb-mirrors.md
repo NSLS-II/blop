@@ -54,10 +54,8 @@ from tiled.server import SimpleTiledServer
 from blop.sim import HDF5Handler
 from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
 
-# Suppress most logs from interacting with tiled
-logging.getLogger("tiled").setLevel(logging.WARNING)
-logging.getLogger("uvicorn").setLevel(logging.WARNING)
-logging.getLogger("uvicorn.access")setLevel(logging.WARNING)
+# Suppress noisy logs from httpx 
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 DETECTOR_STORAGE = "/tmp/blop/sim"
 ```
@@ -66,7 +64,6 @@ DETECTOR_STORAGE = "/tmp/blop/sim"
 tiled_server = SimpleTiledServer(readable_storage=[DETECTOR_STORAGE])
 tiled_client = from_uri(tiled_server.uri)
 tiled_writer = TiledWriter(tiled_client)
-
 
 def setup_re_env(db_type="default", root_dir="/default/path", method="tiled"):
     RE = RunEngine({})
