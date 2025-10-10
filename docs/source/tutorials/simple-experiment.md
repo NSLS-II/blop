@@ -134,7 +134,7 @@ readables = []
 Additional readables are typically added as a list of devices that produce data, such as detectors, to help with computing the desired outcome via the digestion function.
 ```
 
-Next, we will define the digestion function. The data that will be available to the digestion function will always be collection readables (specified either implicitly or explicitly).
+Next, we will define the digestion function. The data that will be available to the digestion function will always be a collection of readables (specified either implicitly or explicitly).
 
 ```{code-cell} ipython3
 def himmelblau_2d_digestion(trial_index: int, data: dict[str, Any]) -> float:
