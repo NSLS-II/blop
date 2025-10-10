@@ -60,6 +60,7 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
     ]
 
     agent = Agent(
+        readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
         ... # Other arguments
