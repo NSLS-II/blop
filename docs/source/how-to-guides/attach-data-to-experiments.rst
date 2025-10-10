@@ -41,7 +41,7 @@ Transform your data to the correct format
 Configure an agent
 ------------------
 
-The ``DOF`` and ``Objective`` names must match the keys in the data dictionary.
+The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries.
 
 .. code-block:: python
 
@@ -69,16 +69,17 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionary.
 Attach your data to the experiment
 ----------------------------------
 
+After this, the next time you get a suggestion from the agent it will re-train the model(s) with the new data.
+
 .. code-block:: python
 
     agent.attach_data(data)
 
-The next time you get a suggestion from the agent, it will re-train the model(s) with the new data.
 
 (Optional) Configure the generation strategy
 --------------------------------------------
 
-If no trials have been run yet, you need to configure the generation strategy before summarizing the data.
+If no trials have been run yet, you must configure the generation strategy before summarizing the data.
 
 .. code-block:: python
 
