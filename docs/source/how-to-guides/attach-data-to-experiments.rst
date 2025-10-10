@@ -20,10 +20,28 @@ We will use fake data for this example. You will be responsible for loading your
         "objective2": [1, 2, 3, 4, 5],
     })
 
-Create an agent
----------------
+Transform your data to the correct format
+-----------------------------------------
 
-The ``DOF`` and ``Objective`` names must match the keys in the dataframe.
+.. code-block:: python
+
+    data = []
+    for row in df.iterrows():
+        data.append(({
+                "dof1": row["dof1"],
+                "dof2": row["dof2"],
+                "dof3": row["dof3"],
+            },
+            {
+                "objective1": row["objective1"],
+                "objective2": row["objective2"],
+            }
+        ))
+
+Configure an agent
+------------------
+
+The ``DOF`` and ``Objective`` names must match the keys in the data dictionary.
 
 .. code-block:: python
 
@@ -48,32 +66,12 @@ The ``DOF`` and ``Objective`` names must match the keys in the dataframe.
     )
     agent.configure_experiment(name="experiment_name", description="experiment_description")
 
-Transform your data to the correct format
------------------------------------------
-
-.. code-block:: python
-
-    data = []
-    for row in df.iterrows():
-        data.append(({
-                "dof1": row["dof1"],
-                "dof2": row["dof2"],
-                "dof3": row["dof3"],
-            },
-            {
-                "objective1": row["objective1"],
-                "objective2": row["objective2"],
-            }
-        ))
-
-
 Attach your data to the experiment
 ----------------------------------
 
 .. code-block:: python
 
     agent.attach_data(data)
-
 
 The next time you get a suggestion from the agent, it will re-train the model(s) with the new data.
 
@@ -89,8 +87,9 @@ If no trials have been run yet, you need to configure the generation strategy be
 Sanity check the data you attached
 ----------------------------------
 
+Verify the data you attached is correct.
+
 .. code-block:: python
 
     agent.summarize()
 
-This should show you the data you attached.
