@@ -23,15 +23,12 @@ We will use fake data for this example. You will be responsible for loading your
 Create an agent
 ---------------
 
+The ``DOF`` and ``Objective`` names must match the keys in the dataframe.
+
 .. code-block:: python
 
     from blop import DOF, Objective
     from blop.ax import Agent
-    from ophyd import Signal
-
-    dof1 = Signal(name="dof1", value=0.0)
-    dof2 = Signal(name="dof2", value=0.0)
-    dof3 = Signal(name="dof3", value=0.0)
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
