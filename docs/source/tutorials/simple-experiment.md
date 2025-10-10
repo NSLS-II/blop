@@ -36,7 +36,7 @@ from tiled.client import from_uri
 from tiled.server import SimpleTiledServer
 ```
 
-First, we will start up a Tiled server. This will act as our data access service which Bluesky will write to and that we Blop can read from.
+First, we will start up a Tiled server. This will act as our data access service which Bluesky will write to and that Blop can read from.
 
 ```{code-cell} ipython3
 tiled_server = SimpleTiledServer()
