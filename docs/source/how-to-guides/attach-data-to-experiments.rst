@@ -1,12 +1,12 @@
-Attach existing data to experiments
+Attach external data to experiments
 ===================================
 
-In this guide, we will instruct you how to attach existing data to an experiment.
+In this guide, we will instruct you how to attach external data to an experiment.
 
 Load your data
 --------------
 
-We will use fake data for this example.
+We will use fake data for this example. You will be responsible for loading your data from your own source.
 
 .. code-block:: python
 
