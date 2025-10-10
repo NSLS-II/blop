@@ -20,6 +20,7 @@ Bluesky along with a data access backend (either Tiled or Databroker) are not ne
 We'll start by importing the necessary libraries.
 
 ```{code-cell} ipython3
+import logging
 import time
 from typing import Any
 
@@ -34,6 +35,9 @@ from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.callbacks.best_effort import BestEffortCallback
 from tiled.client import from_uri
 from tiled.server import SimpleTiledServer
+
+# Suppress noisy logs from httpx 
+logging.getLogger("httpx").setLevel(logging.WARNING)
 ```
 
 First, we will start up a Tiled server. This will act as our data access service which Bluesky will write to and that we Blop can read from.

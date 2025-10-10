@@ -87,6 +87,9 @@ target/
 # Ipython Notebook
 .ipynb_checkpoints
 
+# All ipynb files (use MyST markdown and jupytext instead)
+*.ipynb
+
 # Jupyterlite Database
 .jupyterlite.doit.db
 

@@ -26,6 +26,7 @@ The picture below displays beam from geometric source propagating through a pair
 ```{code-cell} ipython3
 import time
 from datetime import datetime
+import logging
 
 import plotly.io as pio
 
@@ -47,6 +48,9 @@ from blop import DOF, Objective
 from blop.ax import Agent
 from blop.sim import HDF5Handler
 from blop.sim.xrt_beamline import DatabrokerBeamline, TiledBeamline
+
+# Suppress noisy logs from httpx 
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 DETECTOR_STORAGE = "/tmp/blop/sim"
 ```
