@@ -42,10 +42,7 @@ jobs:
           activate-environment: docs
 
       - name: Build Docs
-        run: make -C docs/ html
-
-      - name: Build jupyterlite
-        run: pixi run build_wasm
+        run: pixi run build-docs
 
       - name: Upload JupyterLite docs artifact
         uses: actions/upload-artifact@v4
