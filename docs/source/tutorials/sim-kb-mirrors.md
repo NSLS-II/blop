@@ -200,7 +200,7 @@ uid = RE(list_scan([beamline.det], *scan_motor_params))
 
 ```{code-cell} ipython3
 
-image = db[uid[0]]["streams"]["primary"]["bl_det_image"].read().squeeze()
+image = db[uid[0]]["primary"]["bl_det_image"].read().squeeze()
 plt.imshow(image)
 plt.colorbar()
 plt.show()
