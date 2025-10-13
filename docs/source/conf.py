@@ -44,6 +44,7 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
     "sphinx.ext.viewcode",
+    "sphinx.ext.doctest",
     "IPython.sphinxext.ipython_directive",
     "IPython.sphinxext.ipython_console_highlighting",
     "matplotlib.sphinxext.plot_directive",
@@ -87,6 +88,8 @@ nb_render_image_options = {
     "align": "center",
 }
 nb_execution_mode = "auto"
+if "doctest" in sys.argv:
+    nb_execution_mode = "off"
 
 # MyST-NB output rendering configuration
 nb_merge_streams = True  # Merge consecutive stdout/stderr outputs into single blocks
