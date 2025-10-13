@@ -1,10 +1,6 @@
-Attach external data to experiments
-===================================
-
-In this guide, we will instruct you how to attach external data to an experiment.
-
 .. testsetup::
     
+    import logging
     from typing import Any
     import time
 
@@ -68,6 +64,7 @@ In this guide, we will instruct you how to attach external data to an experiment
             return AlwaysSuccessfulStatus()
 
     server = SimpleTiledServer()
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     db = from_uri(server.uri)
 
     dof1 = MovableSignal("dof1")
@@ -84,6 +81,12 @@ In this guide, we will instruct you how to attach external data to an experiment
 
     with contextlib.redirect_stdout(open(os.devnull, "w")):
         server.close()
+
+Attach external data to experiments
+===================================
+
+In this guide, we will instruct you how to attach external data to an experiment.
+
 
 Load your data
 --------------
