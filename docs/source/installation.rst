@@ -34,14 +34,11 @@ If you are using Pixi (see :ref:`for-developers` below), you can do the followin
 
    $ pixi run start-jupyter
 
-You may have to convert the tutorials to ipynb format before running them. There is a helper script to do this. In a terminal, run:
+Your third option is to simply convert the tutorials to ipynb format and use whatever you prefer to run them.
 
 .. code:: bash
 
-   $ chmod +x docs/convert_all_jupyterlite.sh
-   $ ./docs/convert_all_jupyterlite.sh
-
-Your third option is to simply convert the tutorials to ipynb format and use whatever you prefer to run them.
+   $ jupytext --to ipynb docs/source/tutorials/*.md
 
 .. _for-developers:
 
