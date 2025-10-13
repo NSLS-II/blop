@@ -5,6 +5,8 @@ permissions:
 on:
   push:
   pull_request:
+  release:
+    types: [published]
   schedule:
     - cron: '00 6 * * *'  # daily at 6AM UTC
   workflow_dispatch:
