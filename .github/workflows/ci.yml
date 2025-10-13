@@ -37,8 +37,31 @@ jobs:
       deploy_key: ${{ github.event_name == 'release' && secrets.ACTIONS_DOCUMENTATION_DEPLOY_KEY || '' }}
   
   pypi:
+    name: Publish package to PyPI
+    runs-on: ubuntu-latest
     if: success() && github.event_name == 'release'
     needs: [lint, test, docs]
-    uses: ./.github/workflows/_publish-pypi.yml
     permissions:
       id-token: write
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.x'
+
+      - name: Build package
+        run: |
+          set -vxeuo pipefail
+          python -m pip install --upgrade pip
+          pip install build
+          python -m build
+
+      - name: Publish wheels to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: ./dist/
