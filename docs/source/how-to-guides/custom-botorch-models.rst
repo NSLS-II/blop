@@ -1,2 +1,0 @@
-Using custom BoTorch models
-===========================
