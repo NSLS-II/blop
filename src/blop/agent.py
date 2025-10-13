@@ -611,7 +611,7 @@ class Agent(BaseAgent):
         """
         A Bayesian optimization agent.
 
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This class is deprecated and will be removed in Blop v1.0.0. Use :class:`blop.ax.Agent` instead.
 
         Parameters

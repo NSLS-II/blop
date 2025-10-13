@@ -81,7 +81,7 @@ class Objective:
         description: str
             A longer description for the objective.
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0.
         type: Literal["continuous", "binary", "ordinal", "categorical"]
             Describes the type of the outcome to be optimized. An outcome can be:
@@ -91,7 +91,7 @@ class Objective:
             - Ordinal, meaning ordered categories (e.g. [low, medium, high])
             - Categorical, meaning non-ordered categories (e.g. [mango, banana, papaya])
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have types.
 
             Default: "continuous"
@@ -107,14 +107,14 @@ class Objective:
             One of "log", "logit", or "arctanh", to transform the outcomes and make them more Gaussian.
             Default: None
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0. Only DOFs will have transforms. Use
                 digestion functions to transform your objectives.
         weight: float
             The relative importance of this Objective, to be used when scalarizing in multi-objective optimization.
             Default: 1.
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0.
                 Use a digestion function to weight your objectives.
         active: bool
@@ -125,25 +125,25 @@ class Objective:
             the trust_domain will not be trusted and will be ignored as 'invalid'. By default, all values are trusted.
             Default: None
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0. Use constraints instead.
         min_noise: float
             The minimum relative noise level of the fitted model.
             Default: 1e-6
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0.
         max_noise: float
             The maximum relative noise level of the fitted model.
             Default: 1e0
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0.
         units: str
             A label representing the units of the outcome (e.g., millimeters or counts)
             Default: None
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0.
         latent_groups: list of tuples of strs, optional
             An agent will fit latent dimensions to all DOFs with the same latent_group. All other DOFs will be modeled
@@ -153,7 +153,7 @@ class Objective:
             How many new points to wait for before retraining model hyperparameters.
             Default: 4
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0.
         """
         if description:
@@ -373,7 +373,7 @@ class Objective:
         """
         Return a Series summarizing the state of the Objectives.
 
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. Objectives will not have a summary.
         """
         series = pd.Series(index=list(OBJ_FIELD_TYPES.keys()), dtype=object)
@@ -433,7 +433,7 @@ class Objective:
     @property
     def model(self) -> Model | None:
         """
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. Models will not be stored in individaul Objectives.
         """
         return self._model.eval() if self._model else None

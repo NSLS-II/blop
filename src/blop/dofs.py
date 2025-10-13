@@ -62,12 +62,12 @@ class DOF:
         name: str
             The name of the input. This is used as a key to index observed data.
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0. The `movable.name` will be used instead.
         description: str, optional
             A longer, more descriptive name for the DOF.
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This argument is deprecated and will be removed in Blop v1.0.0.
         type: Literal["continuous", "binary", "ordinal", "categorical"]
             Describes the type of the input to be optimized. An outcome can be
@@ -94,7 +94,7 @@ class DOF:
             still read the DOF but not include it any model or acquisition function.
             Default: True
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This attribute is deprecated and will be removed in Blop v1.0.0. Inactive DOFs are no longer supported.
         read_only: Optional[bool]
             If True, the agent will not try to set the DOF. Must be set to True if the supplied ophyd
@@ -115,26 +115,26 @@ class DOF:
             An `ophyd.Signal`. If not supplied, a dummy `ophyd.Signal` will be generated.
             Default: None
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This attribute is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
                 Use `movable` which must be a `bluesky.protocols.NamedMovable` instead.
         tags: Optional[list[str]]
             A list of tags. These make it easier to subset large groups of DOFs.
             Default: []
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This attribute is deprecated and will be removed in Blop v1.0.0.
         travel_expense: Optional[float]
             The relative cost of moving the DOF from the current position to the new position.
             Default: 1
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This attribute is deprecated and will be removed in Blop v1.0.0. It may resurface in a future version.
         units: Optional[str]
             The units of the DOF (e.g. mm or deg). This is just for plotting and general sanity checking.
             Default: None
 
-            .. deprecated:: 0.7.5
+            .. deprecated:: v0.8.0
                 This attribute is deprecated and will be removed in Blop v1.0.0.
         """
         if name:
@@ -387,7 +387,7 @@ class DOF:
         """
         The current value of the DOF.
 
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will not have a readback
             since Ophyd will no longer be a direct dependency. Instead, use `bluesky.plan_stubs.rd` on your `movable`.
         """
@@ -400,7 +400,7 @@ class DOF:
         """
         Return a Series summarizing the state of the DOF.
 
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will not have a summary.
         """
         series = pd.Series(index=list(DOF_FIELD_TYPES.keys()), dtype="object")
@@ -414,7 +414,7 @@ class DOF:
         """
         A label for a plot, perhaps.
 
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will not have a label with units.
         """
         return f"{self.description}{f' [{self.units}]' if self.units else ''}"
@@ -422,7 +422,7 @@ class DOF:
     @property
     def has_model(self) -> bool:
         """
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. Models will not be stored in individaul DOFs.
         """
         return hasattr(self, "model")
@@ -431,7 +431,7 @@ class DOF:
         """
         Activate the DOF
 
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will always be active.
         """
         self.active = True
@@ -440,7 +440,7 @@ class DOF:
         """
         Deactivate the DOF
 
-        .. deprecated:: 0.7.5
+        .. deprecated:: v0.8.0
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will always be active.
         """
         self.active = False
@@ -636,7 +636,7 @@ class BrownianMotion(SignalRO):
     """
     Read-only degree of freedom simulating brownian motion
 
-    .. deprecated:: 0.7.5
+    .. deprecated:: v0.8.0
         This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
     """
 
@@ -668,7 +668,7 @@ class TimeReadback(SignalRO):
     """
     Returns the current timestamp.
 
-    .. deprecated:: 0.7.5
+    .. deprecated:: v0.8.0
         This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
     """
 
@@ -688,7 +688,7 @@ class ConstantReadback(SignalRO):
     """
     Returns a constant every time you read it (more useful than you'd think).
 
-    .. deprecated:: 0.7.5
+    .. deprecated:: v0.8.0
         This class is deprecated and will be removed in Blop v1.0.0. Ophyd will no longer be a direct dependency.
     """
 
