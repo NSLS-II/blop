@@ -39,3 +39,6 @@ jobs:
           set -vxeuo pipefail
           coverage run -m pytest
           coverage report -m
+
+      - name: Test with doctest
+        run: pixi run test-docs

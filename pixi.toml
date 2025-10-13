@@ -75,6 +75,7 @@ unit-tests = "pytest src/blop/tests"
 
 [feature.docs.tasks]
 build-docs = "make -C docs/ html"
+test-docs = "make -C docs/ test"
 
 [feature.jupyter.tasks]
 start-jupyter = "jupyter lab"
@@ -89,6 +90,6 @@ scripts = ["docs/activate.sh"]
 [environments]
 dev = ["dev"]
 docs = ["docs", "dev", "jupyter"]
-py310 = ["dev", "py310"]
-py311 = ["dev", "py311"]
-py312 = ["dev", "py312"]
+py310 = ["dev", "docs", "py310"]
+py311 = ["dev", "docs", "py311"]
+py312 = ["dev", "docs", "py312"]

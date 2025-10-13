@@ -64,11 +64,12 @@ For linting, formatting, and static code analysis.
 Run tests
 ^^^^^^^^^
 
-For running the unit and integration tests.
+For running the tests.
 
 .. code:: bash
 
    $ pixi run unit-tests
+   $ pixi run test-docs
 
 
 Build documentation
