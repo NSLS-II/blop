@@ -28,7 +28,7 @@ New Contributors
 ................
 * `@jessica-moylan <https://github.com/jessica-moylan>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/117
 
-`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.5...v0.8.0>`_
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.5...v0.8.0>`__
 
 v0.7.5 (2025-06-18)
 -------------------
@@ -47,7 +47,7 @@ New Contributors
 ................
 * `@whs92 <https://github.com/whs92>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/107
 
-`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.4...v0.7.5>`_
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.4...v0.7.5>`__
 
 v0.7.4 (2025-03-04)
 -------------------
@@ -72,7 +72,7 @@ New Contributors
 * `@maffettone <https://github.com/maffettone>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/86
 * `@thomashopkins32 <https://github.com/thomashopkins32>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/95
 
-**Full Changelog**: https://github.com/NSLS-II/blop/compare/v0.7.2...v0.7.3
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.2...v0.7.3>`__
 
 v0.7.2 (2025-01-31)
 -------------------
