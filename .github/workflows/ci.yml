@@ -38,6 +38,7 @@ jobs:
   
   pypi:
     name: Publish package to PyPI
+    runs-on: ubuntu-latest
     if: success() && github.event_name == 'release'
     needs: [lint, test, docs]
     permissions:
