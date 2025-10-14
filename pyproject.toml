@@ -38,6 +38,8 @@ dependencies = [
   "h5py",
   "area-detector-handlers",
   "bluesky-tiled-plugins",
+  "networkx~=2.1",  # FIXME: Required by python-tsp
+  "tabulate~=0.8.7",  # FIXME: Required by python-tsp
 ]
 classifiers = [
   "Development Status :: 4 - Beta",

@@ -22,6 +22,8 @@ scipy = ">=1.15.2,<2"
 numpy = ">=2.2.6,<3"
 h5py = ">=3.14.0,<4"
 area-detector-handlers = ">=0.0.10,<0.0.11"
+networkx = "~=2.1"  # FIXME: Required by python-tsp
+tabulate = "~=0.8.7"  # FIXME: Required by python-tsp
 
 [pypi-dependencies]
 xrt = ">=1.6.1,<2"
