@@ -44,7 +44,7 @@ def default_acquisition_plan(
     delay = kwargs.get("delay", 0)
     args = []
     for dof in dofs:
-        args.append(dof.device)
+        args.append(dof.movable)
         args.append(inputs[dof.name])
 
     uid = yield from list_scan_with_delay(dets, *args, delay=delay)

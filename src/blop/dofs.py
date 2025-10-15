@@ -458,7 +458,7 @@ class DOFList(Sequence[DOF]):
 
     @property
     def devices(self) -> list[Signal]:
-        return [dof.device for dof in self.dofs]
+        return [dof.movable for dof in self.dofs]
 
     def __call__(self, *args: Any, **kwargs: Any) -> "DOFList":
         return self.subset(*args, **kwargs)

@@ -28,7 +28,7 @@ def _plot_objs_one_dof(agent, size=16, lw=1e0):
     agent.obj_axes = np.atleast_2d(agent.obj_axes)
 
     x_dof = agent.dofs(active=True)[0]
-    x_values = agent.table[x_dof.device.name]
+    x_values = agent.table[x_dof.movable.name]
 
     test_inputs = agent.sample(n=256, method="grid")
     test_model_inputs = agent.dofs.transform(test_inputs)
@@ -113,8 +113,8 @@ def _plot_objs_many_dofs(
 
     x_dof, y_dof = plottable_dofs[axes[0]], plottable_dofs[axes[1]]
 
-    x_values = agent.table[x_dof.device.name]
-    y_values = agent.table[y_dof.device.name]
+    x_values = agent.table[x_dof.movable.name]
+    y_values = agent.table[y_dof.movable.name]
 
     # test_inputs has shape (*input_shape, 1, n_active_dofs)
     # test_x and test_y should be squeezeable
