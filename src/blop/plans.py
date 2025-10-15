@@ -50,6 +50,7 @@ def default_acquisition_plan(
     uid = yield from list_scan_with_delay(dets, *args, delay=delay)
     return uid
 
+
 def read(readables: Sequence[Readable], **kwargs: Any) -> MsgGenerator[dict[str, Any]]:
     """
     Read the current values of the given readables.

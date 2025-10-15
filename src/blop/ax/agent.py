@@ -19,8 +19,8 @@ from ..data_access import DatabrokerDataAccess, TiledDataAccess
 from ..digestion_function import default_digestion_function
 from ..dofs import DOF
 from ..objectives import Objective
-from .adapters import configure_metrics, configure_objectives, configure_parameters
 from ..plans import read
+from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +113,9 @@ class Agent:
         if self.digestion == default_digestion_function:
             self.digestion_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
 
-    def acquire_baseline(self, parameterization: TParameterization | None = None, arm_name: str | None = None) -> MsgGenerator[None]:
+    def acquire_baseline(
+        self, parameterization: TParameterization | None = None, arm_name: str | None = None
+    ) -> MsgGenerator[None]:
         """
         Measure a baseline of the objectives.
 
