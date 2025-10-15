@@ -231,3 +231,4 @@ def test_acquire_baseline(RE, setup):
     df = agent.summarize()
     assert len(df) == 1
     assert df["arm_name"].values[0] == "baseline"
+    RE(agent.learn(iterations=6, n=1))

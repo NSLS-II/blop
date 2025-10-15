@@ -6,3 +6,4 @@ How-to Guides
 
    how-to-guides/custom-generation-strategies.rst
    how-to-guides/attach-data-to-experiments.rst
+   how-to-guides/acquire-baseline.rst
