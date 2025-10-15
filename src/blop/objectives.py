@@ -61,7 +61,7 @@ class Objective:
         description: str = "",
         type: Literal["continuous", "binary", "ordinal", "categorical"] = "continuous",
         target: float | str | None = None,
-        constraint: tuple[float, float] | set[Any] | None = None,
+        constraint: tuple[float | Literal["baseline"], float | Literal["baseline"]] | set[Any] | None = None,
         transform: Literal["log", "logit", "arctanh"] | None = None,
         weight: float = 1.0,
         active: bool = True,

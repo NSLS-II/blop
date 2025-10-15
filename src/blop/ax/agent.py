@@ -11,7 +11,7 @@ from ax.api.types import TOutcome, TParameterization, TParameterValue
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from bluesky.plans import list_scan
 from bluesky.protocols import Movable, Readable
-from bluesky.utils import Msg
+from bluesky.utils import Msg, MsgGenerator
 from databroker import Broker
 from tiled.client.container import Container
 
@@ -19,6 +19,7 @@ from ..data_access import DatabrokerDataAccess, TiledDataAccess
 from ..digestion_function import default_digestion_function
 from ..dofs import DOF
 from ..objectives import Objective
+from ..plans import read
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
@@ -111,6 +112,26 @@ class Agent:
         # If the digestion function is the default, we need to pass the active objectives to the digestion function
         if self.digestion == default_digestion_function:
             self.digestion_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
+
+    def acquire_baseline(
+        self, parameterization: TParameterization | None = None, arm_name: str | None = None
+    ) -> MsgGenerator[None]:
+        """
+        Measure a baseline of the objectives.
+
+        Parameters
+        ----------
+        parameterization : TParameterization, optional
+            Move the DOFs to the given parameterization, if provided.
+        arm_name : str, optional
+            A name for the arm to distinguish it from other arms.
+        """
+        if parameterization is None:
+            parameterization = yield from read([dof.movable for dof in self.dofs.values()])
+        trial_index = self.client.attach_baseline(parameters=parameterization, arm_name=arm_name)
+        trial = {trial_index: parameterization}
+        outcomes = yield from self.acquire(trial)
+        self.tell(trial, outcomes)
 
     def ask(self, n: int = 1) -> dict[int, TParameterization]:
         """
@@ -205,7 +226,7 @@ class Agent:
 
         unpacked_list = []
         for dof_name, values in unpacked_dict.items():
-            unpacked_list.append(self.dofs[dof_name].device)
+            unpacked_list.append(self.dofs[dof_name].movable)
             unpacked_list.append(values)
 
         return unpacked_list

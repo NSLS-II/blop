@@ -1125,7 +1125,7 @@ class Agent(BaseAgent):
             dof = self.dofs[dof_name]
             if dof.read_only:
                 raise ValueError(f"Cannot move DOF {dof_name} as it is read-only.")
-            mv_args.append(dof.device)
+            mv_args.append(dof.movable)
             mv_args.append(dof_value)
 
         yield from bps.mv(*mv_args)

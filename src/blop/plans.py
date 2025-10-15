@@ -3,8 +3,9 @@ from typing import Any
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
-from bluesky.protocols import Movable
+from bluesky.protocols import Movable, Readable
 from bluesky.run_engine import Msg
+from bluesky.utils import MsgGenerator
 from ophyd import Signal  # type: ignore[import-untyped]
 
 from .dofs import DOF
@@ -43,8 +44,23 @@ def default_acquisition_plan(
     delay = kwargs.get("delay", 0)
     args = []
     for dof in dofs:
-        args.append(dof.device)
+        args.append(dof.movable)
         args.append(inputs[dof.name])
 
     uid = yield from list_scan_with_delay(dets, *args, delay=delay)
     return uid
+
+
+def read(readables: Sequence[Readable], **kwargs: Any) -> MsgGenerator[dict[str, Any]]:
+    """
+    Read the current values of the given readables.
+
+    Parameters
+    ----------
+    readables : Sequence[Readable]
+        The readables to read.
+    """
+    results = {}
+    for readable in readables:
+        results[readable.name] = yield from bps.rd(readable, **kwargs)
+    return results

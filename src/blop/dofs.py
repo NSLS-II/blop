@@ -193,15 +193,15 @@ class DOF:
         self.active = active
         self.read_only = read_only
         self.transform = transform
-        self.device = movable or device
+        self.movable = movable or device
         self.tags = tags or []
         self.travel_expense = travel_expense
         self.units = units
 
         # Either name or device must be provided
-        if (not self.name) != (not self.device):
-            if self.device:
-                self.name = self.device.name
+        if (not self.name) != (not self.movable):
+            if self.movable:
+                self.name = self.movable.name
         else:
             raise ValueError("You must specify exactly one of 'name' or 'device'.")
 
@@ -235,11 +235,11 @@ class DOF:
             self.search_domain = search_domain
 
             if not self.read_only:
-                if not self.device:
+                if not self.movable:
                     search_tensor = torch.tensor(search_domain, dtype=torch.float)
                     transformed = self._transform(search_tensor)
                     center = float(self._untransform(torch.mean(transformed)))
-                    self.device = Signal(name=self.name, value=center)
+                    self.movable = Signal(name=self.name, value=center)
 
         else:
             if search_domain is None:
@@ -252,18 +252,18 @@ class DOF:
             if not is_subset(self.search_domain, self.trust_domain, type=self.type):
                 raise ValueError(f"The search domain must be a subset of trust domain for DOF '{self.name}'.")
 
-            self.device = Signal(name=self.name, value=list(self.search_domain)[0])
+            self.movable = Signal(name=self.name, value=list(self.search_domain)[0])
 
-        if not self.device:
+        if not self.movable:
             raise ValueError("Expected device to be set. Please check that the DOF has a name or device.")
 
         if not self.read_only:
             # check that the device has a put method
-            if isinstance(self.device, SignalRO):
+            if isinstance(self.movable, SignalRO):
                 raise ValueError("You must specify read_only=True for a read-only device.")
 
         # all dof degrees of freedom are hinted
-        self.device.kind = "hinted"
+        self.movable.kind = "hinted"
 
     def __repr__(self) -> str:
         filling = ", ".join([f"{k}={repr(v)}" for k, v in self.summary.to_dict().items()])
@@ -391,9 +391,9 @@ class DOF:
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will not have a readback
             since Ophyd will no longer be a direct dependency. Instead, use `bluesky.plan_stubs.rd` on your `movable`.
         """
-        if not self.device:
+        if not self.movable:
             raise ValueError("DOF has no device.")
-        return self.device.read()[self.device.name]["value"]
+        return self.movable.read()[self.movable.name]["value"]
 
     @property
     def summary(self) -> pd.Series:
@@ -458,7 +458,7 @@ class DOFList(Sequence[DOF]):
 
     @property
     def devices(self) -> list[Signal]:
-        return [dof.device for dof in self.dofs]
+        return [dof.movable for dof in self.dofs]
 
     def __call__(self, *args: Any, **kwargs: Any) -> "DOFList":
         return self.subset(*args, **kwargs)

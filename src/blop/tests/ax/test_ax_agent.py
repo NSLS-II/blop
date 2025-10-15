@@ -27,8 +27,8 @@ def test_ax_agent(RE, setup):
 
     objectives = [
         Objective(name="bl_det_sum", target="max"),
-        Objective(name="bl_det_wid_x", target="min", transform="log"),
-        Objective(name="bl_det_wid_y", target="min", transform="log"),
+        Objective(name="bl_det_wid_x", target="min"),
+        Objective(name="bl_det_wid_y", target="min"),
     ]
 
     agent = Agent(
@@ -55,8 +55,8 @@ def test_plot_objective(RE, setup):
 
     objectives = [
         Objective(name="bl_det_sum", target="max"),
-        Objective(name="bl_det_wid_x", target="min", transform="log"),
-        Objective(name="bl_det_wid_y", target="min", transform="log"),
+        Objective(name="bl_det_wid_x", target="min"),
+        Objective(name="bl_det_wid_y", target="min"),
     ]
 
     agent = Agent(
@@ -84,8 +84,8 @@ def test_generation_strategy_sim_beamline(RE, setup):
 
     objectives = [
         Objective(name="bl_det_sum", target="max"),
-        Objective(name="bl_det_wid_x", target="min", transform="log"),
-        Objective(name="bl_det_wid_y", target="min", transform="log"),
+        Objective(name="bl_det_wid_x", target="min"),
+        Objective(name="bl_det_wid_y", target="min"),
     ]
 
     agent = Agent(
@@ -202,3 +202,33 @@ def test_attach_data(setup):
     assert np.all(df["bl_kbv_dsv"].values == [0.1, 1.3])
     assert np.all(df["bl_kbv_usv"].values == [0.0, 1.2])
     assert np.all(df["bl_det_sum"].values == [250.0, 234.0])
+
+
+def test_acquire_baseline(RE, setup):
+    beamline = TiledBeamline(name="bl")
+    beamline.det.noise.put(False)
+
+    dofs = [
+        DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
+        DOF(movable=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
+    ]
+
+    objectives = [
+        Objective(name="bl_det_sum", target="max"),
+        Objective(name="bl_det_wid_x", target="min", constraint=(None, "baseline")),
+        Objective(name="bl_det_wid_y", target="min", constraint=(None, "baseline")),
+    ]
+
+    agent = Agent(
+        readables=[beamline.det],
+        dofs=dofs,
+        objectives=objectives,
+        db=setup,
+    )
+    agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
+    RE(agent.acquire_baseline())
+    agent.configure_generation_strategy()
+    df = agent.summarize()
+    assert len(df) == 1
+    assert df["arm_name"].values[0] == "baseline"
+    RE(agent.learn(iterations=6, n=1))
