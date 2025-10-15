@@ -113,7 +113,7 @@ class Agent:
         if self.digestion == default_digestion_function:
             self.digestion_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
 
-    def measure_baseline(self, parameterization: TParameterization | None = None, arm_name: str | None = None) -> MsgGenerator[None]:
+    def acquire_baseline(self, parameterization: TParameterization | None = None, arm_name: str | None = None) -> MsgGenerator[None]:
         """
         Measure a baseline of the objectives.
 
@@ -126,7 +126,7 @@ class Agent:
         """
         if parameterization is None:
             parameterization = yield from read([dof.movable for dof in self.dofs.values()])
-        trial_index = self.client.attach_baseline(parameterization=parameterization, arm_name=arm_name)
+        trial_index = self.client.attach_baseline(parameters=parameterization, arm_name=arm_name)
         trial = {trial_index: parameterization}
         outcomes = yield from self.acquire(trial)
         self.tell(trial, outcomes)
@@ -224,7 +224,7 @@ class Agent:
 
         unpacked_list = []
         for dof_name, values in unpacked_dict.items():
-            unpacked_list.append(self.dofs[dof_name].device)
+            unpacked_list.append(self.dofs[dof_name].movable)
             unpacked_list.append(values)
 
         return unpacked_list
