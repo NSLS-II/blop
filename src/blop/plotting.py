@@ -406,7 +406,7 @@ def _plot_valid_one_dof(agent, size=16, lw=1e0):
     agent.valid_fig, agent.valid_ax = plt.subplots(1, 1, figsize=(6, 4 * len(agent.objectives)), constrained_layout=True)
 
     x_dof = agent.dofs(active=True)[0]
-    x_values = agent.table[x_dof.device.name]
+    x_values = agent.table[x_dof.movable.name]
 
     test_inputs = agent.sample(method="grid")
     constraint = agent.constraint(agent.dofs.transform(test_inputs))[..., 0]
