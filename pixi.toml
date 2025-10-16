@@ -73,7 +73,7 @@ python = "3.12.*"
 
 [feature.dev.tasks]
 check = "pre-commit run --all-files"
-tests = "pytest src/blop/tests"
+integration-tests = "pytest src/blop/tests/integration"
 
 [feature.docs.tasks]
 build-docs = "make -C docs/ html"
