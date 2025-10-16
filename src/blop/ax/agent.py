@@ -1,4 +1,5 @@
 import logging
+import warnings
 from collections import defaultdict
 from collections.abc import Callable, Generator
 from typing import Any, Concatenate, Literal, ParamSpec
@@ -133,7 +134,32 @@ class Agent:
         outcomes = yield from self.acquire(trial)
         self.tell(trial, outcomes)
 
-    def ask(self, n: int = 1) -> dict[int, TParameterization]:
+    def suggest(self, num_points: int | None = None) -> list[dict]:
+        """
+        Returns a set of points in the input space, to be evaulated next.
+
+        Parameters
+        ----------
+        num_points : int | None, optional
+            The number of points to suggest. If not provided, will default to 1.
+
+        Returns
+        -------
+        list[dict]
+            A list of dictionaries, each containing a parameterization of a point to evaluate next.
+        """
+        if num_points is None:
+            num_points = 1
+        next_trials = self.get_next_trials(n=num_points)
+        return [
+            {
+                "_id": trial_index,
+                **parameterization,
+            }
+            for trial_index, parameterization in next_trials.items()
+        ]
+
+    def get_next_trials(self, n: int = 1) -> dict[int, TParameterization]:
         """
         Get the next trial(s) to run.
 
@@ -150,7 +176,49 @@ class Agent:
         """
         return self.client.get_next_trials(n)
 
-    def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
+    def ask(self, n: int = 1) -> dict[int, TParameterization]:
+        """
+        Get the next trial(s) to run.
+
+        .. deprecated:: v0.8.1
+            Use suggest or get_next_trials instead.
+
+        Parameters
+        ----------
+        n : int, optional
+            The number of trials to get. Higher values can lead to more efficient data acquisition,
+            but slower optimization progress.
+
+        Returns
+        -------
+        dict[int, TParameterization]
+            A dictionary mapping trial indices to their suggested parameterizations.
+        """
+        warnings.warn("ask is deprecated. Use get_next_trials or suggest instead.", DeprecationWarning, stacklevel=2)
+        return self.get_next_trials(n)
+
+    def ingest(self, points: list[dict]) -> None:
+        """
+        Ingest a set of points into the experiment. Either from previously suggested points or from an external source.
+
+        If points are from an external source, the dictionaries must contain keys for the DOF names.
+
+        Parameters
+        ----------
+        points : list[dict]
+            A list of dictionaries, each containing at least the outcome(s) of a trial
+            and optionally the associated parameterization
+        """
+        for point in points:
+            outcomes = {k: v for k, v in point.items() if k in self.objectives.keys()}
+            trial_index = point.pop("_id", None)
+            if trial_index is None:
+                parameters = {k: v for k, v in point.items() if k in self.dofs.keys()}
+                self._attach_single_trial(parameters=parameters, outcomes=outcomes)
+            else:
+                self.client.complete_trial(trial_index=trial_index, raw_data=outcomes)
+
+    def complete_trials(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
         """
         Complete trial(s) by providing the outcomes.
 
@@ -171,6 +239,35 @@ class Agent:
                 trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None
             )
 
+    def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
+        """
+        Complete trial(s) by providing the outcomes.
+
+        .. deprecated:: v0.8.1
+            Use ingest or complete_trials instead.
+
+        Parameters
+        ----------
+        trials : dict[int, TParameterization]
+            A dictionary mapping trial indices to their suggested parameterizations.
+        outcomes : dict[int, TOutcome], optional
+            A dictionary mapping trial indices to their outcomes. If not provided, the trial will be completed
+            with no outcomes.
+
+        See Also
+        --------
+        ax.Client.complete_trial : The Ax method to complete a trial.
+        """
+        warnings.warn("tell is deprecated. Use ingest or complete_trials instead.", DeprecationWarning, stacklevel=2)
+        return self.complete_trials(trials=trials, outcomes=outcomes)
+
+    def _attach_single_trial(self, parameters: TParameterization, outcomes: TOutcome) -> None:
+        """
+        Attach a single trial to the experiment.
+        """
+        trial_index = self.client.attach_trial(parameters=parameters)
+        self.client.complete_trial(trial_index=trial_index, raw_data=outcomes, progression=0)
+
     def attach_data(self, data: list[tuple[TParameterization, TOutcome]]) -> None:
         """
         Attach data to the experiment in the form of new trials. Useful for
@@ -186,9 +283,8 @@ class Agent:
         ax.Client.attach_trial : The Ax method to attach a trial.
         ax.Client.complete_trial : The Ax method to complete a trial.
         """
-        for parameters, raw_data in data:
-            trial_index = self.client.attach_trial(parameters=parameters)
-            self.client.complete_trial(trial_index=trial_index, raw_data=raw_data, progression=0)
+        for parameters, outcomes in data:
+            self._attach_single_trial(parameters=parameters, outcomes=outcomes)
 
     def learn(self, iterations: int = 1, n: int = 1) -> Generator[dict[int, TOutcome], None, None]:
         """
