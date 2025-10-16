@@ -159,14 +159,14 @@ class Agent:
             for trial_index, parameterization in next_trials.items()
         ]
 
-    def get_next_trials(self, n: int = 1) -> dict[int, TParameterization]:
+    def get_next_trials(self, max_trials: int = 1, **kwargs: Any) -> dict[int, TParameterization]:
         """
         Get the next trial(s) to run.
 
         Parameters
         ----------
-        n : int, optional
-            The number of trials to get. Higher values can lead to more efficient data acquisition,
+        max_trials : int, optional
+            The maximum number of trials to get. Higher values can lead to more efficient data acquisition,
             but slower optimization progress.
 
         Returns
@@ -174,7 +174,7 @@ class Agent:
         dict[int, TParameterization]
             A dictionary mapping trial indices to their suggested parameterizations.
         """
-        return self.client.get_next_trials(n)
+        return self.client.get_next_trials(max_trials, **kwargs)
 
     def ask(self, n: int = 1) -> dict[int, TParameterization]:
         """
@@ -218,7 +218,9 @@ class Agent:
             else:
                 self.client.complete_trial(trial_index=trial_index, raw_data=outcomes)
 
-    def complete_trials(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
+    def complete_trials(
+        self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None, **kwargs: Any
+    ) -> None:
         """
         Complete trial(s) by providing the outcomes.
 
@@ -236,7 +238,7 @@ class Agent:
         """
         for trial_index in trials.keys():
             self.client.complete_trial(
-                trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None
+                trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None, **kwargs
             )
 
     def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
@@ -304,9 +306,9 @@ class Agent:
             A generator that yields the outcomes of the trials.
         """
         for _ in range(iterations):
-            trials = self.ask(n)
+            trials = self.get_next_trials(n)
             data = yield from self.acquire(trials)
-            self.tell(trials, data)
+            self.complete_trials(trials, data)
 
     def _unpack_parameters(self, parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
         """Unpack the parameterizations into Bluesky plan arguments."""
