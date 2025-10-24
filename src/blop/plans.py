@@ -8,12 +8,13 @@ import bluesky.plans as bp
 from ax.api.types import TParameterization, TParameterValue
 from bluesky.protocols import Movable, Readable, Reading
 from bluesky.run_engine import Msg
-from bluesky.utils import MsgGenerator
+from bluesky.utils import MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
 
 from .dofs import DOF
 
 
+@plan
 def list_scan_with_delay(*args: Any, delay: float = 0, **kwargs: Any) -> Generator[Msg, None, str]:
     "Accepts all the normal 'scan' parameters, plus an optional delay."
 
@@ -31,6 +32,7 @@ def list_scan_with_delay(*args: Any, delay: float = 0, **kwargs: Any) -> Generat
     return uid
 
 
+@plan
 def default_acquisition_plan(
     dofs: Sequence[DOF], inputs: Mapping[str, Sequence[Any]], dets: Sequence[Signal], **kwargs: Any
 ) -> Generator[Msg, None, str]:
@@ -54,6 +56,7 @@ def default_acquisition_plan(
     return uid
 
 
+@plan
 def read(readables: Sequence[Readable], **kwargs: Any) -> MsgGenerator[dict[str, Any]]:
     """
     Read the current values of the given readables.
@@ -69,6 +72,7 @@ def read(readables: Sequence[Readable], **kwargs: Any) -> MsgGenerator[dict[str,
     return results
 
 
+@plan
 def take_reading_with_background(
     readables: Sequence[Readable],
     name: str = "primary",
@@ -145,6 +149,7 @@ def _unpack_parameters(dofs: dict[str, DOF], parameterizations: list[TParameteri
     return unpacked_list
 
 
+@plan
 def acquire(
     readables: Sequence[Readable],
     dofs: Sequence[DOF],
@@ -185,6 +190,7 @@ def acquire(
     )
 
 
+@plan
 def acquire_with_background(
     readables: Sequence[Readable],
     dofs: Sequence[DOF],
