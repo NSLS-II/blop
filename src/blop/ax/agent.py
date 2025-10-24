@@ -1,6 +1,5 @@
 import logging
 import warnings
-from collections import defaultdict
 from collections.abc import Callable, Generator
 from typing import Any, Concatenate, Literal, ParamSpec
 
@@ -8,10 +7,10 @@ import databroker
 import pandas as pd
 from ax import Client
 from ax.analysis import Analysis, AnalysisCard, ContourPlot
-from ax.api.types import TOutcome, TParameterization, TParameterValue
+from ax.api.types import TOutcome, TParameterization
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from bluesky.plans import list_scan
-from bluesky.protocols import Movable, Readable
+from bluesky.protocols import Readable
 from bluesky.utils import Msg, MsgGenerator
 from databroker import Broker
 from tiled.client.container import Container
@@ -309,25 +308,6 @@ class Agent:
             trials = self.get_next_trials(n)
             data = yield from self.acquire(trials)
             self.complete_trials(trials, data)
-
-    def _unpack_parameters(self, parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
-        """Unpack the parameterizations into Bluesky plan arguments."""
-        unpacked_dict = defaultdict(list)
-        for parameterization in parameterizations:
-            for dof_name in self.dofs.keys():
-                if dof_name in parameterization:
-                    unpacked_dict[dof_name].append(parameterization[dof_name])
-                else:
-                    raise ValueError(
-                        f"Parameter {dof_name} not found in parameterization. Parameterization: {parameterization}"
-                    )
-
-        unpacked_list = []
-        for dof_name, values in unpacked_dict.items():
-            unpacked_list.append(self.dofs[dof_name].movable)
-            unpacked_list.append(values)
-
-        return unpacked_list
 
     def acquire(self, trials: dict[int, TParameterization]) -> Generator[Msg, str, dict[int, TOutcome] | None]:
         """
