@@ -110,6 +110,7 @@ lint.select = [
 lint.ignore = [
   "D",  # TODO: Add docstrings, then enforce these errors
   "SLF001",  # TODO: Fix private member access, https://github.com/NSLS-II/blop/issues/94
+  "B901", # return-in-generator - https://docs.astral.sh/ruff/rules/return-in-generator/
 ]
 lint.preview = true # so that preview mode PLC2701, and LOG015 is enabled
 

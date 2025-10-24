@@ -92,14 +92,15 @@ def take_reading_with_background(
     Returns
     -------
     Mapping[str, Reading]
-        Only the reading with the given name is returned.
+        The readings from the final trigger_and_read operation.
     """
     if block_beam is None or unblock_beam is None:
         raise ValueError("block_beam and unblock_beam plans must be provided.")
     yield from block_beam()
     yield from bps.trigger_and_read(readables, name=f"{name}_background")
     yield from unblock_beam()
-    return (yield from bps.trigger_and_read(readables, name=name))
+    reading = yield from bps.trigger_and_read(readables, name=name)
+    return reading
 
 
 def per_step_background_read(
@@ -122,13 +123,7 @@ def per_step_background_read(
     --------
     bluesky.plans.one_nd_step : The Bluesky plan to execute for each step of the scan.
     """
-
-    def take_reading(readables: Sequence[Readable], name: str = "primary") -> MsgGenerator[Mapping[str, Reading]]:
-        yield from block_beam()
-        yield from bps.trigger_and_read(readables, name=f"{name}_background")
-        yield from unblock_beam()
-        yield from bps.trigger_and_read(readables, name=name)
-
+    take_reading = functools.partial(take_reading_with_background, block_beam=block_beam, unblock_beam=unblock_beam)
     return functools.partial(bps.one_nd_step, take_reading=take_reading)
 
 
@@ -183,7 +178,48 @@ def acquire(
     bluesky.plans.list_scan : The Bluesky plan to acquire data.
     """
     plan_args = _unpack_parameters(dofs, trials.values())
-    uid = yield from bp.list_scan(
-        readables, *plan_args, md={"ax_trial_indices": list(trials.keys())}, per_step=per_step, **kwargs
+    return (
+        yield from bp.list_scan(
+            readables, *plan_args, md={"ax_trial_indices": list(trials.keys())}, per_step=per_step, **kwargs
+        )
     )
-    return uid
+
+
+def acquire_with_background(
+    readables: Sequence[Readable],
+    dofs: Sequence[DOF],
+    trials: dict[int, TParameterization],
+    block_beam: Callable[[], MsgGenerator[None]],
+    unblock_beam: Callable[[], MsgGenerator[None]],
+    **kwargs: Any,
+) -> MsgGenerator[str]:
+    """
+    A plan to acquire data for optimization with background readings.
+
+    Parameters
+    ----------
+    readables: Sequence[Readable]
+        The readables to trigger and read.
+    dofs: Sequence[DOF]
+        The DOFs to move.
+    trials: dict[int, TParameterization]
+        A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
+    block_beam: Callable[[], MsgGenerator[None]]
+        A callable that blocks the beam (e.g. by closing a shutter).
+    unblock_beam: Callable[[], MsgGenerator[None]]
+        A callable that unblocks the beam (e.g. by opening a shutter).
+    **kwargs: Any
+        Additional keyword arguments to pass to the list_scan plan.
+
+    Returns
+    -------
+    str
+        The UID of the Bluesky run.
+
+    See Also
+    --------
+    acquire : The base plan to acquire data.
+    per_step_background_read : The per-step plan to take background readings.
+    """
+    per_step = per_step_background_read(block_beam, unblock_beam)
+    return (yield from acquire(readables, dofs, trials, per_step=per_step, **kwargs))
