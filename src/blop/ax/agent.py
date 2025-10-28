@@ -19,7 +19,7 @@ from ..data_access import DatabrokerDataAccess, TiledDataAccess
 from ..digestion_function import default_digestion_function
 from ..dofs import DOF
 from ..objectives import Objective
-from ..plans import read, acquire
+from ..plans import acquire, read
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
@@ -309,7 +309,9 @@ class Agent:
             data = yield from self.acquire(trials)
             self.complete_trials(trials, data)
 
-    def acquire(self, trials: dict[int, TParameterization], per_step: PerStep | None = None) -> MsgGenerator[dict[int, TOutcome]]:
+    def acquire(
+        self, trials: dict[int, TParameterization], per_step: PerStep | None = None
+    ) -> MsgGenerator[dict[int, TOutcome]]:
         """
         Acquire data given a set of trials. Deploys the trials in a single Bluesky run and
         returns the outcomes of the trials computed by the digestion function.
