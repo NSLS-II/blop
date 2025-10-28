@@ -1,6 +1,5 @@
 import logging
 import warnings
-from collections import defaultdict
 from collections.abc import Callable, Generator
 from typing import Any, Concatenate, Literal, ParamSpec
 
@@ -8,11 +7,11 @@ import databroker
 import pandas as pd
 from ax import Client
 from ax.analysis import Analysis, AnalysisCard, ContourPlot
-from ax.api.types import TOutcome, TParameterization, TParameterValue
+from ax.api.types import TOutcome, TParameterization
 from ax.generation_strategy.generation_strategy import GenerationStrategy
-from bluesky.plans import list_scan
-from bluesky.protocols import Movable, Readable
-from bluesky.utils import Msg, MsgGenerator
+from bluesky.plans import PerStep
+from bluesky.protocols import Readable
+from bluesky.utils import MsgGenerator
 from databroker import Broker
 from tiled.client.container import Container
 
@@ -20,7 +19,7 @@ from ..data_access import DatabrokerDataAccess, TiledDataAccess
 from ..digestion_function import default_digestion_function
 from ..dofs import DOF
 from ..objectives import Objective
-from ..plans import read
+from ..plans import acquire, read
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
@@ -310,26 +309,9 @@ class Agent:
             data = yield from self.acquire(trials)
             self.complete_trials(trials, data)
 
-    def _unpack_parameters(self, parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
-        """Unpack the parameterizations into Bluesky plan arguments."""
-        unpacked_dict = defaultdict(list)
-        for parameterization in parameterizations:
-            for dof_name in self.dofs.keys():
-                if dof_name in parameterization:
-                    unpacked_dict[dof_name].append(parameterization[dof_name])
-                else:
-                    raise ValueError(
-                        f"Parameter {dof_name} not found in parameterization. Parameterization: {parameterization}"
-                    )
-
-        unpacked_list = []
-        for dof_name, values in unpacked_dict.items():
-            unpacked_list.append(self.dofs[dof_name].movable)
-            unpacked_list.append(values)
-
-        return unpacked_list
-
-    def acquire(self, trials: dict[int, TParameterization]) -> Generator[Msg, str, dict[int, TOutcome] | None]:
+    def acquire(
+        self, trials: dict[int, TParameterization], per_step: PerStep | None = None
+    ) -> MsgGenerator[dict[int, TOutcome]]:
         """
         Acquire data given a set of trials. Deploys the trials in a single Bluesky run and
         returns the outcomes of the trials computed by the digestion function.
@@ -341,16 +323,14 @@ class Agent:
 
         Returns
         -------
-        Generator[Msg, str, dict[int, TOutcome] | None]
-            A generator that yields the outcomes of the trials.
+        MsgGenerator[dict[int, TOutcome]]
+            A message generator that yields the outcomes of the trials.
 
         See Also
         --------
-        bluesky.plans.list_scan : The Bluesky plan to acquire data.
-        bluesky.utils.Msg : The Bluesky message type.
+        blop.plans.acquire : The Bluesky plan to acquire data.
         """
-        plan_args = self._unpack_parameters(trials.values())
-        uid = yield from list_scan(self.readables, *plan_args, md={"ax_trial_indices": list(trials.keys())})
+        uid = yield from acquire(self.readables, self.dofs, trials, per_step=per_step)
         results = self.data_access.get_data(uid)
         return {trial_index: self.digestion(trial_index, results, **self.digestion_kwargs) for trial_index in trials.keys()}
 
