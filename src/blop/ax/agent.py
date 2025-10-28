@@ -328,7 +328,7 @@ class Agent:
         --------
         blop.plans.acquire : The Bluesky plan to acquire data.
         """
-        uid = yield from acquire(self.readables, self.dofs.values(), trials, per_step=per_step)
+        uid = yield from acquire(self.readables, self.dofs, trials, per_step=per_step)
         results = self.data_access.get_data(uid)
         return {trial_index: self.digestion(trial_index, results, **self.digestion_kwargs) for trial_index in trials.keys()}
 

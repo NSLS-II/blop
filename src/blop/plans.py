@@ -152,7 +152,7 @@ def _unpack_parameters(dofs: dict[str, DOF], parameterizations: list[TParameteri
 @plan
 def acquire(
     readables: Sequence[Readable],
-    dofs: Sequence[DOF],
+    dofs: dict[str, DOF],
     trials: dict[int, TParameterization],
     per_step: bp.PerStep | None = None,
     **kwargs: Any,
@@ -164,8 +164,8 @@ def acquire(
     ----------
     readables: Sequence[Readable]
         The readables to trigger and read.
-    dofs: Sequence[DOF]
-        The DOFs to move.
+    dofs: dict[str, DOF]
+        A dictionary mapping DOF names to DOFs.
     trials: dict[int, TParameterization]
         A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
     per_step: bp.PerStep | None = None
