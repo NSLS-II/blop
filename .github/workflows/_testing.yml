@@ -34,11 +34,11 @@ jobs:
           cache: false
           activate-environment: ${{ matrix.python-version }}
 
-      - name: Test with pytest
-        run: |
-          set -vxeuo pipefail
-          coverage run -m pytest
-          coverage report -m
+      - name: Run unit tests
+        run: pixi run unit-tests
+
+      - name: Run integration tests
+        run: pixi run integration-tests
 
       - name: Test with doctest
         run: pixi run test-docs
