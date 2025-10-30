@@ -444,6 +444,41 @@ class DOF:
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will always be active.
         """
         self.active = False
+        
+
+class DOFConstraint:
+
+    def __init__(self, constraint: str, **movables: dict[str, NamedMovable]) -> None:
+        self.constraint = constraint
+        self.movables = movables
+        self._validate_movables()
+    
+    def _validate_movables(self) -> None:
+        if not self.movables:
+            raise ValueError(
+                "DOFConstraint requires at least one movable to be specified.\n"
+                "Use keyword arguments to map template variables to movables:\n"
+                "  DOFConstraint('x + y <= 12', x=motor_x, y=motor_y)\n\n"
+                "The variable names (x, y) are your choice and make the constraint readable."
+            )
+        invalidated = []
+        for name, movable in self.movables.items():
+            if name not in self.constraint:
+                invalidated.append((name, movable))
+        
+        if len(invalidated) > 0:
+            msg = f"The following movables did not have matching names in the constraint '{self.constraint}': {', '.join([f'{name}={movable.name}' for name, movable in invalidated])}"
+            raise ValueError(msg)
+
+    def to_ax_constraint(self) -> str:
+        """Convert the constraint to a string that can be used by Ax."""
+        return self.constraint.format(**self.movables)
+
+    def __str__(self) -> str:
+        return self.to_ax_constraint()
+        
+    def __repr__(self) -> str:
+        return f"DOFConstraint('{self.constraint}', {', '.join([f'{name}={movable.name}' for name, movable in self.movables.items()])})"
 
 
 class DOFList(Sequence[DOF]):
