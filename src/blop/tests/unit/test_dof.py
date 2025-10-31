@@ -1,3 +1,5 @@
+import pytest
+
 from blop.dofs import DOF, DOFConstraint
 
 from .conftest import MovableSignal
@@ -24,3 +26,10 @@ def test_dof_constraint():
     constraint = DOFConstraint(constraint="x1 + x2 <= 10", x1=movable1, x2=movable2)
     assert constraint.to_ax_constraint() == "test_movable1 + test_movable2 <= 10"
     assert str(constraint) == "test_movable1 + test_movable2 <= 10"
+
+
+def test_invalid_dof_constraint():
+    movable1 = MovableSignal(name="test_movable1")
+    movable2 = MovableSignal(name="test_movable2")
+    with pytest.raises(ValueError):
+        DOFConstraint(constraint="x1 + x2 <= 10", x1=movable1, x3=movable2)
