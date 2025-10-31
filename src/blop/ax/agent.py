@@ -1,6 +1,6 @@
 import logging
 import warnings
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Sequence
 from typing import Any, Concatenate, Literal, ParamSpec
 
 import databroker
@@ -17,7 +17,7 @@ from tiled.client.container import Container
 
 from ..data_access import DatabrokerDataAccess, TiledDataAccess
 from ..digestion_function import default_digestion_function
-from ..dofs import DOF
+from ..dofs import DOF, DOFConstraint
 from ..objectives import Objective
 from ..plans import acquire, read
 from .adapters import configure_metrics, configure_objectives, configure_parameters
@@ -43,6 +43,8 @@ class Agent:
         The objectives which the agent will try to optimize.
     db : Broker | Container
         The databroker or tiled instance to read back data from a Bluesky run.
+    dof_constraints : Sequence[DOFConstraint], optional
+        Constraints on DOFs to refine the search space.
     digestion : DigestionFunction
         The function to produce objective values from a dataframe of acquisition results.
     digestion_kwargs : dict
@@ -51,15 +53,17 @@ class Agent:
 
     def __init__(
         self,
-        readables: list[Readable],
-        dofs: list[DOF],
-        objectives: list[Objective],
+        readables: Sequence[Readable],
+        dofs: Sequence[DOF],
+        objectives: Sequence[Objective],
         db: Broker | Container,
+        dof_constraints: Sequence[DOFConstraint] = None,
         digestion: DigestionFunction = default_digestion_function,
         digestion_kwargs: dict | None = None,
     ):
         self.readables = readables
         self.dofs = {dof.name: dof for dof in dofs}
+        self.dof_constraints = dof_constraints
         self.objectives = {obj.name: obj for obj in objectives}
         self.client = Client()
         self.digestion = digestion
@@ -104,7 +108,14 @@ class Agent:
         metrics = configure_metrics(self.objectives.values())
 
         self.client.configure_experiment(
-            parameters, name=name, description=description, experiment_type=experiment_type, owner=owner
+            parameters,
+            parameter_constraints=(constraint.to_ax_constraint() for constraint in self.dof_constraints)
+            if self.dof_constraints
+            else None,
+            name=name,
+            description=description,
+            experiment_type=experiment_type,
+            owner=owner,
         )
         self.client.configure_optimization(objectives, objective_constraints)
         self.client.configure_metrics(metrics)
