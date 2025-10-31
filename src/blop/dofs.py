@@ -1,4 +1,5 @@
 import logging
+import re
 import time as ttime
 import uuid
 import warnings
@@ -444,17 +445,18 @@ class DOF:
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will always be active.
         """
         self.active = False
-        
+
 
 class DOFConstraint:
-
     def __init__(self, constraint: str, **movables: dict[str, NamedMovable]) -> None:
-        self.constraint = constraint
-        self.movables = movables
+        self._constraint = constraint
+        self._movables = movables
         self._validate_movables()
-    
+        self._movable_names = {key: movable.name for key, movable in self._movables.items()}
+        self._template = self._to_template()
+
     def _validate_movables(self) -> None:
-        if not self.movables:
+        if not self._movables:
             raise ValueError(
                 "DOFConstraint requires at least one movable to be specified.\n"
                 "Use keyword arguments to map template variables to movables:\n"
@@ -462,23 +464,36 @@ class DOFConstraint:
                 "The variable names (x, y) are your choice and make the constraint readable."
             )
         invalidated = []
-        for name, movable in self.movables.items():
-            if name not in self.constraint:
+        for name, movable in self._movables.items():
+            if name not in self._constraint:
                 invalidated.append((name, movable))
-        
+
         if len(invalidated) > 0:
-            msg = f"The following movables did not have matching names in the constraint '{self.constraint}': {', '.join([f'{name}={movable.name}' for name, movable in invalidated])}"
+            msg = (
+                "The following movables did not have matching names in the constraint "
+                f"'{self._constraint}': {', '.join([f'{name}={movable.name}' for name, movable in invalidated])}"
+            )
             raise ValueError(msg)
+
+    def _to_template(self) -> str:
+        """Convert the constraint to a template string."""
+        result = self._constraint
+        for key in self._movables.keys():
+            result = re.sub(f"\\b{key}\\b", f"{{{key}}}", result)
+        return result
 
     def to_ax_constraint(self) -> str:
         """Convert the constraint to a string that can be used by Ax."""
-        return self.constraint.format(**self.movables)
+        return self._template.format(**self._movable_names)
 
     def __str__(self) -> str:
         return self.to_ax_constraint()
-        
+
     def __repr__(self) -> str:
-        return f"DOFConstraint('{self.constraint}', {', '.join([f'{name}={movable.name}' for name, movable in self.movables.items()])})"
+        return (
+            f"DOFConstraint('{self._constraint}', "
+            f"{', '.join([f'{name}={movable.name}' for name, movable in self._movables.items()])})"
+        )
 
 
 class DOFList(Sequence[DOF]):
