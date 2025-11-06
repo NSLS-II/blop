@@ -16,6 +16,7 @@
 # add these directories to sys.path here. If the directory is relative to the
 # documentation root, use os.path.abspath to make it absolute, like shown here.
 #
+import doctest
 import os
 import sys
 
@@ -90,6 +91,9 @@ nb_render_image_options = {
 nb_execution_mode = "auto"
 if "doctest" in sys.argv:
     nb_execution_mode = "off"
+
+# Enable ELLIPSIS option for doctest to match any substring including empty
+doctest_default_flags = doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE
 
 # MyST-NB output rendering configuration
 nb_merge_streams = True  # Merge consecutive stdout/stderr outputs into single blocks
