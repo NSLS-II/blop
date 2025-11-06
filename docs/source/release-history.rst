@@ -2,6 +2,23 @@
 Release History
 ===============
 
+v0.8.1 (2025-11-06)
+-------------------
+
+What's Changed
+..............
+* Pin networkx and tabulate (required by python-tsp) by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/171
+* Update blop conda-forge badge by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/172
+* Baseline measurements by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/173
+* Implement suggest & ingest from gest-api by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/174
+* Move tests to tests/integration by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/176
+* Improve Bluesky plans by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/177
+* Include ellipses in doctest by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/179
+* Parameter constraints by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/181
+
+
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.8.0...v0.8.1>`__
+
 v0.8.0 (2025-10-13)
 -------------------
 
