@@ -63,7 +63,8 @@ class ZMQConsumer:
         self._zmq_thread = None
 
     def start_zmq_listener_thread(self):
-        print("Starting ZMQ Callback Thread")
+        logger.info(f"Starting ZMQ Callback Thread")
+        
         self._zmq_thread = threading.Thread(target=self.zmq_consumer.start, name="zmq-consumer", daemon=True)
         self._zmq_thread.start()
 
@@ -86,7 +87,7 @@ class BlopQserverAgent(BlopFullAgent):
         train_every: int = 3,
     ):
         """
-        A Bayesian optimization agent.
+        A Bayesian optimization agent that acts with the qserver.
 
         Parameters
         ----------
@@ -94,10 +95,8 @@ class BlopQserverAgent(BlopFullAgent):
             The degrees of freedom that the agent can control, which determine the output of the model.
         objectives : Sequence[Objective]
             The objectives which the agent will try to optimize.
-        acquisition_plan : Callable, optional
-            A plan that samples the beamline for some given inputs, by default default_acquisition_plan.
-            Called directly in Agent, used only by ``__name__`` in BlueskyAdaptiveAgent.
-            Default: ``default_acquisition_plan``
+        acquisition_plan : string
+            The name of the plan which will be called remotely on the qserver
         db : tiled_client containing measurement results
         verbose : bool, optional
             To be verbose or not, by default False
@@ -208,7 +207,7 @@ class BlopQserverAgent(BlopFullAgent):
         if self._listen_to_events:
             self.acquisition_finished = True
             self.ingest()
-            print("Stop Document found, not yet checking if it's the right one!")
+            logger.info("Stop Document found, not yet checking if it's the right one!")
 
     def suggest(self):
         """
@@ -227,11 +226,11 @@ class BlopQserverAgent(BlopFullAgent):
 
             # acquire new table from the experiment. This function is blocking.
             self.current_acqf_name = res["acqf_name"]
-            print("sending suggestion to acquire")
+            logger.info("sending suggestion to acquire")
             self.agent_suggestion_uid = self.acquire(res["points"])
 
     def acquire(self, points: dict[str, list[ArrayLike]]):
-        """Acquire and digest according to the self's acquisition and digestion plans.
+        """Acquire and digest according to the acquisition and digestion plans.
 
         This method will send a plan to the queueserver and block until the stop document of that plan is recieved
 
@@ -268,7 +267,7 @@ class BlopQserverAgent(BlopFullAgent):
         # Put the code in here to create a pandas dataframe from the input data in our run(s).
         # We can look in the first run to get data from others.
 
-        print("Parsing runs and reading dataframe")
+        logger.info("Parsing runs and reading dataframe")
         df = runs[-1].primary.read().to_dataframe()
         return df
 
@@ -289,7 +288,7 @@ class BlopQserverAgent(BlopFullAgent):
 
         if self.learn_continuous_suggestion:
             if self.learn_current_itteration < self.learn_num_itterations:
-                print("making another suggestion")
+                logger.info("making another suggestion")
                 self.suggest()
             else:
                 self.learn_current_itteration = 0
