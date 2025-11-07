@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -eux
+
+mkdir -p ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings
+cp .binder/overrides.json ${NB_PYTHON_PREFIX}/share/jupyter/lab/settings/overrides.json
+
+# Install an editable version of blop
+pip install -e .[dev]

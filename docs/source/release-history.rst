@@ -2,6 +2,70 @@
 Release History
 ===============
 
+v0.8.1 (2025-11-06)
+-------------------
+
+What's Changed
+..............
+* Pin networkx and tabulate (required by python-tsp) by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/171
+* Update blop conda-forge badge by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/172
+* Baseline measurements by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/173
+* Implement suggest & ingest from gest-api by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/174
+* Move tests to tests/integration by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/176
+* Improve Bluesky plans by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/177
+* Include ellipses in doctest by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/179
+* Parameter constraints by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/181
+
+
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.8.0...v0.8.1>`__
+
+v0.8.0 (2025-10-13)
+-------------------
+
+What's Changed
+..............
+* DOC: add citation information to `README` by `@mrakitin <https://github.com/mrakitin>`_ in https://github.com/NSLS-II/blop/pull/119
+* Ax Adapters for Blop and Minimal Agent Interface by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/126
+* Adding Pixi by `@jessica-moylan <https://github.com/jessica-moylan>`_ in https://github.com/NSLS-II/blop/pull/135
+* Ax custom generation strategies by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/136
+* Ax Analyses by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/138
+* Adding tiled comptability using dictionaries by `@jessica-moylan <https://github.com/jessica-moylan>`_ in https://github.com/NSLS-II/blop/pull/143
+* Implement multitask models by `@thomaswmorris <https://github.com/thomaswmorris>`_ in https://github.com/NSLS-II/blop/pull/124
+* Refactored tests to reduce redundancy (179 -> 35 tests) by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/148
+* Update tutorial notebooks by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/147
+* Deprecating older APIs by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/146
+* Auto-generated API docs for Agent, AxAgent, DOFs, and Objectives by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/149
+* Executable tutorials using jupyterlab by `@jessica-moylan <https://github.com/jessica-moylan>`_ in https://github.com/NSLS-II/blop/pull/154
+* Update and simplify packaging by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/155
+* Documentation Update by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/160
+* Add docs on attaching data to experiments by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/162
+* How-to guide for custom generation strategies by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/163
+
+New Contributors
+................
+* `@jessica-moylan <https://github.com/jessica-moylan>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/117
+
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.5...v0.8.0>`__
+
+v0.7.5 (2025-06-18)
+-------------------
+
+What's Changed
+..............
+* Remove 'created' from release types by `@jennmald <https://github.com/jennmald>`_ in https://github.com/NSLS-II/blop/pull/105
+* Refactor DOFs to fix trust domain behavior by `@thomaswmorris <https://github.com/thomaswmorris>`_ in https://github.com/NSLS-II/blop/pull/97
+* Update installation.rst to reflect the version of python tested against by `@whs92 <https://github.com/whs92>`_ in https://github.com/NSLS-II/blop/pull/107
+* Fix CI failures due to domain transforms by `@thomaswmorris <https://github.com/thomaswmorris>`_ in https://github.com/NSLS-II/blop/pull/108
+* Update documentation for `Agent`, `DOF`, and `Objective` by `@thomaswmorris <https://github.com/thomaswmorris>`_ in https://github.com/NSLS-II/blop/pull/113
+* Remove ortools as a dependency by `@thomaswmorris <https://github.com/thomaswmorris>`_ in https://github.com/NSLS-II/blop/pull/115
+* Ax integrations with the Bluesky ecosystem by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/112
+
+New Contributors
+................
+* `@whs92 <https://github.com/whs92>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/107
+
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.4...v0.7.5>`__
+
 v0.7.4 (2025-03-04)
 -------------------
 * Add missing files for documentation
@@ -25,7 +89,7 @@ New Contributors
 * `@maffettone <https://github.com/maffettone>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/86
 * `@thomashopkins32 <https://github.com/thomashopkins32>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/95
 
-**Full Changelog**: https://github.com/NSLS-II/blop/compare/v0.7.2...v0.7.3
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.2...v0.7.3>`__
 
 v0.7.2 (2025-01-31)
 -------------------

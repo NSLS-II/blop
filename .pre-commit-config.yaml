@@ -9,13 +9,6 @@ repos:
 
   - repo: local
     hooks:
-      - id: ruff
-        name: lint with ruff
-        language: system
-        entry: ruff check --force-exclude
-        types: [python]
-        require_serial: true
-
       - id: ruff-format
         name: format with ruff
         language: system
@@ -23,13 +16,12 @@ repos:
         types: [python]
         require_serial: true
 
-      - id: import-linter
-        name: ensure import directionality 
-        pass_filenames: false
+      - id: ruff
+        name: lint with ruff
         language: system
-        entry: lint-imports
+        entry: ruff check --force-exclude
         types: [python]
-        require_serial: false
+        require_serial: true
 
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1

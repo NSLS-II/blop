@@ -1,3 +1,5 @@
+build/*
+
 # setuptools_scm
 src/*/_version.py
 
@@ -80,6 +82,18 @@ target/
 
 # VSCode
 .vscode/
+.cursor/
 
 # Ipython Notebook
 .ipynb_checkpoints
+
+# All ipynb files (use MyST markdown and jupytext instead)
+*.ipynb
+
+# Jupyterlite Database
+.jupyterlite.doit.db
+
+# pixi environments
+.pixi
+pixi.lock
+*.egg-info

@@ -2,8 +2,9 @@ from typing import Any
 
 import botorch  # type: ignore[import-untyped]
 import gpytorch  # type: ignore[import-untyped]
-import torch
+import torch  # type: ignore[import-untyped]
 from botorch.models.gp_regression import SingleTaskGP  # type: ignore[import-untyped]
+from botorch.models.multitask import MultiTaskGP  # type: ignore[import-untyped]
 
 from . import kernels
 
@@ -33,7 +34,7 @@ def train_model(
 
 def construct_single_task_model(
     X: torch.Tensor,
-    y: torch.Tensor,
+    Y: torch.Tensor,
     skew_dims: list[tuple[int, ...]] | None = None,
     min_noise: float = 1e-6,
     max_noise: float = 1e0,
@@ -56,12 +57,60 @@ def construct_single_task_model(
 
     if not X.isfinite().all():
         raise ValueError("'X' must not contain points that are inf or NaN.")
-    if not y.isfinite().all():
+    if not Y.isfinite().all():
         raise ValueError("'y' must not contain points that are inf or NaN.")
 
     return LatentGP(
-        train_inputs=X,
-        train_targets=y,
+        train_X=X,
+        train_Y=Y,
+        likelihood=likelihood,
+        skew_dims=skew_dims,
+        input_transform=input_transform,
+        outcome_transform=outcome_transform,
+    )
+
+
+def construct_multi_task_model(
+    X: torch.Tensor,
+    Y: torch.Tensor,
+    skew_dims: list[tuple[int, ...]] | None = None,
+    min_noise: float = 1e-6,
+    max_noise: float = 1e0,
+) -> "LatentGP":
+    """
+    Construct an untrained model for an objective.
+    """
+
+    num_inputs = X.shape[-1]
+    num_tasks = Y.shape[-1]
+
+    skew_dims = skew_dims if skew_dims is not None else [(i,) for i in range(num_inputs)]
+
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+        noise_constraint=gpytorch.constraints.Interval(
+            torch.tensor(min_noise),
+            torch.tensor(max_noise),
+        ),
+    )
+
+    input_transform = botorch.models.transforms.input.Normalize(d=num_inputs, indices=range(num_inputs))
+    outcome_transform = botorch.models.transforms.outcome.Standardize(m=1)
+
+    if not X.isfinite().all():
+        raise ValueError("'X' must not contain points that are inf or NaN.")
+    if not Y.isfinite().all():
+        raise ValueError("'Y' must not contain points that are inf or NaN.")
+
+    # add the task index to the last index of the last dimension
+    train_X = torch.cat(
+        [torch.cat([X, task_index * torch.ones(*X.shape[:-1], 1)], dim=-1) for task_index in range(num_tasks)], dim=0
+    ).double()
+    train_Y = torch.cat([Y[..., task_index].unsqueeze(-1) for task_index in range(num_tasks)], dim=0).double()
+
+    return MultiTaskLatentGP(
+        train_X=train_X,
+        train_Y=train_Y,
+        task_feature=-1,
         likelihood=likelihood,
         skew_dims=skew_dims,
         input_transform=input_transform,
@@ -72,19 +121,44 @@ def construct_single_task_model(
 class LatentGP(SingleTaskGP):
     def __init__(
         self,
-        train_inputs: torch.Tensor,
-        train_targets: torch.Tensor,
+        train_X: torch.Tensor,
+        train_Y: torch.Tensor,
         skew_dims: bool | list[tuple[int, ...]] = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_inputs, train_targets, *args, **kwargs)
+        super().__init__(train_X, train_Y, *args, **kwargs)
 
         self.mean_module = gpytorch.means.ConstantMean(constant_prior=gpytorch.priors.NormalPrior(loc=0, scale=1))
 
         self.covar_module = kernels.LatentKernel(
-            num_inputs=train_inputs.shape[-1],
-            num_outputs=train_targets.shape[-1],
+            num_inputs=train_X.shape[-1],
+            num_outputs=train_Y.shape[-1],
+            skew_dims=skew_dims,
+            priors=True,
+            scale=True,
+            **kwargs,
+        )
+
+        self.trained: bool = False
+
+
+class MultiTaskLatentGP(MultiTaskGP):
+    def __init__(
+        self,
+        train_X: torch.Tensor,
+        train_Y: torch.Tensor,
+        task_feature: int,
+        skew_dims: bool | list[tuple[int, ...]] = True,
+        *args,
+        **kwargs,
+    ) -> None:
+        super().__init__(train_X, train_Y, task_feature, *args, **kwargs)
+
+        self.mean_module = gpytorch.means.ConstantMean(constant_prior=gpytorch.priors.NormalPrior(loc=0, scale=1))
+
+        self.covar_module = kernels.LatentKernel(
+            num_inputs=self.num_non_task_features,
             skew_dims=skew_dims,
             priors=True,
             scale=True,
@@ -97,13 +171,13 @@ class LatentGP(SingleTaskGP):
 class LatentConstraintModel(LatentGP):
     def __init__(
         self,
-        train_inputs: torch.Tensor,
-        train_targets: torch.Tensor,
+        train_X: torch.Tensor,
+        train_Y: torch.Tensor,
         skew_dims: bool | list[tuple[int, ...]] = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
+        super().__init__(train_X, train_Y, skew_dims, *args, **kwargs)
 
         self.trained: bool = False
 
@@ -119,13 +193,13 @@ class LatentConstraintModel(LatentGP):
 class LatentDirichletClassifier(LatentGP):
     def __init__(
         self,
-        train_inputs: torch.Tensor,
-        train_targets: torch.Tensor,
+        train_X: torch.Tensor,
+        train_Y: torch.Tensor,
         skew_dims: bool | list[tuple[int, ...]] = True,
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_inputs, train_targets, skew_dims, *args, **kwargs)
+        super().__init__(train_X, train_Y, skew_dims, *args, **kwargs)
 
         self.trained: bool = False
 

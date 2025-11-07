@@ -2,12 +2,9 @@ Tutorials
 =========
 
 .. toctree::
-   :maxdepth: 2
-
-   tutorials/introduction.ipynb
-   tutorials/hyperparameters.ipynb
-   tutorials/pareto-fronts.ipynb
-   tutorials/passive-dofs.ipynb
-   tutorials/kb-mirrors.ipynb
-   tutorials/xrt-blop-demo.ipynb
-   tutorials/ax-blop-demo.ipynb
+   :maxdepth: 1
+   
+   tutorials/README.md
+   tutorials/simple-experiment.md
+   tutorials/sim-kb-mirrors.md
+   tutorials/xrt-kb-mirrors.md
