@@ -310,11 +310,15 @@ class Agent:
             The number of trials to run per iteration. Higher values can lead to more efficient data acquisition,
             but slower optimization progress.
 
+        .. deprecated:: v0.8.2
+            Use blop.plans.optimize instead.
+
         Returns
         -------
         Generator[dict[int, TOutcome], None, None]
             A generator that yields the outcomes of the trials.
         """
+        warnings.warn("'learn' is deprecated. Use blop.plans.optimize instead.", DeprecationWarning, stacklevel=2)
         for _ in range(iterations):
             trials = self.get_next_trials(n)
             data = yield from self.acquire(trials)
@@ -326,6 +330,9 @@ class Agent:
         """
         Acquire data given a set of trials. Deploys the trials in a single Bluesky run and
         returns the outcomes of the trials computed by the digestion function.
+
+        .. deprecated:: v0.8.2
+            Use blop.plans.acquire instead.
 
         Parameters
         ----------
@@ -341,6 +348,7 @@ class Agent:
         --------
         blop.plans.acquire : The Bluesky plan to acquire data.
         """
+        warnings.warn("'acquire' is deprecated. Use blop.plans.optimize_step instead.", DeprecationWarning, stacklevel=2)
         uid = yield from acquire(self.readables, self.dofs, trials, per_step=per_step)
         results = self.data_access.get_data(uid)
         return {trial_index: self.digestion(trial_index, results, **self.digestion_kwargs) for trial_index in trials.keys()}

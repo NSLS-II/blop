@@ -12,6 +12,118 @@ from bluesky.utils import MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
 
 from .dofs import DOF
+from .ax.agent import Agent
+
+
+def _unpack_parameters(dofs: dict[str, DOF], parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
+    """Unpack the parameterizations into Bluesky plan arguments."""
+    unpacked_dict = defaultdict(list)
+    for parameterization in parameterizations:
+        for dof_name in dofs.keys():
+            if dof_name in parameterization:
+                unpacked_dict[dof_name].append(parameterization[dof_name])
+            else:
+                raise ValueError(f"Parameter {dof_name} not found in parameterization. Parameterization: {parameterization}")
+
+    unpacked_list = []
+    for dof_name, values in unpacked_dict.items():
+        unpacked_list.append(dofs[dof_name].movable)
+        unpacked_list.append(values)
+
+    return unpacked_list
+
+
+@plan
+def acquire(
+    readables: Sequence[Readable],
+    dofs: dict[str, DOF],
+    trials: dict[int, TParameterization],
+    per_step: bp.PerStep | None = None,
+    **kwargs: Any,
+) -> MsgGenerator[str]:
+    """
+    A plan to acquire data for optimization.
+
+    Parameters
+    ----------
+    readables: Sequence[Readable]
+        The readables to trigger and read.
+    dofs: dict[str, DOF]
+        A dictionary mapping DOF names to DOFs.
+    trials: dict[int, TParameterization]
+        A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
+    per_step: bp.PerStep | None = None
+        The plan to execute for each step of the scan.
+    **kwargs: Any
+        Additional keyword arguments to pass to the list_scan plan.
+
+    Returns
+    -------
+    str
+        The UID of the Bluesky run.
+
+    See Also
+    --------
+    bluesky.plans.list_scan : The Bluesky plan to acquire data.
+    """
+    plan_args = _unpack_parameters(dofs, trials.values())
+    return (
+        yield from bp.list_scan(
+            readables, *plan_args, md={"ax_trial_indices": list(trials.keys())}, per_step=per_step, **kwargs
+        )
+    )
+
+
+@plan
+def optimize_step(
+    generator: Agent,
+    n: int = 1,
+    acquisition_plan: Callable[[], MsgGenerator[None]] | None = None,
+) -> MsgGenerator[None]:
+    """
+    A single step of the optimization loop.
+
+    Parameters
+    ----------
+    generator : Agent
+        The generator to optimize with.
+    n : int, optional
+        The number of trials to suggest.
+    acquisition_plan : Callable[[], MsgGenerator[None]] | None, optional
+        The acquisition plan to use to acquire data. If not provided, the default acquisition plan will be used.
+    """
+    if acquisition_plan is None:
+        acquisition_plan = acquire
+    trials = generator.suggest(n)
+    data = yield from acquisition_plan(generator.readables, generator.dofs, trials)
+    outcomes = generator.evaluate(trials, data)
+    generator.ingest(outcomes)
+
+
+@plan
+def optimize(
+    generator: Agent,
+    iterations: int = 1,
+    n: int = 1,
+    acquisition_plan: Callable[[], MsgGenerator[None]] | None = None,
+) -> MsgGenerator[None]:
+    """
+    A plan to optimize the generator.
+
+    Parameters
+    ----------
+    generator : Agent
+        The generator to optimize with.
+    iterations : int, optional
+        The number of optimization iterations to run.
+    n : int, optional
+        The number of trials to suggest per iteration.
+    acquisition_plan : Callable[[], MsgGenerator[None]] | None, optional
+        The acquisition plan to use to acquire data. If not provided, the default acquisition plan will be used.
+    """
+
+    for _ in range(iterations):
+        yield from optimize_step(generator, n, acquisition_plan)
 
 
 @plan
@@ -129,65 +241,6 @@ def per_step_background_read(
     """
     take_reading = functools.partial(take_reading_with_background, block_beam=block_beam, unblock_beam=unblock_beam)
     return functools.partial(bps.one_nd_step, take_reading=take_reading)
-
-
-def _unpack_parameters(dofs: dict[str, DOF], parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
-    """Unpack the parameterizations into Bluesky plan arguments."""
-    unpacked_dict = defaultdict(list)
-    for parameterization in parameterizations:
-        for dof_name in dofs.keys():
-            if dof_name in parameterization:
-                unpacked_dict[dof_name].append(parameterization[dof_name])
-            else:
-                raise ValueError(f"Parameter {dof_name} not found in parameterization. Parameterization: {parameterization}")
-
-    unpacked_list = []
-    for dof_name, values in unpacked_dict.items():
-        unpacked_list.append(dofs[dof_name].movable)
-        unpacked_list.append(values)
-
-    return unpacked_list
-
-
-@plan
-def acquire(
-    readables: Sequence[Readable],
-    dofs: dict[str, DOF],
-    trials: dict[int, TParameterization],
-    per_step: bp.PerStep | None = None,
-    **kwargs: Any,
-) -> MsgGenerator[str]:
-    """
-    A plan to acquire data for optimization.
-
-    Parameters
-    ----------
-    readables: Sequence[Readable]
-        The readables to trigger and read.
-    dofs: dict[str, DOF]
-        A dictionary mapping DOF names to DOFs.
-    trials: dict[int, TParameterization]
-        A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
-    per_step: bp.PerStep | None = None
-        The plan to execute for each step of the scan.
-    **kwargs: Any
-        Additional keyword arguments to pass to the list_scan plan.
-
-    Returns
-    -------
-    str
-        The UID of the Bluesky run.
-
-    See Also
-    --------
-    bluesky.plans.list_scan : The Bluesky plan to acquire data.
-    """
-    plan_args = _unpack_parameters(dofs, trials.values())
-    return (
-        yield from bp.list_scan(
-            readables, *plan_args, md={"ax_trial_indices": list(trials.keys())}, per_step=per_step, **kwargs
-        )
-    )
 
 
 @plan
