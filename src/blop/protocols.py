@@ -22,6 +22,7 @@ class Agent(Protocol):
             A list of dictionaries, each containing a parameterization of a point to evaluate next.
             Each dictionary must contain a unique "_id" key to identify each parameterization.
         """
+        ...
 
     def ingest(self, points: list[dict]) -> None:
         """
