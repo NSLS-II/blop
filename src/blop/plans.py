@@ -282,3 +282,34 @@ def acquire_with_background(
     """
     per_step = per_step_background_read(block_beam, unblock_beam)
     return (yield from acquire(readables, dofs, trials, per_step=per_step, **kwargs))
+
+
+def acquire_baseline(
+    generator: Agent,
+    parameterization: TParameterization | None = None,
+    arm_name: str | None = None,
+    acquisition_plan: Callable[[Sequence[Readable], dict[str, DOF], dict[int, TParameterization], Any], MsgGenerator[str]] | None = None,
+    **kwargs: Any,
+) -> MsgGenerator[None]:
+    """
+    Acquire a baseline reading.
+
+    Parameters
+    ----------
+    generator: Agent
+        The generator to acquire the baseline for.
+    parameterization : TParameterization, optional
+        Move the DOFs to the given parameterization, if provided.
+    arm_name : str, optional
+        A name for the arm to distinguish it from other arms.
+    per_step: bp.PerStep | None, optional
+        The per-step plan to execute for each step of the scan.
+    **kwargs: Any
+        Additional keyword arguments to pass to the acquire plan.
+    """
+    if parameterization is None:
+        parameterization = yield from read([dof.movable for dof in generator.dofs.values()])
+    trials = generator.attach_baseline(parameters=parameterization, arm_name=arm_name)
+    uid = yield from acquisition_plan(generator.readables, generator.dofs, trials, **kwargs)
+    outcomes = generator.evaluation_function(trials, uid, **generator.evaluation_kwargs)
+    generator.ingest(trials, outcomes)

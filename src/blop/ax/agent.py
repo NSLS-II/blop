@@ -1,31 +1,24 @@
 import logging
 import warnings
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Sequence
 from typing import Any, Concatenate, Literal, ParamSpec
 
-import databroker
 import pandas as pd
 from ax import Client
 from ax.analysis import Analysis, AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization
 from ax.generation_strategy.generation_strategy import GenerationStrategy
-from bluesky.plans import PerStep
 from bluesky.protocols import Readable
-from bluesky.utils import MsgGenerator
-from databroker import Broker
-from tiled.client.container import Container
 
-from ..data_access import DatabrokerDataAccess, TiledDataAccess
-from ..digestion_function import default_digestion_function
+from ..evaluation import default_evaluation_function
 from ..dofs import DOF, DOFConstraint
 from ..objectives import Objective
-from ..plans import acquire, read
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
-DigestionFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome]
+EvaluationFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome]
 
 
 class Agent:
@@ -41,14 +34,12 @@ class Agent:
         The degrees of freedom that the agent can control, which determine the output of the model.
     objectives : list[Objective]
         The objectives which the agent will try to optimize.
-    db : Broker | Container
-        The databroker or tiled instance to read back data from a Bluesky run.
     dof_constraints : Sequence[DOFConstraint], optional
         Constraints on DOFs to refine the search space.
-    digestion : DigestionFunction
-        The function to produce objective values from a dataframe of acquisition results.
-    digestion_kwargs : dict
-        Additional keyword arguments to pass to the digestion function.
+    evaluation : EvaluationFunction
+        The function that evaluates the acquired data and produces outcomes.
+    evaluation_kwargs : dict
+        Additional keyword arguments to pass to the evaluation function.
     """
 
     def __init__(
@@ -56,25 +47,41 @@ class Agent:
         readables: Sequence[Readable],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker | Container,
         dof_constraints: Sequence[DOFConstraint] = None,
-        digestion: DigestionFunction = default_digestion_function,
-        digestion_kwargs: dict | None = None,
+        evaluation: EvaluationFunction = default_evaluation_function,
+        evaluation_kwargs: dict | None = None,
     ):
-        self.readables = readables
-        self.dofs = {dof.name: dof for dof in dofs}
-        self.dof_constraints = dof_constraints
-        self.objectives = {obj.name: obj for obj in objectives}
+        self._readables = readables
+        self._dofs = {dof.name: dof for dof in dofs}
+        self._dof_constraints = dof_constraints
+        self._objectives = {obj.name: obj for obj in objectives}
         self.client = Client()
-        self.digestion = digestion
-        self.digestion_kwargs = digestion_kwargs or {}
+        self._evaluation = evaluation
+        self._evaluation_kwargs = evaluation_kwargs or {}
 
-        if isinstance(db, Container):
-            self.data_access = TiledDataAccess(db)
-        elif isinstance(db, databroker.Broker):
-            self.data_access = DatabrokerDataAccess(db)
-        else:
-            raise ValueError("Cannot run acquistion without databroker or tiled instance!")
+    @property
+    def readables(self) -> Sequence[Readable]:
+        return self._readables
+
+    @property
+    def dofs(self) -> dict[str, DOF]:
+        return self._dofs
+
+    @property
+    def objectives(self) -> dict[str, Objective]:
+        return self._objectives
+
+    @property
+    def dof_constraints(self) -> Sequence[DOFConstraint]:
+        return self._dof_constraints
+
+    @property
+    def evaluation_function(self) -> EvaluationFunction:
+        return self._evaluation
+
+    @property
+    def evaluation_kwargs(self) -> dict:
+        return self._evaluation_kwargs
 
     def configure_experiment(
         self,
@@ -121,28 +128,22 @@ class Agent:
         self.client.configure_metrics(metrics)
 
         # If the digestion function is the default, we need to pass the active objectives to the digestion function
-        if self.digestion == default_digestion_function:
+        if self.digestion == default_evaluation_function:
             self.digestion_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
 
-    def acquire_baseline(
-        self, parameterization: TParameterization | None = None, arm_name: str | None = None
-    ) -> MsgGenerator[None]:
+    def attach_baseline(self, parameterization: TParameterization, arm_name: str | None = None) -> TParameterization:
         """
-        Measure a baseline of the objectives.
+        Attach a baseline to the experiment.
 
         Parameters
         ----------
-        parameterization : TParameterization, optional
-            Move the DOFs to the given parameterization, if provided.
+        parameterization : TParameterization
+            The parameterization of the baseline to attach.
         arm_name : str, optional
             A name for the arm to distinguish it from other arms.
         """
-        if parameterization is None:
-            parameterization = yield from read([dof.movable for dof in self.dofs.values()])
         trial_index = self.client.attach_baseline(parameters=parameterization, arm_name=arm_name)
-        trial = {trial_index: parameterization}
-        outcomes = yield from self.acquire(trial)
-        self.tell(trial, outcomes)
+        return {trial_index: parameterization}
 
     def suggest(self, num_points: int | None = None) -> list[dict]:
         """
@@ -297,61 +298,6 @@ class Agent:
         """
         for parameters, outcomes in data:
             self._attach_single_trial(parameters=parameters, outcomes=outcomes)
-
-    def learn(self, iterations: int = 1, n: int = 1) -> Generator[dict[int, TOutcome], None, None]:
-        """
-        Learn by running trials and providing the outcomes.
-
-        Parameters
-        ----------
-        iterations : int, optional
-            The number of optimization iterations to run.
-        n : int, optional
-            The number of trials to run per iteration. Higher values can lead to more efficient data acquisition,
-            but slower optimization progress.
-
-        .. deprecated:: v0.8.2
-            Use blop.plans.optimize instead.
-
-        Returns
-        -------
-        Generator[dict[int, TOutcome], None, None]
-            A generator that yields the outcomes of the trials.
-        """
-        warnings.warn("'learn' is deprecated. Use blop.plans.optimize instead.", DeprecationWarning, stacklevel=2)
-        for _ in range(iterations):
-            trials = self.get_next_trials(n)
-            data = yield from self.acquire(trials)
-            self.complete_trials(trials, data)
-
-    def acquire(
-        self, trials: dict[int, TParameterization], per_step: PerStep | None = None
-    ) -> MsgGenerator[dict[int, TOutcome]]:
-        """
-        Acquire data given a set of trials. Deploys the trials in a single Bluesky run and
-        returns the outcomes of the trials computed by the digestion function.
-
-        .. deprecated:: v0.8.2
-            Use blop.plans.acquire instead.
-
-        Parameters
-        ----------
-        trials : dict[int, TParameterization]
-            A dictionary mapping trial indices to their suggested parameterizations.
-
-        Returns
-        -------
-        MsgGenerator[dict[int, TOutcome]]
-            A message generator that yields the outcomes of the trials.
-
-        See Also
-        --------
-        blop.plans.acquire : The Bluesky plan to acquire data.
-        """
-        warnings.warn("'acquire' is deprecated. Use blop.plans.optimize_step instead.", DeprecationWarning, stacklevel=2)
-        uid = yield from acquire(self.readables, self.dofs, trials, per_step=per_step)
-        results = self.data_access.get_data(uid)
-        return {trial_index: self.digestion(trial_index, results, **self.digestion_kwargs) for trial_index in trials.keys()}
 
     def compute_analyses(self, analyses: list[Analysis], display: bool = True) -> list[AnalysisCard]:
         """

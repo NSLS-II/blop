@@ -1,18 +1,19 @@
-from typing import Any
-
 from ax.api.types import TOutcome
+from tiled.client.container import Container
 
 from .objectives import Objective
+from .data_access import TiledDataAccess
 
 
-def default_digestion_function(
+def default_evaluation_function(
     trial_index: int,
-    data: dict[str, list[Any]],
+    uid: str,
+    tiled_client: Container,
     *,
     active_objectives: list[Objective],
 ) -> TOutcome:
     """
-    Simple digestion function.
+    Simple evaluation function.
 
     Assumes the following:
     - Objective names are the same as the names of the columns in the dataframe.
@@ -33,6 +34,7 @@ def default_digestion_function(
         A dictionary mapping objective names to their mean and standard error. Since there
         is a single trial, the standard error is None.
     """
+    data = TiledDataAccess(tiled_client).get_data(uid)
     return {
         objective.name: (data[objective.name][(trial_index % len(data[objective.name]))], None)
         for objective in active_objectives
