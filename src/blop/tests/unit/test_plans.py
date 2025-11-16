@@ -5,7 +5,7 @@ import pytest
 from bluesky.run_engine import RunEngine
 
 from blop.dofs import DOF
-from blop.plans import acquire, acquire_with_background
+from blop.plans import acquire_with_background, default_acquire
 
 from .conftest import MovableSignal, ReadableSignal
 
@@ -15,20 +15,20 @@ def RE():
     return RunEngine({})
 
 
-def test_acquire_single_dof(RE):
-    dof = DOF(movable=MovableSignal("x1", initial_value=-1.0), search_domain=(-5.0, 5.0))
+def test_default_acquire_single_movable_readable(RE):
+    movable = MovableSignal("x1", initial_value=-1.0)
     readable = ReadableSignal("objective")
+    movable_and_input = {movable: [0.0]}
     with patch.object(readable, "read", wraps=readable.read) as mock_read:
         RE(
-            acquire(
-                readables=[readable],
-                dofs={"x1": dof},
-                trials={0: {"x1": 0.0}},
+            default_acquire(
+                movable_and_input,
+                [readable],
             )
         )
         assert mock_read.call_count == 1
 
-    assert dof.movable.read()["x1"]["value"] == 0.0
+    assert movable.read()["x1"]["value"] == 0.0
 
 
 def test_acquire_with_background(RE):
@@ -38,18 +38,17 @@ def test_acquire_with_background(RE):
     def unblock_beam():
         yield from bps.null()
 
-    dof = DOF(movable=MovableSignal("x1", initial_value=-1.0), search_domain=(-5.0, 5.0))
+    movable = MovableSignal("x1", initial_value=-1.0)
     readable = ReadableSignal("objective")
-
+    movable_and_input = {movable: [0.0]}
     with patch.object(readable, "read", wraps=readable.read) as mock_read:
         RE(
             acquire_with_background(
+                movables=movable_and_input,
                 readables=[readable],
-                dofs={"x1": dof},
-                trials={0: {"x1": 0.0}},
                 block_beam=block_beam,
                 unblock_beam=unblock_beam,
             )
         )
         assert mock_read.call_count == 2
-    assert dof.movable.read()["x1"]["value"] == 0.0
+    assert movable.read()["x1"]["value"] == 0.0

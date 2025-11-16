@@ -1,11 +1,10 @@
 import functools
 import warnings
 from collections.abc import Callable, Generator, Mapping, Sequence
-from typing import Any, cast
+from typing import Any, TypeVar, cast
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
-from ax.api.types import TParameterization
 from bluesky.protocols import Movable, NamedMovable, Readable, Reading
 from bluesky.utils import Msg, MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
@@ -13,8 +12,10 @@ from ophyd import Signal  # type: ignore[import-untyped]
 from .dofs import DOF
 from .protocols import OptimizationProblem
 
+_NamedMovableT = TypeVar("_NamedMovableT", bound=NamedMovable)
 
-def _unpack_for_list_scan(movables: Mapping[NamedMovable, Sequence[Any]]) -> list[NamedMovable | Any]:
+
+def _unpack_for_list_scan(movables: Mapping[_NamedMovableT, Sequence[Any]]) -> list[_NamedMovableT | Any]:
     """Unpack the movables and inputs into Bluesky list_scan plan arguments."""
     unpacked_list = []
     for movable, values in movables.items():
@@ -26,7 +27,7 @@ def _unpack_for_list_scan(movables: Mapping[NamedMovable, Sequence[Any]]) -> lis
 
 @plan
 def default_acquire(
-    movables: Mapping[NamedMovable, Sequence[Any]],
+    movables: Mapping[_NamedMovableT, Sequence[Any]],
     readables: Sequence[Readable] | None = None,
     *,
     per_step: bp.PerStep | None = None,
@@ -37,12 +38,10 @@ def default_acquire(
 
     Parameters
     ----------
-    movables: Mapping[NamedMovable, Sequence[Any]]
+    movables: Mapping[_NamedMovableT, Sequence[Any]]
         The movables to move and the inputs to move them to.
     readables: Sequence[Readable]
         The readables to trigger and read.
-    trials: dict[int, TParameterization]
-        A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
     per_step: bp.PerStep | None = None
         The plan to execute for each step of the scan.
     **kwargs: Any
@@ -310,7 +309,7 @@ def per_step_background_read(
 
 @plan
 def acquire_with_background(
-    movables: Mapping[NamedMovable, Sequence[Any]],
+    movables: Mapping[_NamedMovableT, Sequence[Any]],
     readables: Sequence[Readable] | None = None,
     *,
     block_beam: Callable[[], MsgGenerator[None]],
@@ -322,7 +321,7 @@ def acquire_with_background(
 
     Parameters
     ----------
-    movables: Mapping[NamedMovable, Sequence[Any]]
+    movables: Mapping[_NamedMovableT, Sequence[Any]]
         The movables and the inputs to move them to.
     readables: Sequence[Readable] | None = None
         The readables that produce data to evaluate.
