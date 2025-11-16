@@ -27,7 +27,7 @@ def _unpack_for_list_scan(movables: Mapping[NamedMovable, Sequence[Any]]) -> lis
 @plan
 def default_acquire(
     movables: Mapping[NamedMovable, Sequence[Any]],
-    readables: Sequence[Readable],
+    readables: Sequence[Readable] | None = None,
     *,
     per_step: bp.PerStep | None = None,
     **kwargs: Any,
@@ -57,14 +57,16 @@ def default_acquire(
     --------
     bluesky.plans.list_scan : The Bluesky plan to acquire data.
     """
+    if readables is None:
+        readables = []
     plan_args = _unpack_for_list_scan(movables)
     return (
         # TODO: fix argument type in bluesky.plans.list_scan
         yield from bp.list_scan(
             readables,
-            *plan_args,
+            *plan_args,  # type: ignore[arg-type]
             per_step=per_step,
-            **kwargs,  # type: ignore[arg-type]
+            **kwargs,
         )
     )
 
@@ -202,6 +204,51 @@ def read(readables: Sequence[Readable], **kwargs: Any) -> MsgGenerator[dict[str,
     return results
 
 
+def acquire_baseline(
+    optimization_problem: OptimizationProblem,
+    parameterization: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> MsgGenerator[None]:
+    """
+    Acquire a baseline reading. Useful for relative outcome constraints.
+
+    Parameters
+    ----------
+    generator: Agent
+        The generator to acquire the baseline for.
+    parameterization : TParameterization, optional
+        Move the DOFs to the given parameterization, if provided.
+    arm_name : str, optional
+        A name for the arm to distinguish it from other arms.
+    per_step: bp.PerStep | None, optional
+        The per-step plan to execute for each step of the scan.
+    **kwargs: Any
+        Additional keyword arguments to pass to the acquire plan.
+
+    See Also
+    --------
+    default_acquire : The default plan to acquire data.
+    """
+    movables = optimization_problem.movables
+    if parameterization is None:
+        if all(isinstance(movable, Readable) for movable in movables):
+            parameterization = yield from read(cast(Sequence[Readable], movables))
+        else:
+            raise ValueError(
+                "All movables must also implement the Readable protocol to acquire a baseline from current positions."
+            )
+    generator = optimization_problem.generator
+    if optimization_problem.acquisition_plan is None:
+        acquisition_plan = default_acquire
+    else:
+        acquisition_plan = optimization_problem.acquisition_plan
+    movables_and_inputs = {movable: parameterization[movable.name] for movable in movables}
+    uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, **kwargs)
+    outcome = optimization_problem.evaluation_function(uid)[0]
+    outcome.update({"_id": 0})
+    generator.ingest([outcome])
+
+
 @plan
 def take_reading_with_background(
     readables: Sequence[Readable],
@@ -263,9 +310,9 @@ def per_step_background_read(
 
 @plan
 def acquire_with_background(
-    readables: Sequence[Readable],
-    dofs: Sequence[DOF],
-    trials: dict[int, TParameterization],
+    movables: Mapping[NamedMovable, Sequence[Any]],
+    readables: Sequence[Readable] | None = None,
+    *,
     block_beam: Callable[[], MsgGenerator[None]],
     unblock_beam: Callable[[], MsgGenerator[None]],
     **kwargs: Any,
@@ -275,18 +322,16 @@ def acquire_with_background(
 
     Parameters
     ----------
-    readables: Sequence[Readable]
-        The readables to trigger and read.
-    dofs: Sequence[DOF]
-        The DOFs to move.
-    trials: dict[int, TParameterization]
-        A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
+    movables: Mapping[NamedMovable, Sequence[Any]]
+        The movables and the inputs to move them to.
+    readables: Sequence[Readable] | None = None
+        The readables that produce data to evaluate.
     block_beam: Callable[[], MsgGenerator[None]]
-        A callable that blocks the beam (e.g. by closing a shutter).
+        A Bluesky plan that blocks the beam (e.g. by closing a shutter).
     unblock_beam: Callable[[], MsgGenerator[None]]
-        A callable that unblocks the beam (e.g. by opening a shutter).
+        A Bluesky plan that unblocks the beam (e.g. by opening a shutter).
     **kwargs: Any
-        Additional keyword arguments to pass to the list_scan plan.
+        Additional keyword arguments to pass to the acquisition plan.
 
     Returns
     -------
@@ -298,50 +343,7 @@ def acquire_with_background(
     acquire : The base plan to acquire data.
     per_step_background_read : The per-step plan to take background readings.
     """
+    if readables is None:
+        readables = []
     per_step = per_step_background_read(block_beam, unblock_beam)
-    return (yield from default_acquire(readables, dofs, trials, per_step=per_step, **kwargs))
-
-
-def acquire_baseline(
-    optimization_problem: OptimizationProblem,
-    parameterization: dict[str, Any] | None = None,
-    **kwargs: Any,
-) -> MsgGenerator[None]:
-    """
-    Acquire a baseline reading. Useful for relative outcome constraints.
-
-    Parameters
-    ----------
-    generator: Agent
-        The generator to acquire the baseline for.
-    parameterization : TParameterization, optional
-        Move the DOFs to the given parameterization, if provided.
-    arm_name : str, optional
-        A name for the arm to distinguish it from other arms.
-    per_step: bp.PerStep | None, optional
-        The per-step plan to execute for each step of the scan.
-    **kwargs: Any
-        Additional keyword arguments to pass to the acquire plan.
-
-    See Also
-    --------
-    default_acquire : The default plan to acquire data.
-    """
-    movables = optimization_problem.movables
-    if parameterization is None:
-        if all(isinstance(movable, Readable) for movable in movables):
-            parameterization = yield from read(cast(Sequence[Readable], movables))
-        else:
-            raise ValueError(
-                "All movables must also implement the Readable protocol to acquire a baseline from current positions."
-            )
-    generator = optimization_problem.generator
-    if optimization_problem.acquisition_plan is None:
-        acquisition_plan = default_acquire
-    else:
-        acquisition_plan = optimization_problem.acquisition_plan
-    movables_and_inputs = {movable: parameterization[movable.name] for movable in movables}
-    uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, **kwargs)
-    outcome = optimization_problem.evaluation_function(uid)[0]
-    outcome.update({"_id": 0})
-    generator.ingest([outcome])
+    return (yield from default_acquire(movables, readables, per_step=per_step, **kwargs))
