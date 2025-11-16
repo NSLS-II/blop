@@ -10,8 +10,8 @@ from ax.api.types import TOutcome, TParameterization
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from bluesky.protocols import Readable
 
-from ..evaluation import default_evaluation_function
 from ..dofs import DOF, DOFConstraint
+from ..evaluation import default_evaluation_function
 from ..objectives import Objective
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 

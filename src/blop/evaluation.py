@@ -1,8 +1,8 @@
 from ax.api.types import TOutcome
 from tiled.client.container import Container
 
-from .objectives import Objective
 from .data_access import TiledDataAccess
+from .objectives import Objective
 
 
 def default_evaluation_function(
