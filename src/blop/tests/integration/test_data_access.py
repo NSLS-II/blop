@@ -5,12 +5,8 @@ from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
 from databroker import Broker
-from tiled.client.container import Container
 
-from blop import DOF, Objective
-from blop.ax import Agent
 from blop.data_access import DatabrokerDataAccess, TiledDataAccess
-from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
 
 from .conftest import create_agent_from_config
 
@@ -90,42 +86,3 @@ def test_agent_data_access(RE_backend):
     # Learn a bit
     RE(agent.learn("qr", n=16))
     RE(agent.learn("qei", n=2))
-
-
-def test_ax_agent_data_access(RE_backend):
-    """Test that the Ax agent works with different backends."""
-    RE = RE_backend[0]
-    db = RE_backend[1]
-    if isinstance(db, Broker):
-        beamline = DatabrokerBeamline(name="bl")
-    elif isinstance(db, Container):
-        beamline = TiledBeamline(name="bl")
-
-    beamline.det.noise.put(False)
-
-    dofs = [
-        DOF(device=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
-        DOF(device=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
-    ]
-
-    objectives = [
-        Objective(name="bl_det_sum", target="max"),
-    ]
-
-    agent = Agent(
-        readables=[beamline.det],
-        dofs=dofs,
-        objectives=objectives,
-        db=db,
-    )
-
-    # Verify agent was created correctly
-    if isinstance(db, Broker):
-        assert isinstance(agent.data_access, DatabrokerDataAccess)
-    else:
-        assert isinstance(agent.data_access, TiledDataAccess)
-    assert len(agent.dofs) == 2
-    assert len(agent.objectives) == 1
-
-    agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
-    RE(agent.learn(iterations=12, n=1))

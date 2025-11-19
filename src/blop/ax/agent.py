@@ -14,7 +14,7 @@ from bluesky.utils import MsgGenerator
 from ..dofs import DOF, DOFConstraint
 from ..evaluation import default_evaluation_function
 from ..objectives import Objective
-from ..plans import optimize
+from ..plans import acquire_baseline, optimize
 from ..protocols import Generator, OptimizationProblem
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
@@ -234,9 +234,14 @@ class Agent(Generator):
         for point in points:
             outcomes = {k: v for k, v in point.items() if k in self.objectives.keys()}
             trial_index = point.pop("_id", None)
+
             if trial_index is None:
                 parameters = {k: v for k, v in point.items() if k in self.dofs.keys()}
                 self._attach_single_trial(parameters=parameters, outcomes=outcomes)
+            if trial_index == "baseline":
+                parameters = {k: v for k, v in point.items() if k in self.dofs.keys()}
+                id = self.client.attach_baseline(parameters=parameters, arm_name="baseline")
+                self.client.complete_trial(trial_index=id, raw_data=outcomes)
             else:
                 self.client.complete_trial(trial_index=trial_index, raw_data=outcomes)
 
@@ -475,3 +480,18 @@ class Agent(Generator):
             A generator that yields the outcomes of the trials.
         """
         yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n)
+
+    def acquire_baseline(
+        self, parameterization: TParameterization | None = None, arm_name: str | None = None
+    ) -> MsgGenerator[None]:
+        """
+        Measure a baseline of the objectives.
+
+        Parameters
+        ----------
+        parameterization : TParameterization, optional
+            Move the DOFs to the given parameterization, if provided.
+        arm_name : str, optional
+            A name for the arm to distinguish it from other arms.
+        """
+        yield from acquire_baseline(self.to_optimization_problem(), parameterization=parameterization)

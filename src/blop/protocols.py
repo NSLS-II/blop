@@ -16,6 +16,9 @@ class Generator(Protocol):
         """
         Returns a set of points in the input space, to be evaulated next.
 
+        The "_id" key is optional and can be used to identify suggested trials for later evaluation
+        and ingestion.
+
         Parameters
         ----------
         num_points : int | None, optional
@@ -33,7 +36,10 @@ class Generator(Protocol):
         """
         Ingest a set of points into the experiment. Either from previously suggested points or from an external source.
 
-        If points are from an external source, the dictionaries must contain keys for the DOF names.
+        If points are from an external source, the dictionaries must contain keys for the parameter names.
+
+        The "_id" key is optional and can be used to identify points from previously suggested trials or to identify
+        the point as a "baseline" trial.
 
         Parameters
         ----------

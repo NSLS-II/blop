@@ -34,12 +34,11 @@ def test_ax_agent(RE, setup):
         Objective(name="bl_det_wid_y", target="min"),
     ]
 
-    evaluation_function = functools.partial(default_evaluation_function, tiled_client=setup, active_objectives=objectives)
     agent = Agent(
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        evaluation_function=evaluation_function,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=setup, active_objectives=objectives),
     )
 
     agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
@@ -67,7 +66,7 @@ def test_plot_objective(RE, setup):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=setup,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=setup, active_objectives=objectives),
     )
     agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
     RE(agent.learn(iterations=12, n=1))
@@ -96,7 +95,7 @@ def test_generation_strategy_sim_beamline(RE, setup):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=setup,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=setup, active_objectives=objectives),
     )
 
     # Create a custom generations strategy that uses the Sobol
@@ -173,7 +172,7 @@ def test_attach_data(setup):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=setup,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=setup, active_objectives=objectives),
     )
     agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
 
@@ -227,7 +226,7 @@ def test_acquire_baseline(RE, setup):
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=setup,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=setup, active_objectives=objectives),
     )
     agent.configure_experiment(name="test_ax_agent", description="Test the Agent")
     RE(agent.acquire_baseline())

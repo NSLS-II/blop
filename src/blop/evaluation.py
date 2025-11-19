@@ -1,4 +1,3 @@
-from ax.api.types import TOutcome
 from tiled.client.container import Container
 
 from .data_access import TiledDataAccess
@@ -11,7 +10,7 @@ def default_evaluation_function(
     *,
     tiled_client: Container,
     active_objectives: list[Objective],
-) -> TOutcome:
+) -> list[dict]:
     """
     Simple evaluation function.
 
@@ -34,7 +33,7 @@ def default_evaluation_function(
 
     Returns
     -------
-    TOutcome
+    list[dict]
         A dictionary mapping objective names to their mean and standard error. Since there
         is a single trial, the standard error is None.
     """
@@ -44,9 +43,13 @@ def default_evaluation_function(
     data = TiledDataAccess(tiled_client).get_data(uid)
     outcomes = []
     for trial_uid in trial_uids:
-        outcome = {
-            objective.name: (data[objective.name][trial_uid % len(data[objective.name])], None) for objective in active_objectives
-        }
+        if trial_uid == "baseline":
+            outcome = {objective.name: (data[objective.name][0], None) for objective in active_objectives}
+        else:
+            outcome = {
+                objective.name: (data[objective.name][trial_uid % len(data[objective.name])], None)
+                for objective in active_objectives
+            }
         outcome["_id"] = trial_uid
         outcomes.append(outcome)
 

@@ -234,7 +234,7 @@ def test_acquire_with_background(RE):
 def test_acquire_baseline(RE):
     """Test acquiring a baseline reading from suggested parameterizations."""
     generator = MagicMock(spec=Generator)
-    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": 0}])
+    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": "baseline"}])
 
     optimization_problem = OptimizationProblem(
         generator=generator,
@@ -248,14 +248,14 @@ def test_acquire_baseline(RE):
     # No suggestions are made since this is a baseline reading
     assert generator.suggest.call_count == 0
 
-    generator.ingest.assert_called_once_with([{"objective": 0.0, "_id": 0}])
+    generator.ingest.assert_called_once_with([{"objective": 0.0, "_id": "baseline", "x1": 0.0}])
     assert evaluation_function.call_count == 1
 
 
 def test_acquire_baseline_from_current(RE):
     """Test acquiring a baseline reading from the current movable positions."""
     generator = MagicMock(spec=Generator)
-    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": 0}])
+    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": "baseline"}])
     movable = MovableSignal("x1", initial_value=-1.0)
 
     optimization_problem = OptimizationProblem(
@@ -280,5 +280,5 @@ def test_acquire_baseline_from_current(RE):
     # No suggestions are made since this is a baseline reading from the current movable positions
     assert generator.suggest.call_count == 0
 
-    generator.ingest.assert_called_once_with([{"objective": 0.0, "_id": 0}])
+    generator.ingest.assert_called_once_with([{"objective": 0.0, "_id": "baseline", "x1": -1.0}])
     assert evaluation_function.call_count == 1

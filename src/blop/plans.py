@@ -96,7 +96,7 @@ def optimize_step(
     suggestions = generator.suggest(n_points)
     movables_and_inputs = {movable: [suggestion[movable.name] for suggestion in suggestions] for movable in movables}
     uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, *args, **kwargs)
-    
+
     if all(suggestion.get("_id") is not None for suggestion in suggestions):
         trial_uids = {suggestion["_id"] for suggestion in suggestions}
         outcomes = optimization_problem.evaluation_function(uid, trial_uids=trial_uids)
@@ -249,9 +249,10 @@ def acquire_baseline(
         acquisition_plan = optimization_problem.acquisition_plan
     movables_and_inputs = {movable: [parameterization[movable.name]] for movable in movables}
     uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, **kwargs)
-    outcome = optimization_problem.evaluation_function(uid)[0]
-    outcome.update({"_id": 0})
-    generator.ingest([outcome])
+    trial_uids = {"baseline"}
+    outcome = optimization_problem.evaluation_function(uid, trial_uids=trial_uids)[0]
+    data = {**outcome, **parameterization}
+    generator.ingest([data])
 
 
 @plan
