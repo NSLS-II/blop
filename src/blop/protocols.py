@@ -45,7 +45,7 @@ class Generator(Protocol):
 
 @runtime_checkable
 class EvaluationFunction(Protocol):
-    def __call__(self, uid: str, *args: Any, **kwargs: Any) -> list[dict]:
+    def __call__(self, uid: str, trial_uids: set[int | str] | None = None, *args: Any, **kwargs: Any) -> list[dict]:
         """
         Evaluate the data from a Bluesky run and produce outcomes.
 
@@ -53,6 +53,10 @@ class EvaluationFunction(Protocol):
         ----------
         uid: str
             The unique identifier of the Bluesky run to evaluate.
+        trial_identifiers: set[int | str], optional
+            The unique identifiers for the trials to evaluate. This is usually
+            only one value, but can be a set of values if multiple suggestions
+            are made at once.
 
         Returns
         -------

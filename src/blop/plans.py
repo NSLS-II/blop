@@ -96,7 +96,13 @@ def optimize_step(
     suggestions = generator.suggest(n_points)
     movables_and_inputs = {movable: [suggestion[movable.name] for suggestion in suggestions] for movable in movables}
     uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, *args, **kwargs)
-    outcomes = optimization_problem.evaluation_function(uid)
+    
+    if all(suggestion.get("_id") is not None for suggestion in suggestions):
+        trial_uids = {suggestion["_id"] for suggestion in suggestions}
+        outcomes = optimization_problem.evaluation_function(uid, trial_uids=trial_uids)
+    else:
+        outcomes = optimization_problem.evaluation_function(uid)
+
     generator.ingest(outcomes)
 
 
