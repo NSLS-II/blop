@@ -14,9 +14,9 @@ from bluesky.utils import MsgGenerator
 from ..dofs import DOF, DOFConstraint
 from ..evaluation import default_evaluation_function
 from ..objectives import Objective
+from ..plans import optimize
 from ..protocols import Generator, OptimizationProblem
 from .adapters import configure_metrics, configure_objectives, configure_parameters
-from ..plans import optimize
 
 logger = logging.getLogger(__name__)
 
@@ -284,7 +284,6 @@ class Agent(Generator):
         """
         warnings.warn("tell is deprecated. Use ingest or complete_trials instead.", DeprecationWarning, stacklevel=2)
         return self.complete_trials(trials=trials, outcomes=outcomes)
-
 
     def _attach_single_trial(self, parameters: TParameterization, outcomes: TOutcome) -> None:
         """

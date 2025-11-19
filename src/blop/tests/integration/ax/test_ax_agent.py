@@ -12,9 +12,9 @@ from botorch.acquisition.logei import qLogNoisyExpectedImprovement
 from blop.ax.agent import Agent
 from blop.bayesian.models import LatentGP
 from blop.dofs import DOF
+from blop.evaluation import default_evaluation_function
 from blop.objectives import Objective
 from blop.sim.beamline import TiledBeamline
-from blop.evaluation import default_evaluation_function
 
 
 def test_ax_agent(RE, setup):

@@ -34,7 +34,7 @@ def default_evaluation_function(
         is a single trial, the standard error is None.
     """
     data = TiledDataAccess(tiled_client).get_data(uid)
-    return [{
-        objective.name: (data[objective.name][trial_index], None)
-        for objective in active_objectives
-    } for trial_index in range(len(data[active_objectives[0].name]))]
+    return [
+        {objective.name: (data[objective.name][trial_index], None) for objective in active_objectives}
+        for trial_index in range(len(data[active_objectives[0].name]))
+    ]

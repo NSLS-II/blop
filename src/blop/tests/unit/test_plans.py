@@ -1,11 +1,11 @@
-from unittest.mock import patch, MagicMock, Mock
+from unittest.mock import MagicMock, Mock, patch
 
 import bluesky.plan_stubs as bps
 import pytest
 from bluesky.run_engine import RunEngine
 
-from blop.plans import acquire_with_background, default_acquire, optimize_step, optimize, acquire_baseline
-from blop.protocols import Generator, OptimizationProblem, EvaluationFunction, AcquisitionPlan
+from blop.plans import acquire_baseline, acquire_with_background, default_acquire, optimize, optimize_step
+from blop.protocols import AcquisitionPlan, EvaluationFunction, Generator, OptimizationProblem
 
 from .conftest import MovableSignal, ReadableSignal
 
@@ -53,7 +53,6 @@ def test_optimize_multiple(RE):
     assert evaluation_function.call_count == 5
 
 
-
 def test_optimize_multiple_with_n_points(RE):
     generator = MagicMock(spec=Generator)
     generator.suggest.return_value = [{"x1": 0.0, "_id": 0}, {"x1": 0.1, "_id": 1}]
@@ -88,7 +87,11 @@ def test_optimize_complex_case(RE):
     )
     optimization_problem = OptimizationProblem(
         generator=generator,
-        movables=[MovableSignal("x1", initial_value=-1.0), MovableSignal("x2", initial_value=-1.0), MovableSignal("x3", initial_value=-1.0)],
+        movables=[
+            MovableSignal("x1", initial_value=-1.0),
+            MovableSignal("x2", initial_value=-1.0),
+            MovableSignal("x3", initial_value=-1.0),
+        ],
         readables=[ReadableSignal("readable1"), ReadableSignal("readable2")],
         evaluation_function=evaluation_function,
     )
@@ -99,7 +102,7 @@ def test_optimize_complex_case(RE):
     generator.ingest.assert_called_with([{"objective1": 0.0, "objective2": 0.1}, {"objective1": 0.1, "objective2": 0.2}])
     assert generator.suggest.call_count == 2
     assert generator.ingest.call_count == 2
-    assert evaluation_function.call_count == 2 
+    assert evaluation_function.call_count == 2
 
 
 def test_optimize_step_default(RE):
@@ -169,14 +172,15 @@ def test_default_acquire_multiple_movables_readables(RE):
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
     movable_and_input = {movable1: [0.0, 0.1], movable2: [0.0, 0.1]}
-    
-    with (patch.object(movable1, "set", wraps=movable1.set) as mock_set1,
-         patch.object(movable2, "set", wraps=movable2.set) as mock_set2,
-         patch.object(readable1, "read", wraps=readable1.read) as mock_read1,
-         patch.object(readable2, "read", wraps=readable2.read) as mock_read2):
-        
+
+    with (
+        patch.object(movable1, "set", wraps=movable1.set) as mock_set1,
+        patch.object(movable2, "set", wraps=movable2.set) as mock_set2,
+        patch.object(readable1, "read", wraps=readable1.read) as mock_read1,
+        patch.object(readable2, "read", wraps=readable2.read) as mock_read2,
+    ):
         RE(default_acquire(movable_and_input, [readable1, readable2]))
-        
+
         # Verify movables were set in correct order
         assert mock_set1.call_count == 2
         assert mock_set2.call_count == 2
@@ -184,11 +188,11 @@ def test_default_acquire_multiple_movables_readables(RE):
         assert mock_set2.call_args_list[0][0][0] == 0.0
         assert mock_set1.call_args_list[1][0][0] == 0.1  # Second call
         assert mock_set2.call_args_list[1][0][0] == 0.1
-        
+
         # Verify reads happened twice
         assert mock_read1.call_count == 2
         assert mock_read2.call_count == 2
-    
+
     # Verify final positions
     assert movable1.read()["x1"]["value"] == 0.1
     assert movable2.read()["x2"]["value"] == 0.1
@@ -196,6 +200,7 @@ def test_default_acquire_multiple_movables_readables(RE):
 
 def test_acquire_with_background(RE):
     """Test background acquisition with multiple movables, positions, and readables"""
+
     def block_beam():
         yield from bps.null()
 
@@ -239,7 +244,7 @@ def test_acquire_baseline(RE):
     )
 
     RE(acquire_baseline(optimization_problem, parameterization={"x1": 0.0}))
-    
+
     # No suggestions are made since this is a baseline reading
     assert generator.suggest.call_count == 0
 
@@ -260,9 +265,10 @@ def test_acquire_baseline_from_current(RE):
         evaluation_function=evaluation_function,
     )
 
-    with (patch.object(movable, "set", wraps=movable.set) as mock_set,
-          patch.object(movable, "read", wraps=movable.read) as mock_read):
-
+    with (
+        patch.object(movable, "set", wraps=movable.set) as mock_set,
+        patch.object(movable, "read", wraps=movable.read) as mock_read,
+    ):
         RE(acquire_baseline(optimization_problem))
 
         # Ensure the movable was read twice (once for the baseline, once during the acquisition)
