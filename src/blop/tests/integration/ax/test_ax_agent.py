@@ -1,3 +1,5 @@
+import functools
+
 import numpy as np
 from ax.generation_strategy.generation_node import GenerationNode
 from ax.generation_strategy.generation_strategy import GenerationStrategy
@@ -12,6 +14,7 @@ from blop.bayesian.models import LatentGP
 from blop.dofs import DOF
 from blop.objectives import Objective
 from blop.sim.beamline import TiledBeamline
+from blop.evaluation import default_evaluation_function
 
 
 def test_ax_agent(RE, setup):
@@ -31,11 +34,12 @@ def test_ax_agent(RE, setup):
         Objective(name="bl_det_wid_y", target="min"),
     ]
 
+    evaluation_function = functools.partial(default_evaluation_function, tiled_client=setup, active_objectives=objectives)
     agent = Agent(
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        db=setup,
+        evaluation_function=evaluation_function,
     )
 
     agent.configure_experiment(name="test_ax_agent", description="Test the Agent")

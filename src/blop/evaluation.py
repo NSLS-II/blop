@@ -6,10 +6,9 @@ from .objectives import Objective
 
 
 def default_evaluation_function(
-    trial_index: int,
     uid: str,
-    tiled_client: Container,
     *,
+    tiled_client: Container,
     active_objectives: list[Objective],
 ) -> TOutcome:
     """
@@ -21,11 +20,11 @@ def default_evaluation_function(
 
     Parameters
     ----------
-    trial_index : int
-        The index of the trial.
-    data : dict[str, list[Any]]
-        A dictonary containing the results of the experiment.
-    active_objectives : list[Objective]
+    uid: str
+        The unique identifier of the Bluesky run to evaluate.
+    tiled_client: Container
+        The tiled client to read the data from.
+    active_objectives: list[Objective]
         The active objectives of the experiment.
 
     Returns
@@ -35,7 +34,7 @@ def default_evaluation_function(
         is a single trial, the standard error is None.
     """
     data = TiledDataAccess(tiled_client).get_data(uid)
-    return {
-        objective.name: (data[objective.name][(trial_index % len(data[objective.name]))], None)
+    return [{
+        objective.name: (data[objective.name][trial_index], None)
         for objective in active_objectives
-    }
+    } for trial_index in range(len(data[active_objectives[0].name]))]

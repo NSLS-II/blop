@@ -9,12 +9,14 @@ from ax.analysis import Analysis, AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization
 from ax.generation_strategy.generation_strategy import GenerationStrategy
 from bluesky.protocols import Readable
+from bluesky.utils import MsgGenerator
 
 from ..dofs import DOF, DOFConstraint
 from ..evaluation import default_evaluation_function
 from ..objectives import Objective
 from ..protocols import Generator, OptimizationProblem
 from .adapters import configure_metrics, configure_objectives, configure_parameters
+from ..plans import optimize
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ class Agent(Generator):
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
         dof_constraints: Sequence[DOFConstraint] = None,
-        evaluation: EvaluationFunction = default_evaluation_function,
+        evaluation_function: EvaluationFunction = default_evaluation_function,
         evaluation_kwargs: dict | None = None,
     ):
         self._readables = readables
@@ -57,7 +59,7 @@ class Agent(Generator):
         self._dof_constraints = dof_constraints
         self._objectives = {obj.name: obj for obj in objectives}
         self.client = Client()
-        self._evaluation = evaluation
+        self._evaluation_function = evaluation_function
         self._evaluation_kwargs = evaluation_kwargs or {}
 
     @property
@@ -78,7 +80,7 @@ class Agent(Generator):
 
     @property
     def evaluation_function(self) -> EvaluationFunction:
-        return self._evaluation
+        return self._evaluation_function
 
     @property
     def evaluation_kwargs(self) -> dict:
@@ -283,6 +285,7 @@ class Agent(Generator):
         warnings.warn("tell is deprecated. Use ingest or complete_trials instead.", DeprecationWarning, stacklevel=2)
         return self.complete_trials(trials=trials, outcomes=outcomes)
 
+
     def _attach_single_trial(self, parameters: TParameterization, outcomes: TOutcome) -> None:
         """
         Attach a single trial to the experiment.
@@ -454,3 +457,22 @@ class Agent(Generator):
         ax.Client.summarize : The Ax method to summarize the experiment state.
         """
         return self.client.summarize()
+
+    def learn(self, iterations: int = 1, n: int = 1) -> MsgGenerator[None]:
+        """
+        Learn by running trials and providing the outcomes.
+
+        Parameters
+        ----------
+        iterations : int, optional
+            The number of optimization iterations to run.
+        n : int, optional
+            The number of trials to run per iteration. Higher values can lead to more efficient data acquisition,
+            but slower optimization progress.
+
+        Returns
+        -------
+        Generator[dict[int, TOutcome], None, None]
+            A generator that yields the outcomes of the trials.
+        """
+        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n)
