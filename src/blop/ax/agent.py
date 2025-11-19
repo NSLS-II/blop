@@ -13,6 +13,7 @@ from bluesky.protocols import Readable
 from ..dofs import DOF, DOFConstraint
 from ..evaluation import default_evaluation_function
 from ..objectives import Objective
+from ..protocols import Generator, OptimizationProblem
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
@@ -21,7 +22,7 @@ P = ParamSpec("P")
 EvaluationFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome]
 
 
-class Agent:
+class Agent(Generator):
     """
     An agent interface that uses Ax as the backend for optimization and experiment tracking.
 
@@ -83,6 +84,14 @@ class Agent:
     def evaluation_kwargs(self) -> dict:
         return self._evaluation_kwargs
 
+    def to_optimization_problem(self) -> OptimizationProblem:
+        return OptimizationProblem(
+            generator=self,
+            movables=[dof.movable for dof in self.dofs.values()],
+            readables=self.readables,
+            evaluation_function=self.evaluation_function,
+        )
+
     def configure_experiment(
         self,
         name: str | None = None,
@@ -127,9 +136,9 @@ class Agent:
         self.client.configure_optimization(objectives, objective_constraints)
         self.client.configure_metrics(metrics)
 
-        # If the digestion function is the default, we need to pass the active objectives to the digestion function
-        if self.digestion == default_evaluation_function:
-            self.digestion_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
+        # If the evaluation function is the default, we need to pass the active objectives to the evaluation function
+        if self.evaluation_function == default_evaluation_function:
+            self.evaluation_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
 
     def attach_baseline(self, parameterization: TParameterization, arm_name: str | None = None) -> TParameterization:
         """
@@ -161,7 +170,7 @@ class Agent:
         """
         if num_points is None:
             num_points = 1
-        next_trials = self.get_next_trials(n=num_points)
+        next_trials = self.get_next_trials(num_points)
         return [
             {
                 "_id": trial_index,

@@ -241,7 +241,7 @@ def acquire_baseline(
         acquisition_plan = default_acquire
     else:
         acquisition_plan = optimization_problem.acquisition_plan
-    movables_and_inputs = {movable: parameterization[movable.name] for movable in movables}
+    movables_and_inputs = {movable: [parameterization[movable.name]] for movable in movables}
     uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, **kwargs)
     outcome = optimization_problem.evaluation_function(uid)[0]
     outcome.update({"_id": 0})
