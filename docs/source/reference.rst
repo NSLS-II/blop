@@ -7,3 +7,4 @@ API Reference
     reference/agent.rst
     reference/dof.rst
     reference/objective.rst
+    reference/protocols.rst
