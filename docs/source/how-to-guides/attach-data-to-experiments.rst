@@ -130,8 +130,12 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
 
 .. testcode::
 
+    import functools
+
     from blop import DOF, Objective
     from blop.ax import Agent
+    from blop.evaluation import default_evaluation_function
+
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -148,7 +152,7 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=db, active_objectives=objectives),
     )
     agent.configure_experiment(name="experiment_name", description="experiment_description")
 

@@ -28,6 +28,7 @@ from blop import DOF, Objective
 from blop.ax import Agent
 from blop.dofs import DOF
 from blop.objectives import Objective
+from blop.plans import optimize
 
 from bluesky.protocols import NamedMovable, Readable, Status, Hints, HasHints, HasParent
 from bluesky.run_engine import RunEngine
@@ -141,18 +142,28 @@ Additional readables are typically added as a list of devices that produce data,
 Next, we will define the digestion function. The data that will be available to the digestion function will always be a collection of readables (specified either implicitly or explicitly).
 
 ```{code-cell} ipython3
-def himmelblau_2d_digestion(trial_index: int, data: dict[str, Any]) -> float:
-    x1 = data["x1"][trial_index % len(data["x1"])]
-    x2 = data["x2"][trial_index % len(data["x2"])]
-    return {"himmelblau_2d": (x1 ** 2 + x2 - 11) ** 2 + (x1 + x2 ** 2 - 7) ** 2}
+def himmelblau_2d(uid: str, trial_uids: set[int | str] = None) -> float:
+    """Evaluation of the acquired data for the himmelblau_2d objective."""
+
+    outcomes = []
+    run = tiled_client[uid]
+    x1_data = run["primary/x1"].read()
+    x2_data = run["primary/x2"].read()
+    for trial_uid in trial_uids:
+        x1 = x1_data[trial_uid % len(x1_data)]
+        x2 = x2_data[trial_uid % len(x2_data)]
+        outcome = {"himmelblau_2d": (x1 ** 2 + x2 - 11) ** 2 + (x1 + x2 ** 2 - 7) ** 2, "_id": trial_uid}
+        outcomes.append(outcome)
+
+    return outcomes
 ```
 
 Next, we will setup the agent and perform the optimization using the run engine.
-    
+
 ```{code-cell} ipython3
-agent = Agent(readables=readables, dofs=dofs, objectives=objectives, db=tiled_client, digestion=himmelblau_2d_digestion)
+agent = Agent(readables=readables, dofs=dofs, objectives=objectives, evaluation_function=himmelblau_2d)
 agent.configure_experiment(name="simple_experiment", description="A simple experiment.")
-RE(agent.learn(iterations=30))
+RE(optimize(agent.to_optimization_problem(), iterations=30))
 ```
 
 Now we can view the results.

@@ -97,8 +97,12 @@ Configure an agent
 
 .. testcode::
 
+    import functools
+
     from blop import DOF, Objective
     from blop.ax import Agent
+    from blop.evaluation import default_evaluation_function
+
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -113,7 +117,7 @@ Configure an agent
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=db, active_objectives=objectives),
     )
 
 Configure a generation strategy
@@ -199,7 +203,9 @@ Run the experiment with Bluesky
 
 .. testcode::
 
-    RE(agent.learn(iterations=12, n=1))
+    from blop.plans import optimize
+
+    RE(optimize(agent.to_optimization_problem(), iterations=12, n_points=1))
 
 
 Verify the generation strategy was used

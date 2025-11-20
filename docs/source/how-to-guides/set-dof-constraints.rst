@@ -106,12 +106,15 @@ Configure an agent with DOF constraints
 
 .. testcode::
 
+    import functools
+
+    from blop.evaluation import default_evaluation_function
     from blop.ax import Agent
 
     agent = Agent(
         readables=[],
         dofs=[dof1, dof2],
         objectives=[objective],
-        db=db,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=db, active_objectives=objective),
         dof_constraints=[constraint],
     )

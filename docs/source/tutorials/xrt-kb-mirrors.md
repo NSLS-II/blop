@@ -13,7 +13,6 @@ kernelspec:
 
 # XRT KB Mirror Demo
 
-+++
 
 For ophyd beamline setup see: 
 - https://github.com/NSLS-II/blop/blob/main/src/blop/sim/xrt_beamline.py
@@ -25,6 +24,7 @@ The picture below displays beam from geometric source propagating through a pair
 
 ```{code-cell} ipython3
 import time
+import functools
 from datetime import datetime
 import logging
 
@@ -45,6 +45,8 @@ from tiled.client import from_uri  # type: ignore[import-untyped]
 from tiled.server import SimpleTiledServer
 
 from blop import DOF, Objective
+from blop.plans import optimize
+from blop.evaluation import default_evaluation_function
 from blop.ax import Agent
 from blop.sim import HDF5Handler
 from blop.sim.xrt_beamline import DatabrokerBeamline, TiledBeamline
@@ -129,11 +131,12 @@ objectives = [
 ```
 
 ```{code-cell} ipython3
+evaluation_function = functools.partial(default_evaluation_function, tiled_client=db, active_objectives=objectives)
 agent = Agent(
     readables=[beamline.det],
     dofs=dofs,
     objectives=objectives,
-    db=db,
+    evaluation_function=evaluation_function,
 )
 agent.configure_experiment(
     name="xrt-blop-demo",
@@ -144,7 +147,7 @@ agent.configure_experiment(
 
 ```{code-cell} ipython3
 # Number of iterations can be increased to be more specific
-RE(agent.learn(iterations=15))
+RE(optimize(agent.to_optimization_problem(), iterations=15))
 ```
 
 ```{code-cell} ipython3

@@ -99,8 +99,11 @@ Here we configure an agent with three DOFs and two objectives. The second object
 
 .. testcode::
 
+    import functools
+
     from blop import DOF, Objective
     from blop.ax import Agent
+    from blop.evaluation import default_evaluation_function
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -117,7 +120,7 @@ Here we configure an agent with three DOFs and two objectives. The second object
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation_function=functools.partial(default_evaluation_function, tiled_client=db, active_objectives=objectives),
     )
     agent.configure_experiment(name="experiment_name", description="experiment_description")
 
@@ -128,7 +131,9 @@ To acquire a baseline reading, simply call the ``acquire_baseline`` method. Opti
 
 .. testcode::
 
-    RE(agent.acquire_baseline())
+    from blop.plans import acquire_baseline
+
+    RE(acquire_baseline(agent.to_optimization_problem()))
 
 .. testoutput::
    :hide:

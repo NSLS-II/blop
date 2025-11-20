@@ -28,7 +28,6 @@ Blop provides:
 
 These features make it simple to optimize your beamline using both Bluesky & Ax.
 
-+++
 
 ## Preparing a test environment
 
@@ -36,6 +35,7 @@ Here we prepare the `RunEngine`.
 
 ```{code-cell} ipython3
 from datetime import datetime
+import functools
 import logging
 
 import bluesky.plan_stubs as bps  # noqa F401
@@ -51,6 +51,8 @@ from tiled.client import from_uri  # type: ignore[import-untyped]
 from tiled.client.container import Container
 from tiled.server import SimpleTiledServer
 
+from blop.plans import optimize
+from blop.evaluation import default_evaluation_function
 from blop.sim import HDF5Handler
 from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
 
@@ -132,11 +134,12 @@ objectives = [
     Objective(name="bl_det_wid_y", target="min"),
 ]
 
+evaluation_function = functools.partial(default_evaluation_function, tiled_client=db, active_objectives=objectives)
 agent = Agent(
     readables=[beamline.det],
     dofs=dofs,
     objectives=objectives,
-    db=db,
+    evaluation_function=evaluation_function,
 )
 agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
 ```
@@ -148,7 +151,7 @@ With all of our experimental setup done, we can optimize the DOFs to satisfy our
 For this example, Ax will optimize the 4 motor positions to produce the greatest intensity beam with the smallest beam width and height (smallest area). It does this by first running a couple of trials which are random samples, then the remainder using Bayesian optimization through BoTorch.
 
 ```{code-cell} ipython3
-RE(agent.learn(iterations=25, n=1))
+RE(optimize(agent.to_optimization_problem(), iterations=25, n_points=1))
 ```
 
 ## Analyze Results
@@ -203,7 +206,6 @@ uid = RE(list_scan([beamline.det], *scan_motor_params))
 ```
 
 ```{code-cell} ipython3
-
 image = db[uid[0]]["primary"]["bl_det_image"].read().squeeze()
 plt.imshow(image)
 plt.colorbar()
