@@ -1,12 +1,17 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
-from tiled.client.container import Container
+import pytest
 from databroker import Broker
+from tiled.client.container import Container
 
-from blop.evaluation import default_evaluation_function, TiledEvaluationFunction, DatabrokerEvaluationFunction, DataAccessEvaluationFunction
+from blop.data_access import DataAccess, DatabrokerDataAccess, TiledDataAccess
+from blop.evaluation import (
+    DataAccessEvaluationFunction,
+    DatabrokerEvaluationFunction,
+    TiledEvaluationFunction,
+    default_evaluation_function,
+)
 from blop.objectives import Objective
-from blop.data_access import DataAccess, TiledDataAccess, DatabrokerDataAccess
 
 
 @pytest.fixture(scope="function")
@@ -37,6 +42,7 @@ def test_default_evaluation_function(mock_data_access):
             "_id": 1,
         },
     ]
+
 
 def test_default_evaluation_function_with_baseline(mock_data_access):
     suggestions = [
@@ -80,8 +86,10 @@ def test_default_evaluation_function_with_multiple_suggestions(mock_data_access)
         Objective(name="test_objective1", target="max"),
         Objective(name="test_objective2", target="max"),
     ]
-    
-    with patch.object(mock_data_access, "get_data", return_value={"test_objective1": [1.0, 3.0], "test_objective2": [2.0, 4.0]}):
+
+    with patch.object(
+        mock_data_access, "get_data", return_value={"test_objective1": [1.0, 3.0], "test_objective2": [2.0, 4.0]}
+    ):
         outcomes = default_evaluation_function(
             uid="123",
             suggestions=suggestions,
@@ -112,7 +120,9 @@ def test_default_evaluation_function_with_multiple_suggestions(mock_data_access)
             "x2": 1.1,
         },
     ]
-    with patch.object(mock_data_access, "get_data", return_value={"test_objective1": [1.1, 3.1], "test_objective2": [2.1, 4.1]}):
+    with patch.object(
+        mock_data_access, "get_data", return_value={"test_objective1": [1.1, 3.1], "test_objective2": [2.1, 4.1]}
+    ):
         outcomes = default_evaluation_function(
             uid="124",
             suggestions=suggestions,

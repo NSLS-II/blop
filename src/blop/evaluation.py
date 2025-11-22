@@ -1,9 +1,9 @@
-from typing import cast, Literal
+from typing import Literal, cast
 
-from tiled.client.container import Container
 from databroker import Broker
+from tiled.client.container import Container
 
-from .data_access import DataAccess, TiledDataAccess, DatabrokerDataAccess
+from .data_access import DataAccess, DatabrokerDataAccess, TiledDataAccess
 from .objectives import Objective
 from .protocols import EvaluationFunction
 
@@ -51,9 +51,13 @@ def default_evaluation_function(
         if id == "baseline":
             outcome.update({objective.name: (data[objective.name][0], None) for objective in objectives})
         elif isinstance(id, int):
-            outcome.update({objective.name: (data[objective.name][id % len(data[objective.name])], None) for objective in objectives})
+            outcome.update(
+                {objective.name: (data[objective.name][id % len(data[objective.name])], None) for objective in objectives}
+            )
         else:
-            raise ValueError(f"Invalid '_id' type for this evaluation function. Got: {type(id)} for suggestion: {suggestion}.")
+            raise ValueError(
+                f"Invalid '_id' type for this evaluation function. Got: {type(id)} for suggestion: {suggestion}."
+            )
         outcome["_id"] = id
         outcomes.append(outcome)
 
@@ -64,7 +68,7 @@ class DataAccessEvaluationFunction(EvaluationFunction):
     def __init__(self, data_access: DataAccess, objectives: list[Objective]):
         self.data_access = data_access
         self.objectives: list[Objective] = objectives
-    
+
     def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
         return default_evaluation_function(uid, suggestions, data_access=self.data_access, objectives=self.objectives)
 
