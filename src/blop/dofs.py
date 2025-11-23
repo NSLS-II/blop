@@ -448,9 +448,9 @@ class DOF:
 
 
 class DOFConstraint:
-    def __init__(self, constraint: str, **movables: dict[str, NamedMovable]) -> None:
+    def __init__(self, constraint: str, **movables: NamedMovable) -> None:
         self._constraint = constraint
-        self._movables = movables
+        self._movables: dict[str, NamedMovable] = movables
         self._validate_movables()
         self._movable_names = {key: movable.name for key, movable in self._movables.items()}
         self._template = self._to_template()
