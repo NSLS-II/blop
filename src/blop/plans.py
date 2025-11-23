@@ -1,22 +1,143 @@
 import functools
+import warnings
 from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping, Sequence
-from typing import Any
+from typing import Any, cast
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 from ax.api.types import TParameterization, TParameterValue
 from bluesky.protocols import Movable, Readable, Reading
-from bluesky.run_engine import Msg
-from bluesky.utils import MsgGenerator, plan
+from bluesky.utils import Msg, MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
 
 from .dofs import DOF
+from .protocols import NamedMovableT, OptimizationProblem
+
+
+def _unpack_for_list_scan(movables: Mapping[NamedMovableT, Sequence[Any]]) -> list[NamedMovableT | Any]:
+    """Unpack the movables and inputs into Bluesky list_scan plan arguments."""
+    unpacked_list = []
+    for movable, values in movables.items():
+        unpacked_list.append(movable)
+        unpacked_list.append(values)
+
+    return unpacked_list
+
+
+@plan
+def default_acquire(
+    movables: Mapping[NamedMovableT, Sequence[Any]],
+    readables: Sequence[Readable] | None = None,
+    *,
+    per_step: bp.PerStep | None = None,
+    **kwargs: Any,
+) -> MsgGenerator[str]:
+    """
+    A default plan to acquire data for optimization. Simply a list scan.
+
+    Parameters
+    ----------
+    movables: Mapping[NamedMovableT, Sequence[Any]]
+        The movables to move and the inputs to move them to.
+    readables: Sequence[Readable]
+        The readables to trigger and read.
+    per_step: bp.PerStep | None = None
+        The plan to execute for each step of the scan.
+    **kwargs: Any
+        Additional keyword arguments to pass to the list_scan plan.
+
+    Returns
+    -------
+    str
+        The UID of the Bluesky run.
+
+    See Also
+    --------
+    bluesky.plans.list_scan : The Bluesky plan to acquire data.
+    """
+    if readables is None:
+        readables = []
+    plan_args = _unpack_for_list_scan(movables)
+    return (
+        # TODO: fix argument type in bluesky.plans.list_scan
+        yield from bp.list_scan(
+            readables,
+            *plan_args,  # type: ignore[arg-type]
+            per_step=per_step,
+            **kwargs,
+        )
+    )
+
+
+@plan
+def optimize_step(
+    optimization_problem: OptimizationProblem,
+    n_points: int = 1,
+    *args: Any,
+    **kwargs: Any,
+) -> MsgGenerator[None]:
+    """
+    A single step of the optimization loop.
+
+    Parameters
+    ----------
+    optimization_problem : OptimizationProblem
+        The optimization problem to solve.
+    n_points : int, optional
+        The number of points to suggest.
+    """
+    if optimization_problem.acquisition_plan is None:
+        acquisition_plan = default_acquire
+    else:
+        acquisition_plan = optimization_problem.acquisition_plan
+    generator = optimization_problem.generator
+    movables = optimization_problem.movables
+    suggestions = generator.suggest(n_points)
+    movables_and_inputs = {movable: [suggestion[movable.name] for suggestion in suggestions] for movable in movables}
+    uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, *args, **kwargs)
+    outcomes = optimization_problem.evaluation_function(uid, suggestions)
+    generator.ingest(outcomes)
+
+
+@plan
+def optimize(
+    optimization_problem: OptimizationProblem,
+    iterations: int = 1,
+    n_points: int = 1,
+    *args: Any,
+    **kwargs: Any,
+) -> MsgGenerator[None]:
+    """
+    A plan to optimize the generator.
+
+    Parameters
+    ----------
+    optimization_problem : OptimizationProblem
+        The optimization problem to solve.
+    iterations : int, optional
+        The number of optimization iterations to run.
+    n_points : int, optional
+        The number of points to suggest per iteration.
+    """
+
+    for _ in range(iterations):
+        yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
 
 
 @plan
 def list_scan_with_delay(*args: Any, delay: float = 0, **kwargs: Any) -> Generator[Msg, None, str]:
-    "Accepts all the normal 'scan' parameters, plus an optional delay."
+    """
+    Accepts all the normal 'scan' parameters, plus an optional delay.
+
+    .. deprecated:: v0.8.2
+        This plan is deprecated and will be removed in Blop v1.0.0. See documentation how-to-guides for more information.
+    """
+    warnings.warn(
+        "This plan is deprecated and will be removed in Blop v1.0.0. See documentation how-to-guides for more information.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     def one_nd_step_with_delay(
         detectors: Sequence[Signal], step: Mapping[Movable, Any], pos_cache: Mapping[Movable, Any]
@@ -37,6 +158,11 @@ def default_acquisition_plan(
     dofs: Sequence[DOF], inputs: Mapping[str, Sequence[Any]], dets: Sequence[Signal], **kwargs: Any
 ) -> Generator[Msg, None, str]:
     """
+    Default acquisition plan.
+
+    .. deprecated:: v0.8.2
+        This plan is deprecated and will be removed in Blop v1.0.0. See documentation how-to-guides for more information.
+
     Parameters
     ----------
     x : list of DOFs or DOFList
@@ -46,6 +172,11 @@ def default_acquisition_plan(
     dets: list
         A list of detectors to trigger
     """
+    warnings.warn(
+        "This plan is deprecated and will be removed in Blop v1.0.0. See documentation how-to-guides for more information.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     delay = kwargs.get("delay", 0)
     args = []
     for dof in dofs:
@@ -65,11 +196,62 @@ def read(readables: Sequence[Readable], **kwargs: Any) -> MsgGenerator[dict[str,
     ----------
     readables : Sequence[Readable]
         The readables to read.
+
+    Returns
+    -------
+    dict[str, Any]
+        A dictionary of the readable names and their current values.
     """
     results = {}
     for readable in readables:
         results[readable.name] = yield from bps.rd(readable, **kwargs)
     return results
+
+
+def acquire_baseline(
+    optimization_problem: OptimizationProblem,
+    parameterization: dict[str, Any] | None = None,
+    **kwargs: Any,
+) -> MsgGenerator[None]:
+    """
+    Acquire a baseline reading. Useful for relative outcome constraints.
+
+    Parameters
+    ----------
+    generator: Agent
+        The generator to acquire the baseline for.
+    parameterization : TParameterization, optional
+        Move the DOFs to the given parameterization, if provided.
+    arm_name : str, optional
+        A name for the arm to distinguish it from other arms.
+    per_step: bp.PerStep | None, optional
+        The per-step plan to execute for each step of the scan.
+    **kwargs: Any
+        Additional keyword arguments to pass to the acquire plan.
+
+    See Also
+    --------
+    default_acquire : The default plan to acquire data.
+    """
+    movables = optimization_problem.movables
+    if parameterization is None:
+        if all(isinstance(movable, Readable) for movable in movables):
+            parameterization = yield from read(cast(Sequence[Readable], movables))
+        else:
+            raise ValueError(
+                "All movables must also implement the Readable protocol to acquire a baseline from current positions."
+            )
+    generator = optimization_problem.generator
+    if optimization_problem.acquisition_plan is None:
+        acquisition_plan = default_acquire
+    else:
+        acquisition_plan = optimization_problem.acquisition_plan
+    movables_and_inputs = {movable: [parameterization[movable.name]] for movable in movables}
+    uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, **kwargs)
+    parameterization["_id"] = "baseline"
+    outcome = optimization_problem.evaluation_function(uid, [parameterization])[0]
+    data = {**outcome, **parameterization}
+    generator.ingest([data])
 
 
 @plan
@@ -131,6 +313,49 @@ def per_step_background_read(
     return functools.partial(bps.one_nd_step, take_reading=take_reading)
 
 
+@plan
+def acquire_with_background(
+    movables: Mapping[NamedMovableT, Sequence[Any]],
+    readables: Sequence[Readable] | None = None,
+    *,
+    block_beam: Callable[[], MsgGenerator[None]],
+    unblock_beam: Callable[[], MsgGenerator[None]],
+    **kwargs: Any,
+) -> MsgGenerator[str]:
+    """
+    A plan to acquire data for optimization with background readings.
+
+    Parameters
+    ----------
+    movables: Mapping[NamedMovableT, Sequence[Any]]
+        The movables and the inputs to move them to.
+    readables: Sequence[Readable] | None = None
+        The readables that produce data to evaluate.
+    block_beam: Callable[[], MsgGenerator[None]]
+        A Bluesky plan that blocks the beam (e.g. by closing a shutter).
+    unblock_beam: Callable[[], MsgGenerator[None]]
+        A Bluesky plan that unblocks the beam (e.g. by opening a shutter).
+    **kwargs: Any
+        Additional keyword arguments to pass to the acquisition plan.
+
+    Returns
+    -------
+    str
+        The UID of the Bluesky run.
+
+    See Also
+    --------
+    acquire : The base plan to acquire data.
+    per_step_background_read : The per-step plan to take background readings.
+    """
+    if readables is None:
+        readables = []
+    per_step = per_step_background_read(block_beam, unblock_beam)
+    return (yield from default_acquire(movables, readables, per_step=per_step, **kwargs))
+
+
+# ===========================================================================================================================
+# TODO: Remove when refactoring the Ax agent.
 def _unpack_parameters(dofs: dict[str, DOF], parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
     """Unpack the parameterizations into Bluesky plan arguments."""
     unpacked_dict = defaultdict(list)
@@ -159,6 +384,8 @@ def acquire(
 ) -> MsgGenerator[str]:
     """
     A plan to acquire data for optimization.
+
+    TODO: Remove when refactoring the Ax agent.
 
     Parameters
     ----------
@@ -190,42 +417,4 @@ def acquire(
     )
 
 
-@plan
-def acquire_with_background(
-    readables: Sequence[Readable],
-    dofs: Sequence[DOF],
-    trials: dict[int, TParameterization],
-    block_beam: Callable[[], MsgGenerator[None]],
-    unblock_beam: Callable[[], MsgGenerator[None]],
-    **kwargs: Any,
-) -> MsgGenerator[str]:
-    """
-    A plan to acquire data for optimization with background readings.
-
-    Parameters
-    ----------
-    readables: Sequence[Readable]
-        The readables to trigger and read.
-    dofs: Sequence[DOF]
-        The DOFs to move.
-    trials: dict[int, TParameterization]
-        A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
-    block_beam: Callable[[], MsgGenerator[None]]
-        A callable that blocks the beam (e.g. by closing a shutter).
-    unblock_beam: Callable[[], MsgGenerator[None]]
-        A callable that unblocks the beam (e.g. by opening a shutter).
-    **kwargs: Any
-        Additional keyword arguments to pass to the list_scan plan.
-
-    Returns
-    -------
-    str
-        The UID of the Bluesky run.
-
-    See Also
-    --------
-    acquire : The base plan to acquire data.
-    per_step_background_read : The per-step plan to take background readings.
-    """
-    per_step = per_step_background_read(block_beam, unblock_beam)
-    return (yield from acquire(readables, dofs, trials, per_step=per_step, **kwargs))
+# ===========================================================================================================================
