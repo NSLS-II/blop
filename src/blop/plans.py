@@ -91,13 +91,13 @@ def optimize_step(
         acquisition_plan = default_acquire
     else:
         acquisition_plan = optimization_problem.acquisition_plan
-    generator = optimization_problem.generator
+    optimizer = optimization_problem.optimizer
     movables = optimization_problem.movables
-    suggestions = generator.suggest(n_points)
+    suggestions = optimizer.suggest(n_points)
     movables_and_inputs = {movable: [suggestion[movable.name] for suggestion in suggestions] for movable in movables}
     uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
-    generator.ingest(outcomes)
+    optimizer.ingest(outcomes)
 
 
 @plan
@@ -109,7 +109,7 @@ def optimize(
     **kwargs: Any,
 ) -> MsgGenerator[None]:
     """
-    A plan to optimize the generator.
+    A plan to solve the optimization problem.
 
     Parameters
     ----------
@@ -218,16 +218,10 @@ def acquire_baseline(
 
     Parameters
     ----------
-    generator: Agent
-        The generator to acquire the baseline for.
-    parameterization : TParameterization, optional
+    optimization_problem : OptimizationProblem
+        The optimization problem to solve.
+    parameterization : dict[str, Any] | None = None
         Move the DOFs to the given parameterization, if provided.
-    arm_name : str, optional
-        A name for the arm to distinguish it from other arms.
-    per_step: bp.PerStep | None, optional
-        The per-step plan to execute for each step of the scan.
-    **kwargs: Any
-        Additional keyword arguments to pass to the acquire plan.
 
     See Also
     --------
@@ -241,7 +235,7 @@ def acquire_baseline(
             raise ValueError(
                 "All movables must also implement the Readable protocol to acquire a baseline from current positions."
             )
-    generator = optimization_problem.generator
+    optimizer = optimization_problem.optimizer
     if optimization_problem.acquisition_plan is None:
         acquisition_plan = default_acquire
     else:
@@ -251,7 +245,7 @@ def acquire_baseline(
     parameterization["_id"] = "baseline"
     outcome = optimization_problem.evaluation_function(uid, [parameterization])[0]
     data = {**outcome, **parameterization}
-    generator.ingest([data])
+    optimizer.ingest([data])
 
 
 @plan

@@ -9,9 +9,9 @@ NamedMovableT = TypeVar("NamedMovableT", bound=NamedMovable)
 
 
 @runtime_checkable
-class Generator(Protocol):
+class Optimizer(Protocol):
     """
-    A minimal generator interface for optimization.
+    A minimal optimizer interface for optimization.
     """
 
     def suggest(self, num_points: int | None = None) -> list[dict]:
@@ -108,7 +108,7 @@ class OptimizationProblem:
 
     Attributes
     ----------
-    generator: Generator
+    optimizer: Optimizer
         Suggests points to evaluate and ingests outcomes to inform the optimization.
     movables: Sequence[NamedMovable]
         Objects that can be moved to control the beamline using the Bluesky RunEngine.
@@ -121,7 +121,7 @@ class OptimizationProblem:
         A Bluesky plan to acquire data from the beamline. If not provided, a default plan will be used.
     """
 
-    generator: Generator
+    optimizer: Optimizer
     movables: Sequence[NamedMovable]
     readables: Sequence[Readable]
     evaluation_function: EvaluationFunction

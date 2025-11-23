@@ -1,4 +1,5 @@
 import logging
+from collections.abc import Sequence
 
 from ax import ChoiceParameterConfig, RangeParameterConfig
 from ax.api.protocols import IMetric
@@ -38,7 +39,7 @@ def _to_ax_parameter_config(dof: DOF) -> RangeParameterConfig | ChoiceParameterC
     return parameter_config
 
 
-def configure_parameters(dofs: list[DOF]) -> list[RangeParameterConfig | ChoiceParameterConfig]:
+def configure_parameters(dofs: Sequence[DOF]) -> list[RangeParameterConfig | ChoiceParameterConfig]:
     return [_to_ax_parameter_config(dof) for dof in dofs if dof.active]
 
 
@@ -69,7 +70,7 @@ def _unpack_objectives(objectives: list[Objective]) -> tuple[str, list[str]]:
     return objective_str, outcome_contraint_specs
 
 
-def configure_objectives(objectives: list[Objective]) -> tuple[str, list[str]]:
+def configure_objectives(objectives: Sequence[Objective]) -> tuple[str, list[str]]:
     active_objectives = [o for o in objectives if o.active]
     objective_str, outcome_constraint_strs = _unpack_objectives(active_objectives)
     logger.info(
@@ -86,7 +87,7 @@ def _unpack_inactive_objectives(objectives: list[Objective]) -> list[IMetric]:
     return [IMetric(o.name) for o in objectives]
 
 
-def configure_metrics(objectives: list[Objective]) -> list[IMetric]:
+def configure_metrics(objectives: Sequence[Objective]) -> list[IMetric]:
     inactive_objectives = [o for o in objectives if not o.active]
     inactive_metrics = _unpack_inactive_objectives(inactive_objectives)
     return inactive_metrics

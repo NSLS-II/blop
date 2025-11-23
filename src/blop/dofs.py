@@ -187,6 +187,9 @@ class DOF:
                 stacklevel=2,
             )
 
+        if not movable and not device:
+            raise ValueError("You must specify either a 'movable' or a 'device'.")
+
         # these should be set first, as they are just variables
         self.name = name
         self.description = description
@@ -194,7 +197,7 @@ class DOF:
         self.active = active
         self.read_only = read_only
         self.transform = transform
-        self.movable = movable or device
+        self.movable: NamedMovable = movable or cast(NamedMovable, device)
         self.tags = tags or []
         self.travel_expense = travel_expense
         self.units = units
