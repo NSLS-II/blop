@@ -1,36 +1,30 @@
 import logging
 import warnings
-from collections.abc import Callable, Generator, Sequence
-from typing import Any, Concatenate, Literal, ParamSpec
+from collections.abc import Sequence
+from typing import Any, ParamSpec
 
-import databroker
-import pandas as pd
 from ax import Client
-from ax.analysis import Analysis, AnalysisCard, ContourPlot
+from ax.analysis import AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization
-from ax.generation_strategy.generation_strategy import GenerationStrategy
-from bluesky.plans import PerStep
 from bluesky.protocols import Readable
 from bluesky.utils import MsgGenerator
-from databroker import Broker
-from tiled.client.container import Container
 
-from ..data_access import DatabrokerDataAccess, TiledDataAccess
-from ..digestion_function import default_digestion_function
 from ..dofs import DOF, DOFConstraint
 from ..objectives import Objective
-from ..plans import acquire, read
+from ..plans import optimize
+from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Optimizer
 from .adapters import configure_metrics, configure_objectives, configure_parameters
 
 logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
-DigestionFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome]
 
 
-class Agent:
+class Agent(Optimizer):
     """
-    An agent interface that uses Ax as the backend for optimization and experiment tracking.
+    An optimizer that uses Ax as the backend for optimization and experiment tracking.
+
+    For more complex setups, you can configure the Ax client directly at ``self.ax_client``.
 
     Attributes
     ----------
@@ -41,14 +35,14 @@ class Agent:
         The degrees of freedom that the agent can control, which determine the output of the model.
     objectives : list[Objective]
         The objectives which the agent will try to optimize.
-    db : Broker | Container
-        The databroker or tiled instance to read back data from a Bluesky run.
-    dof_constraints : Sequence[DOFConstraint], optional
+    evaluation_function : EvaluationFunction
+        The function to evaluate acquired data and produce outcomes.
+    dof_constraints : Sequence[DOFConstraint] | None, optional
         Constraints on DOFs to refine the search space.
-    digestion : DigestionFunction
-        The function to produce objective values from a dataframe of acquisition results.
-    digestion_kwargs : dict
-        Additional keyword arguments to pass to the digestion function.
+    acquisition_plan : AcquisitionPlan | None, optional
+        The acquisition plan to use for acquiring data from the beamline. If not provided, a default plan will be used.
+    **kwargs: Any
+        Additional keyword arguments to configure the Ax experiment.
     """
 
     def __init__(
@@ -56,27 +50,49 @@ class Agent:
         readables: Sequence[Readable],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker | Container,
-        dof_constraints: Sequence[DOFConstraint] = None,
-        digestion: DigestionFunction = default_digestion_function,
-        digestion_kwargs: dict | None = None,
+        evaluation: EvaluationFunction,
+        dof_constraints: Sequence[DOFConstraint] | None = None,
+        acquisition_plan: AcquisitionPlan | None = None,
+        **kwargs: Any,
     ):
-        self.readables = readables
-        self.dofs = {dof.name: dof for dof in dofs}
-        self.dof_constraints = dof_constraints
-        self.objectives = {obj.name: obj for obj in objectives}
-        self.client = Client()
-        self.digestion = digestion
-        self.digestion_kwargs = digestion_kwargs or {}
+        self._readables = readables
+        self._dofs = {dof.name: dof for dof in dofs}
+        self._dof_constraints = dof_constraints
+        self._objectives = {obj.name: obj for obj in objectives}
+        self._evaluation_function = evaluation
+        self._acquisition_plan = acquisition_plan
+        self._client = Client()
+        self._configure_experiment(**kwargs)
 
-        if isinstance(db, Container):
-            self.data_access = TiledDataAccess(db)
-        elif isinstance(db, databroker.Broker):
-            self.data_access = DatabrokerDataAccess(db)
-        else:
-            raise ValueError("Cannot run acquistion without databroker or tiled instance!")
+    @property
+    def readables(self) -> Sequence[Readable]:
+        return self._readables
 
-    def configure_experiment(
+    @property
+    def dofs(self) -> Sequence[DOF]:
+        return list(self._dofs.values())
+
+    @property
+    def dof_constraints(self) -> Sequence[DOFConstraint] | None:
+        return self._dof_constraints
+
+    @property
+    def objectives(self) -> Sequence[Objective]:
+        return list(self._objectives.values())
+
+    @property
+    def evaluation_function(self) -> EvaluationFunction:
+        return self._evaluation_function
+
+    @property
+    def acquisition_plan(self) -> AcquisitionPlan | None:
+        return self._acquisition_plan
+
+    @property
+    def ax_client(self) -> Client:
+        return self._client
+
+    def _configure_experiment(
         self,
         name: str | None = None,
         description: str | None = None,
@@ -103,13 +119,14 @@ class Agent:
         ax.Client.configure_optimization : The Ax method to configure the optimization.
         ax.Client.configure_metrics : The Ax method to configure tracking metrics.
         """
-        parameters = configure_parameters(self.dofs.values())
-        objectives, objective_constraints = configure_objectives(self.objectives.values())
-        metrics = configure_metrics(self.objectives.values())
+        parameters = configure_parameters(self.dofs)
+        objectives, objective_constraints = configure_objectives(self.objectives)
+        # TODO: Configure metrics separately, there should not be a concept of an "inactive" objective.
+        metrics = configure_metrics(self.objectives)
 
-        self.client.configure_experiment(
+        self._client.configure_experiment(
             parameters,
-            parameter_constraints=(constraint.to_ax_constraint() for constraint in self.dof_constraints)
+            parameter_constraints=[constraint.to_ax_constraint() for constraint in self.dof_constraints]
             if self.dof_constraints
             else None,
             name=name,
@@ -117,32 +134,25 @@ class Agent:
             experiment_type=experiment_type,
             owner=owner,
         )
-        self.client.configure_optimization(objectives, objective_constraints)
-        self.client.configure_metrics(metrics)
+        self._client.configure_optimization(objectives, objective_constraints)
+        self._client.configure_metrics(metrics)
 
-        # If the digestion function is the default, we need to pass the active objectives to the digestion function
-        if self.digestion == default_digestion_function:
-            self.digestion_kwargs["active_objectives"] = [o for o in self.objectives.values() if o.active]
-
-    def acquire_baseline(
-        self, parameterization: TParameterization | None = None, arm_name: str | None = None
-    ) -> MsgGenerator[None]:
+    def to_optimization_problem(self) -> OptimizationProblem:
         """
-        Measure a baseline of the objectives.
+        Construct an optimization problem from the agent.
 
-        Parameters
-        ----------
-        parameterization : TParameterization, optional
-            Move the DOFs to the given parameterization, if provided.
-        arm_name : str, optional
-            A name for the arm to distinguish it from other arms.
+        Returns
+        -------
+        OptimizationProblem
+            An immutable optimization problem that can be deployed via Bluesky.
         """
-        if parameterization is None:
-            parameterization = yield from read([dof.movable for dof in self.dofs.values()])
-        trial_index = self.client.attach_baseline(parameters=parameterization, arm_name=arm_name)
-        trial = {trial_index: parameterization}
-        outcomes = yield from self.acquire(trial)
-        self.tell(trial, outcomes)
+        return OptimizationProblem(
+            optimizer=self,
+            movables=[dof.movable for dof in self.dofs],
+            readables=self.readables,
+            evaluation_function=self.evaluation_function,
+            acquisition_plan=self.acquisition_plan,
+        )
 
     def suggest(self, num_points: int | None = None) -> list[dict]:
         """
@@ -160,7 +170,7 @@ class Agent:
         """
         if num_points is None:
             num_points = 1
-        next_trials = self.get_next_trials(n=num_points)
+        next_trials = self._client.get_next_trials(max_trials=num_points)
         return [
             {
                 "_id": trial_index,
@@ -169,29 +179,12 @@ class Agent:
             for trial_index, parameterization in next_trials.items()
         ]
 
-    def get_next_trials(self, max_trials: int = 1, **kwargs: Any) -> dict[int, TParameterization]:
-        """
-        Get the next trial(s) to run.
-
-        Parameters
-        ----------
-        max_trials : int, optional
-            The maximum number of trials to get. Higher values can lead to more efficient data acquisition,
-            but slower optimization progress.
-
-        Returns
-        -------
-        dict[int, TParameterization]
-            A dictionary mapping trial indices to their suggested parameterizations.
-        """
-        return self.client.get_next_trials(max_trials, **kwargs)
-
     def ask(self, n: int = 1) -> dict[int, TParameterization]:
         """
         Get the next trial(s) to run.
 
         .. deprecated:: v0.8.1
-            Use suggest or get_next_trials instead.
+            Use suggest instead.
 
         Parameters
         ----------
@@ -204,14 +197,15 @@ class Agent:
         dict[int, TParameterization]
             A dictionary mapping trial indices to their suggested parameterizations.
         """
-        warnings.warn("ask is deprecated. Use get_next_trials or suggest instead.", DeprecationWarning, stacklevel=2)
-        return self.get_next_trials(n)
+        warnings.warn("ask is deprecated. Use suggest instead.", DeprecationWarning, stacklevel=2)
+        return self._client.get_next_trials(n)
 
     def ingest(self, points: list[dict]) -> None:
         """
         Ingest a set of points into the experiment. Either from previously suggested points or from an external source.
 
-        If points are from an external source, the dictionaries must contain keys for the DOF names.
+        If points are from an external source, each dictionary must contain keys for the DOF names, the objectives, and
+        the "_id" key must be omitted.
 
         Parameters
         ----------
@@ -220,15 +214,19 @@ class Agent:
             and optionally the associated parameterization
         """
         for point in points:
-            outcomes = {k: v for k, v in point.items() if k in self.objectives.keys()}
-            trial_index = point.pop("_id", None)
-            if trial_index is None:
-                parameters = {k: v for k, v in point.items() if k in self.dofs.keys()}
+            outcomes = {k: v for k, v in point.items() if k in self._objectives.keys()}
+            trial_id = point.pop("_id", None)
+            if trial_id is None:
+                parameters = {k: v for k, v in point.items() if k in self._dofs.keys()}
                 self._attach_single_trial(parameters=parameters, outcomes=outcomes)
+            elif trial_id == "baseline":
+                parameters = {k: v for k, v in point.items() if k in self._dofs.keys()}
+                trial_index = self._client.attach_baseline(parameters=parameters)
+                self._client.complete_trial(trial_index=trial_index, raw_data=outcomes)
             else:
-                self.client.complete_trial(trial_index=trial_index, raw_data=outcomes)
+                self._client.complete_trial(trial_index=trial_id, raw_data=outcomes)
 
-    def complete_trials(
+    def _complete_trials(
         self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None, **kwargs: Any
     ) -> None:
         """
@@ -247,7 +245,7 @@ class Agent:
         ax.Client.complete_trial : The Ax method to complete a trial.
         """
         for trial_index in trials.keys():
-            self.client.complete_trial(
+            self._client.complete_trial(
                 trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None, **kwargs
             )
 
@@ -256,7 +254,7 @@ class Agent:
         Complete trial(s) by providing the outcomes.
 
         .. deprecated:: v0.8.1
-            Use ingest or complete_trials instead.
+            Use ingest instead.
 
         Parameters
         ----------
@@ -270,37 +268,20 @@ class Agent:
         --------
         ax.Client.complete_trial : The Ax method to complete a trial.
         """
-        warnings.warn("tell is deprecated. Use ingest or complete_trials instead.", DeprecationWarning, stacklevel=2)
-        return self.complete_trials(trials=trials, outcomes=outcomes)
+        warnings.warn("tell is deprecated. Use ingest instead.", DeprecationWarning, stacklevel=2)
+        return self._complete_trials(trials=trials, outcomes=outcomes)
 
     def _attach_single_trial(self, parameters: TParameterization, outcomes: TOutcome) -> None:
-        """
-        Attach a single trial to the experiment.
-        """
-        trial_index = self.client.attach_trial(parameters=parameters)
-        self.client.complete_trial(trial_index=trial_index, raw_data=outcomes, progression=0)
+        """Attach a single trial to the experiment."""
+        trial_index = self._client.attach_trial(parameters=parameters)
+        self._client.complete_trial(trial_index=trial_index, raw_data=outcomes, progression=0)
 
-    def attach_data(self, data: list[tuple[TParameterization, TOutcome]]) -> None:
-        """
-        Attach data to the experiment in the form of new trials. Useful for
-        resuming an experiment from a previous state or manually adding data.
-
-        Parameters
-        ----------
-        data : list[tuple[TParameterization, TOutcome]]
-            A dataset of input and output examples.
-
-        See Also
-        --------
-        ax.Client.attach_trial : The Ax method to attach a trial.
-        ax.Client.complete_trial : The Ax method to complete a trial.
-        """
-        for parameters, outcomes in data:
-            self._attach_single_trial(parameters=parameters, outcomes=outcomes)
-
-    def learn(self, iterations: int = 1, n: int = 1) -> Generator[dict[int, TOutcome], None, None]:
+    def learn(self, iterations: int = 1, n: int = 1) -> MsgGenerator[None]:
         """
         Learn by running trials and providing the outcomes.
+
+        .. deprecated:: v0.9.0
+            Use blop.plans.optimize with self.to_optimization_problem instead.
 
         Parameters
         ----------
@@ -309,67 +290,17 @@ class Agent:
         n : int, optional
             The number of trials to run per iteration. Higher values can lead to more efficient data acquisition,
             but slower optimization progress.
-
-        Returns
-        -------
-        Generator[dict[int, TOutcome], None, None]
-            A generator that yields the outcomes of the trials.
         """
-        for _ in range(iterations):
-            trials = self.get_next_trials(n)
-            data = yield from self.acquire(trials)
-            self.complete_trials(trials, data)
+        warnings.warn(
+            "learn is deprecated. Use blop.plans.optimize with self.to_optimization_problem instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n)
 
-    def acquire(
-        self, trials: dict[int, TParameterization], per_step: PerStep | None = None
-    ) -> MsgGenerator[dict[int, TOutcome]]:
-        """
-        Acquire data given a set of trials. Deploys the trials in a single Bluesky run and
-        returns the outcomes of the trials computed by the digestion function.
-
-        Parameters
-        ----------
-        trials : dict[int, TParameterization]
-            A dictionary mapping trial indices to their suggested parameterizations.
-
-        Returns
-        -------
-        MsgGenerator[dict[int, TOutcome]]
-            A message generator that yields the outcomes of the trials.
-
-        See Also
-        --------
-        blop.plans.acquire : The Bluesky plan to acquire data.
-        """
-        uid = yield from acquire(self.readables, self.dofs, trials, per_step=per_step)
-        results = self.data_access.get_data(uid)
-        return {trial_index: self.digestion(trial_index, results, **self.digestion_kwargs) for trial_index in trials.keys()}
-
-    def compute_analyses(self, analyses: list[Analysis], display: bool = True) -> list[AnalysisCard]:
-        """
-        Compute analyses for the experiment.
-
-        Parameters
-        ----------
-        analyses : list[Analysis]
-            The Ax analyses to compute
-        display : bool
-            Show plots in an interactive environment.
-
-        Returns
-        -------
-        list[AnalysisCard]
-            The computed analysis cards
-
-        See Also
-        --------
-        ax.analysis : The Ax analysis module which contains many pre-built analyses.
-        ax.analysis.Analysis : The Ax analysis class to create custom analyses.
-        ax.analysis.AnalysisCard : The Ax analysis card class which contains the raw and computed data.
-        """
-        return self.client.compute_analyses(analyses=analyses, display=display)
-
-    def plot_objective(self, x_dof_name: str, y_dof_name: str, objective_name: str) -> list[AnalysisCard]:
+    def plot_objective(
+        self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any
+    ) -> list[AnalysisCard]:
         """
         Plot the predicted objective as a function of the two DOFs.
 
@@ -392,102 +323,14 @@ class Agent:
         ax.analysis.ContourPlot : Pre-built analysis for plotting the objective as a function of two parameters.
         ax.analysis.AnalysisCard : The Ax analysis card class which contains the raw and computed data.
         """
-        return self.client.compute_analyses(
-            analyses=[
+        return self._client.compute_analyses(
+            [
                 ContourPlot(
                     x_parameter_name=x_dof_name,
                     y_parameter_name=y_dof_name,
                     metric_name=objective_name,
-                )
+                ),
             ],
-            display=True,
+            *args,
+            **kwargs,
         )
-
-    def configure_generation_strategy(
-        self,
-        method: Literal["balanced", "fast", "random_search"] = "fast",
-        initialization_budget: int | None = None,
-        initialization_random_seed: int | None = None,
-        initialize_with_center: bool = True,
-        use_existing_trials_for_initialization: bool = True,
-        min_observed_initialization_trials: int | None = None,
-        allow_exceeding_initialization_budget: bool = False,
-        torch_device: str | None = None,
-    ) -> None:
-        """
-        Implicitly configure the models and algorithms used to generate new points. Based on the
-        settings and the DOF configuration, an appropriate generation strategy is chosen.
-
-        Parameters
-        ----------
-        method : Literal["balanced", "fast", "random_search"], optional
-            Methods for generating new points.
-        initialization_budget : int | None, optional
-            The number of points to generate during the initial exploration phase. Can be set
-            to 0 to disable initialization (when attaching pre-existing data, for example).
-        initialization_random_seed : int | None, optional
-            The random seed for initialization.
-        initialize_with_center : bool, optional
-            Use the first point to sample the center of the search space defined by the DOFs.
-        use_existing_trials_for_initialization : bool, optional
-            Use the pre-existing trials to build the initial models.
-        min_observed_initialization_trials : int | None, optional
-            The minimum number of trials to observe before building the initial models.
-        allow_exceeding_initialization_budget : bool, optional
-            Allow the initialization budget to be exceeded, when determined necessary.
-        torch_device : str | None, optional
-            The device to use for PyTorch tensors (e.g. "cuda", "cpu", etc.).
-
-        See Also
-        --------
-        set_generation_strategy : Explicitly set the generation strategy for the experiment.
-        ax.Client.configure_generation_strategy : The Ax method to configure the generation strategy.
-        """
-        self.client.configure_generation_strategy(
-            method=method,
-            initialization_budget=initialization_budget,
-            initialization_random_seed=initialization_random_seed,
-            initialize_with_center=initialize_with_center,
-            use_existing_trials_for_initialization=use_existing_trials_for_initialization,
-            min_observed_initialization_trials=min_observed_initialization_trials,
-            allow_exceeding_initialization_budget=allow_exceeding_initialization_budget,
-            torch_device=torch_device,
-        )
-
-    def set_generation_strategy(self, generation_strategy: GenerationStrategy) -> None:
-        """
-        Explicitly set the generation strategy for the experiment. This allows for finer-grained
-        control over the models and algorithms used to generate new points.
-
-        Familiarity with Ax and BoTorch internals is recommended prior to using this method.
-
-        Parameters
-        ----------
-        generation_strategy : GenerationStrategy
-            The generation strategy to use for the experiment. See
-            `this tutorial <https://ax.dev/docs/tutorials/modular_botorch/>`_ for more details.
-
-        See Also
-        --------
-        configure_generation_strategy : Configure an implicit generation strategy for the experiment.
-        ax.Client.set_generation_strategy : The Ax method to set the generation strategy.
-        """
-        self.client.set_generation_strategy(generation_strategy)
-
-    def summarize(self) -> pd.DataFrame:
-        """
-        View of the experiment state.
-
-        NOTE: This method is a convenience method for inspecting the experiment state.
-        It is not recommended to use this for downstream analysis.
-
-        Returns
-        -------
-        pd.DataFrame
-            A dataframe of the experiment state containing a parameterization per row.
-
-        See Also
-        --------
-        ax.Client.summarize : The Ax method to summarize the experiment state.
-        """
-        return self.client.summarize()

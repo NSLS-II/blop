@@ -41,4 +41,4 @@ jobs:
         run: pixi run integration-tests
 
       - name: Test with doctest
-        run: pixi run test-docs
+        run: pixi run doc-tests

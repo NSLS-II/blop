@@ -101,6 +101,7 @@ Here we configure an agent with three DOFs and two objectives. The second object
 
     from blop import DOF, Objective
     from blop.ax import Agent
+    from blop.evaluation import TiledEvaluationFunction
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -117,9 +118,13 @@ Here we configure an agent with three DOFs and two objectives. The second object
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation=TiledEvaluationFunction(
+            tiled_client=db,
+            objectives=objectives,
+        ),
     )
-    agent.configure_experiment(name="experiment_name", description="experiment_description")
+
+    optimization_problem = agent.to_optimization_problem()
 
 Acquire a baseline reading
 --------------------------
@@ -128,7 +133,9 @@ To acquire a baseline reading, simply call the ``acquire_baseline`` method. Opti
 
 .. testcode::
 
-    RE(agent.acquire_baseline())
+    from blop.plans import acquire_baseline
+
+    RE(acquire_baseline(optimization_problem))
 
 .. testoutput::
    :hide:
@@ -140,7 +147,7 @@ Verify the baseline reading exists
 
 .. testcode::
 
-    agent.configure_generation_strategy()
-    df = agent.summarize()
+    agent.ax_client.configure_generation_strategy()
+    df = agent.ax_client.summarize()
     assert len(df) == 1
     assert df["arm_name"].values[0] == "baseline"

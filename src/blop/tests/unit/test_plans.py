@@ -5,7 +5,7 @@ import pytest
 from bluesky.run_engine import RunEngine
 
 from blop.plans import acquire_baseline, acquire_with_background, default_acquire, optimize, optimize_step
-from blop.protocols import AcquisitionPlan, EvaluationFunction, Generator, OptimizationProblem
+from blop.protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Optimizer
 
 from .conftest import MovableSignal, ReadableSignal
 
@@ -16,11 +16,11 @@ def RE():
 
 
 def test_optimize(RE):
-    generator = MagicMock(spec=Generator)
-    generator.suggest.return_value = [{"x1": 0.0, "_id": 0}]
+    optimizer = MagicMock(spec=Optimizer)
+    optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[MovableSignal("x1", initial_value=-1.0)],
         readables=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
@@ -28,17 +28,17 @@ def test_optimize(RE):
 
     RE(optimize(optimization_problem))
 
-    generator.suggest.assert_called_once_with(1)
-    generator.ingest.assert_called_once_with([{"objective": 0.0}])
+    optimizer.suggest.assert_called_once_with(1)
+    optimizer.ingest.assert_called_once_with([{"objective": 0.0}])
     assert evaluation_function.call_count == 1
 
 
 def test_optimize_multiple(RE):
-    generator = MagicMock(spec=Generator)
-    generator.suggest.return_value = [{"x1": 0.0, "_id": 0}]
+    optimizer = MagicMock(spec=Optimizer)
+    optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[MovableSignal("x1", initial_value=-1.0)],
         readables=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
@@ -46,35 +46,35 @@ def test_optimize_multiple(RE):
 
     RE(optimize(optimization_problem, iterations=5))
 
-    generator.suggest.assert_called_with(1)
-    generator.ingest.assert_called_with([{"objective": 0.0}])
-    assert generator.suggest.call_count == 5
-    assert generator.ingest.call_count == 5
+    optimizer.suggest.assert_called_with(1)
+    optimizer.ingest.assert_called_with([{"objective": 0.0}])
+    assert optimizer.suggest.call_count == 5
+    assert optimizer.ingest.call_count == 5
     assert evaluation_function.call_count == 5
 
 
 def test_optimize_multiple_with_n_points(RE):
-    generator = MagicMock(spec=Generator)
-    generator.suggest.return_value = [{"x1": 0.0, "_id": 0}, {"x1": 0.1, "_id": 1}]
+    optimizer = MagicMock(spec=Optimizer)
+    optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}, {"x1": 0.1, "_id": 1}]
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}, {"objective": 0.1}])
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[MovableSignal("x1", initial_value=-1.0)],
         readables=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
     )
     RE(optimize(optimization_problem, iterations=5, n_points=2))
-    generator.suggest.assert_called_with(2)
-    generator.ingest.assert_called_with([{"objective": 0.0}, {"objective": 0.1}])
-    assert generator.suggest.call_count == 5
-    assert generator.ingest.call_count == 5
+    optimizer.suggest.assert_called_with(2)
+    optimizer.ingest.assert_called_with([{"objective": 0.0}, {"objective": 0.1}])
+    assert optimizer.suggest.call_count == 5
+    assert optimizer.ingest.call_count == 5
     assert evaluation_function.call_count == 5
 
 
 def test_optimize_complex_case(RE):
     """Test with multi-suggest, multi-parameter, multi-objective, multi-readable case."""
-    generator = MagicMock(spec=Generator)
-    generator.suggest.return_value = [
+    optimizer = MagicMock(spec=Optimizer)
+    optimizer.suggest.return_value = [
         {"x1": 0.0, "x2": 0.0, "x3": 0.0, "_id": 0},
         {"x1": 0.1, "x2": 0.2, "x3": 0.3, "_id": 1},
     ]
@@ -86,7 +86,7 @@ def test_optimize_complex_case(RE):
         ],
     )
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[
             MovableSignal("x1", initial_value=-1.0),
             MovableSignal("x2", initial_value=-1.0),
@@ -98,19 +98,19 @@ def test_optimize_complex_case(RE):
 
     RE(optimize(optimization_problem, iterations=2, n_points=2))
 
-    generator.suggest.assert_called_with(2)
-    generator.ingest.assert_called_with([{"objective1": 0.0, "objective2": 0.1}, {"objective1": 0.1, "objective2": 0.2}])
-    assert generator.suggest.call_count == 2
-    assert generator.ingest.call_count == 2
+    optimizer.suggest.assert_called_with(2)
+    optimizer.ingest.assert_called_with([{"objective1": 0.0, "objective2": 0.1}, {"objective1": 0.1, "objective2": 0.2}])
+    assert optimizer.suggest.call_count == 2
+    assert optimizer.ingest.call_count == 2
     assert evaluation_function.call_count == 2
 
 
 def test_optimize_step_default(RE):
-    generator = MagicMock(spec=Generator)
-    generator.suggest.return_value = [{"x1": 0.0, "_id": 0}]
+    optimizer = MagicMock(spec=Optimizer)
+    optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[MovableSignal("x1", initial_value=-1.0)],
         readables=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
@@ -118,20 +118,20 @@ def test_optimize_step_default(RE):
 
     RE(optimize_step(optimization_problem))
 
-    generator.suggest.assert_called_once_with(1)
-    generator.ingest.assert_called_once_with([{"objective": 0.0}])
+    optimizer.suggest.assert_called_once_with(1)
+    optimizer.ingest.assert_called_once_with([{"objective": 0.0}])
     assert evaluation_function.call_count == 1
 
 
 def test_optimize_step_custom_acquisition_plan(RE):
     acquisition_plan = MagicMock(spec=AcquisitionPlan)
-    generator = MagicMock(spec=Generator)
-    generator.suggest.return_value = [{"x1": 0.0, "_id": 0}]
+    optimizer = MagicMock(spec=Optimizer)
+    optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
     movable = MovableSignal("x1", initial_value=-1.0)
     readable = ReadableSignal("objective")
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[movable],
         readables=[readable],
         evaluation_function=evaluation_function,
@@ -139,12 +139,12 @@ def test_optimize_step_custom_acquisition_plan(RE):
     )
 
     RE(optimize_step(optimization_problem))
-    generator.suggest.assert_called_once_with(1)
+    optimizer.suggest.assert_called_once_with(1)
     acquisition_plan.assert_called_once_with(
         {movable: [0.0]},
         [readable],
     )
-    generator.ingest.assert_called_once_with([{"objective": 0.0}])
+    optimizer.ingest.assert_called_once_with([{"objective": 0.0}])
     assert evaluation_function.call_count == 1
 
 
@@ -233,11 +233,11 @@ def test_acquire_with_background(RE):
 
 def test_acquire_baseline(RE):
     """Test acquiring a baseline reading from suggested parameterizations."""
-    generator = MagicMock(spec=Generator)
+    optimizer = MagicMock(spec=Optimizer)
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": "baseline"}])
 
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[MovableSignal("x1", initial_value=-1.0)],
         readables=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
@@ -246,20 +246,20 @@ def test_acquire_baseline(RE):
     RE(acquire_baseline(optimization_problem, parameterization={"x1": 0.0}))
 
     # No suggestions are made since this is a baseline reading
-    assert generator.suggest.call_count == 0
+    assert optimizer.suggest.call_count == 0
 
-    generator.ingest.assert_called_once_with([{"objective": 0.0, "_id": "baseline", "x1": 0.0}])
+    optimizer.ingest.assert_called_once_with([{"objective": 0.0, "_id": "baseline", "x1": 0.0}])
     assert evaluation_function.call_count == 1
 
 
 def test_acquire_baseline_from_current(RE):
     """Test acquiring a baseline reading from the current movable positions."""
-    generator = MagicMock(spec=Generator)
+    optimizer = MagicMock(spec=Optimizer)
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": "baseline"}])
     movable = MovableSignal("x1", initial_value=-1.0)
 
     optimization_problem = OptimizationProblem(
-        generator=generator,
+        optimizer=optimizer,
         movables=[movable],
         readables=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
@@ -278,7 +278,7 @@ def test_acquire_baseline_from_current(RE):
         assert mock_set.call_args_list[0][0][0] == -1.0
 
     # No suggestions are made since this is a baseline reading from the current movable positions
-    assert generator.suggest.call_count == 0
+    assert optimizer.suggest.call_count == 0
 
-    generator.ingest.assert_called_once_with([{"objective": 0.0, "_id": "baseline", "x1": -1.0}])
+    optimizer.ingest.assert_called_once_with([{"objective": 0.0, "_id": "baseline", "x1": -1.0}])
     assert evaluation_function.call_count == 1

@@ -194,7 +194,7 @@ class DOF:
         self.active = active
         self.read_only = read_only
         self.transform = transform
-        self.movable = movable or device
+        self.movable: NamedMovable = movable or cast(NamedMovable, device)
         self.tags = tags or []
         self.travel_expense = travel_expense
         self.units = units

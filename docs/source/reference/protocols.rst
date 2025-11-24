@@ -21,10 +21,10 @@ EvaluationFunction
    :show-inheritance:
    :special-members: __call__
 
-Generator
+Optimizer
 ---------
 
-.. autoclass:: blop.protocols.Generator
+.. autoclass:: blop.protocols.Optimizer
    :members:
    :undoc-members:
    :show-inheritance:

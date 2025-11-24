@@ -110,18 +110,7 @@ Transform your data to the correct format
 
 .. testcode::
 
-    data = []
-    for _, row in df.iterrows():
-        data.append(({
-                "dof1": row["dof1"],
-                "dof2": row["dof2"],
-                "dof3": row["dof3"],
-            },
-            {
-                "objective1": row["objective1"],
-                "objective2": row["objective2"],
-            }
-        ))
+    data = df.to_dict(orient="records")
 
 Configure an agent
 ------------------
@@ -132,6 +121,7 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
 
     from blop import DOF, Objective
     from blop.ax import Agent
+    from blop.evaluation import TiledEvaluationFunction
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -148,18 +138,20 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation=TiledEvaluationFunction(
+            tiled_client=db,
+            objectives=objectives,
+        ),
     )
-    agent.configure_experiment(name="experiment_name", description="experiment_description")
 
-Attach your data to the experiment
-----------------------------------
+Ingest your data
+----------------
 
 After this, the next time you get a suggestion from the agent it will re-train the model(s) with the new data.
 
 .. code-block:: python
 
-    agent.attach_data(data)
+    agent.ingest(data)
 
 
 (Optional) Configure the generation strategy
@@ -169,7 +161,7 @@ If no trials have been run yet, you must configure the generation strategy befor
 
 .. code-block:: python
 
-    agent.configure_generation_strategy()
+    agent.ax_client.configure_generation_strategy()
 
 Sanity check the data you attached
 ----------------------------------
@@ -178,4 +170,4 @@ Verify the data you attached is correct.
 
 .. code-block:: python
 
-    agent.summarize()
+    agent.ax_client.summarize()
