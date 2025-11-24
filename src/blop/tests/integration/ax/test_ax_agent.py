@@ -1,5 +1,3 @@
-from blop.evaluation import TiledEvaluationFunction
-
 from blop.ax.agent import Agent
 from blop.dofs import DOF
 from blop.objectives import Objective
@@ -24,13 +22,31 @@ def test_ax_agent_sim_beamline(RE, setup):
         Objective(name="bl_det_wid_y", target="min"),
     ]
 
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        run = setup[uid]
+
+        bl_det_sums = run["primary/bl_det_sum"].read()
+        bl_det_wid_x = run["primary/bl_det_wid_x"].read()
+        bl_det_wid_y = run["primary/bl_det_wid_y"].read()
+
+        trial_ids = run.metadata["start"]["blop_suggestion_ids"]
+        outcomes = []
+        for suggestion in suggestions:
+            idx = trial_ids.index(suggestion["_id"])
+            outcome = {
+                "_id": suggestion["_id"],
+                "bl_det_sum": bl_det_sums[idx],
+                "bl_det_wid_x": bl_det_wid_x[idx],
+                "bl_det_wid_y": bl_det_wid_y[idx],
+            }
+            outcomes.append(outcome)
+
+        return outcomes
+
     agent = Agent(
         readables=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        evaluation=TiledEvaluationFunction(
-            tiled_client=setup,
-            objectives=objectives,
-        ),
+        evaluation=evaluation_function,
     )
     RE(optimize(agent.to_optimization_problem(), iterations=12, n_points=1))
