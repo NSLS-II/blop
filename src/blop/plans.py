@@ -7,18 +7,19 @@ from typing import Any, cast
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 from ax.api.types import TParameterization, TParameterValue
-from bluesky.protocols import Movable, Readable, Reading
+from bluesky.protocols import Movable, NamedMovable, Readable, Reading
 from bluesky.utils import Msg, MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
 
 from .dofs import DOF
-from .protocols import NamedMovableT, OptimizationProblem
+from .protocols import ID_KEY, OptimizationProblem
 
 
-def _unpack_for_list_scan(movables: Mapping[NamedMovableT, Sequence[Any]]) -> list[NamedMovableT | Any]:
+def _unpack_for_list_scan(suggestions: list[dict], movables: Sequence[NamedMovable]) -> list[NamedMovable | Any]:
     """Unpack the movables and inputs into Bluesky list_scan plan arguments."""
+    movables_and_inputs = {movable: [suggestion[movable.name] for suggestion in suggestions] for movable in movables}
     unpacked_list = []
-    for movable, values in movables.items():
+    for movable, values in movables_and_inputs.items():
         unpacked_list.append(movable)
         unpacked_list.append(values)
 
@@ -27,7 +28,8 @@ def _unpack_for_list_scan(movables: Mapping[NamedMovableT, Sequence[Any]]) -> li
 
 @plan
 def default_acquire(
-    movables: Mapping[NamedMovableT, Sequence[Any]],
+    suggestions: list[dict],
+    movables: Sequence[NamedMovable],
     readables: Sequence[Readable] | None = None,
     *,
     per_step: bp.PerStep | None = None,
@@ -36,13 +38,20 @@ def default_acquire(
     """
     A default plan to acquire data for optimization. Simply a list scan.
 
+    Includes a default metadata key "blop_suggestion_ids" which can be used to identify
+    the suggestions that were acquired for each step of the scan.
+
     Parameters
     ----------
-    movables: Mapping[NamedMovableT, Sequence[Any]]
+    suggestions: list[dict]
+        A list of dictionaries, each containing the parameterization of a point to evaluate.
+        The "_id" key is optional and can be used to identify each suggestion. It is suggested
+        to add "_id" values to the run metadata for later identification of the acquired data.
+    movables: Sequence[NamedMovable]
         The movables to move and the inputs to move them to.
     readables: Sequence[Readable]
         The readables to trigger and read.
-    per_step: bp.PerStep | None = None
+    per_step: bp.PerStep | None, optional
         The plan to execute for each step of the scan.
     **kwargs: Any
         Additional keyword arguments to pass to the list_scan plan.
@@ -58,13 +67,15 @@ def default_acquire(
     """
     if readables is None:
         readables = []
-    plan_args = _unpack_for_list_scan(movables)
+    md = {"blop_suggestion_ids": [suggestion.get(ID_KEY, None) for suggestion in suggestions]}
+    plan_args = _unpack_for_list_scan(suggestions, movables)
     return (
         # TODO: fix argument type in bluesky.plans.list_scan
         yield from bp.list_scan(
             readables,
             *plan_args,  # type: ignore[arg-type]
             per_step=per_step,
+            md=md,
             **kwargs,
         )
     )
@@ -94,8 +105,7 @@ def optimize_step(
     optimizer = optimization_problem.optimizer
     movables = optimization_problem.movables
     suggestions = optimizer.suggest(n_points)
-    movables_and_inputs = {movable: [suggestion[movable.name] for suggestion in suggestions] for movable in movables}
-    uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, *args, **kwargs)
+    uid = yield from acquisition_plan(suggestions, movables, optimization_problem.readables, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
     optimizer.ingest(outcomes)
 
@@ -235,14 +245,14 @@ def acquire_baseline(
             raise ValueError(
                 "All movables must also implement the Readable protocol to acquire a baseline from current positions."
             )
+    if ID_KEY not in parameterization:
+        parameterization[ID_KEY] = "baseline"
     optimizer = optimization_problem.optimizer
     if optimization_problem.acquisition_plan is None:
         acquisition_plan = default_acquire
     else:
         acquisition_plan = optimization_problem.acquisition_plan
-    movables_and_inputs = {movable: [parameterization[movable.name]] for movable in movables}
-    uid = yield from acquisition_plan(movables_and_inputs, optimization_problem.readables, **kwargs)
-    parameterization["_id"] = "baseline"
+    uid = yield from acquisition_plan([parameterization], movables, optimization_problem.readables, **kwargs)
     outcome = optimization_problem.evaluation_function(uid, [parameterization])[0]
     data = {**outcome, **parameterization}
     optimizer.ingest([data])
@@ -309,7 +319,8 @@ def per_step_background_read(
 
 @plan
 def acquire_with_background(
-    movables: Mapping[NamedMovableT, Sequence[Any]],
+    suggestions: list[dict],
+    movables: Sequence[NamedMovable],
     readables: Sequence[Readable] | None = None,
     *,
     block_beam: Callable[[], MsgGenerator[None]],
@@ -321,8 +332,12 @@ def acquire_with_background(
 
     Parameters
     ----------
-    movables: Mapping[NamedMovableT, Sequence[Any]]
-        The movables and the inputs to move them to.
+    suggestions: list[dict]
+        A list of dictionaries, each containing the parameterization of a point to evaluate.
+        The "_id" key is optional and can be used to identify each suggestion. It is suggested
+        to add "_id" values to the run metadata for later identification of the acquired data.
+    movables: Sequence[NamedMovable]
+        The movables to move to their suggested positions.
     readables: Sequence[Readable] | None = None
         The readables that produce data to evaluate.
     block_beam: Callable[[], MsgGenerator[None]]
@@ -345,7 +360,7 @@ def acquire_with_background(
     if readables is None:
         readables = []
     per_step = per_step_background_read(block_beam, unblock_beam)
-    return (yield from default_acquire(movables, readables, per_step=per_step, **kwargs))
+    return (yield from default_acquire(suggestions, movables, readables, per_step=per_step, **kwargs))
 
 
 # ===========================================================================================================================

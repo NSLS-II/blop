@@ -1,11 +1,11 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, TypeVar, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from bluesky.protocols import NamedMovable, Readable
 from bluesky.utils import MsgGenerator, plan
 
-NamedMovableT = TypeVar("NamedMovableT", bound=NamedMovable)
+ID_KEY: Literal["_id"] = "_id"
 
 
 @runtime_checkable
@@ -77,7 +77,8 @@ class AcquisitionPlan(Protocol):
     @plan
     def __call__(
         self,
-        movables: Mapping[NamedMovableT, Sequence[Any]],
+        suggestions: list[dict],
+        movables: Sequence[NamedMovable],
         readables: Sequence[Readable] | None = None,
     ) -> MsgGenerator[str]:
         """
@@ -88,8 +89,12 @@ class AcquisitionPlan(Protocol):
 
         Parameters
         ----------
-        movables: Mapping[NamedMovableT, Sequence[Any]]
-            The movables to move and the inputs to move them to.
+        suggestions: list[dict]
+            A list of dictionaries, each containing the parameterization of a point to evaluate.
+            The "_id" key is optional and can be used to identify each suggestion. It is suggested
+            to add "_id" values to the run metadata for later identification of the acquired data.
+        movables: Sequence[NamedMovable]
+            The movables to move to their suggested positions.
         readables: Sequence[Readable], optional
             The readables that produce data to evaluate.
 

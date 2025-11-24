@@ -127,7 +127,7 @@ def test_optimize_step_custom_acquisition_plan(RE):
     acquisition_plan = MagicMock(spec=AcquisitionPlan)
     optimizer = MagicMock(spec=Optimizer)
     optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
-    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
+    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": 0}])
     movable = MovableSignal("x1", initial_value=-1.0)
     readable = ReadableSignal("objective")
     optimization_problem = OptimizationProblem(
@@ -141,10 +141,11 @@ def test_optimize_step_custom_acquisition_plan(RE):
     RE(optimize_step(optimization_problem))
     optimizer.suggest.assert_called_once_with(1)
     acquisition_plan.assert_called_once_with(
-        {movable: [0.0]},
+        [{"x1": 0.0, "_id": 0}],
+        [movable],
         [readable],
     )
-    optimizer.ingest.assert_called_once_with([{"objective": 0.0}])
+    optimizer.ingest.assert_called_once_with([{"objective": 0.0, "_id": 0}])
     assert evaluation_function.call_count == 1
 
 
@@ -152,11 +153,11 @@ def test_default_acquire_single_movable_readable(RE):
     """Test with single movable, position, and readable."""
     movable = MovableSignal("x1", initial_value=-1.0)
     readable = ReadableSignal("objective")
-    movable_and_input = {movable: [0.0]}
     with patch.object(readable, "read", wraps=readable.read) as mock_read:
         RE(
             default_acquire(
-                movable_and_input,
+                [{"x1": 0.0, "_id": 0}],
+                [movable],
                 [readable],
             )
         )
@@ -171,7 +172,6 @@ def test_default_acquire_multiple_movables_readables(RE):
     movable2 = MovableSignal("x2", initial_value=-1.0)
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
-    movable_and_input = {movable1: [0.0, 0.1], movable2: [0.0, 0.1]}
 
     with (
         patch.object(movable1, "set", wraps=movable1.set) as mock_set1,
@@ -179,7 +179,13 @@ def test_default_acquire_multiple_movables_readables(RE):
         patch.object(readable1, "read", wraps=readable1.read) as mock_read1,
         patch.object(readable2, "read", wraps=readable2.read) as mock_read2,
     ):
-        RE(default_acquire(movable_and_input, [readable1, readable2]))
+        RE(
+            default_acquire(
+                [{"x1": 0.0, "x2": 0.0, "_id": 0}, {"x1": 0.1, "x2": 0.1, "_id": 1}],
+                [movable1, movable2],
+                [readable1, readable2],
+            )
+        )
 
         # Verify movables were set in correct order
         assert mock_set1.call_count == 2
@@ -209,7 +215,6 @@ def test_acquire_with_background(RE):
 
     movable = MovableSignal("x1", initial_value=-1.0)
     readable = ReadableSignal("objective")
-    movable_and_input = {movable: [0.0]}
 
     mock_block_beam = Mock(wraps=block_beam)
     mock_unblock_beam = Mock(wraps=unblock_beam)
@@ -217,7 +222,8 @@ def test_acquire_with_background(RE):
     with patch.object(readable, "read", wraps=readable.read) as mock_read:
         RE(
             acquire_with_background(
-                movables=movable_and_input,
+                [{"x1": 0.0, "_id": 0}],
+                [movable],
                 readables=[readable],
                 block_beam=mock_block_beam,
                 unblock_beam=mock_unblock_beam,

@@ -1,6 +1,7 @@
+from blop.evaluation import TiledEvaluationFunction
+
 from blop.ax.agent import Agent
 from blop.dofs import DOF
-from blop.evaluation import TiledEvaluationFunction
 from blop.objectives import Objective
 from blop.plans import optimize
 from blop.sim.beamline import TiledBeamline
