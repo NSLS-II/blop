@@ -107,11 +107,17 @@ Configure an agent with DOF constraints
 .. testcode::
 
     from blop.ax import Agent
+    from blop.evaluation import TiledEvaluationFunction
 
     agent = Agent(
         readables=[],
-        dofs=[dof1, dof2],
+        dofs=[dof1, dof2, dof3],
         objectives=[objective],
-        db=db,
+        evaluation=TiledEvaluationFunction(
+            tiled_client=db,
+            objectives=[objective],
+        ),
         dof_constraints=[constraint],
     )
+
+    optimization_problem = agent.to_optimization_problem()

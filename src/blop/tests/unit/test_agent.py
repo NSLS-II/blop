@@ -145,3 +145,19 @@ def test_agent_ingest_multiple(mock_evaluation_function):
     assert np.all(summary_df["test_movable1"].values == [0.1, 1.1])
     assert np.all(summary_df["test_movable2"].values == [0.2, 1.2])
     assert np.all(summary_df["test_objective"].values == [0.3, 1.3])
+
+
+def test_ingest_baseline(mock_evaluation_function):
+    movable1 = MovableSignal(name="test_movable1")
+    movable2 = MovableSignal(name="test_movable2")
+    dof1 = DOF(movable=movable1, search_domain=(0, 10))
+    dof2 = DOF(movable=movable2, search_domain=(0, 10))
+    objective = Objective(name="test_objective", target="max")
+    agent = Agent(readables=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
+
+    agent.ingest([{"test_movable1": 0.1, "test_movable2": 0.2, "test_objective": 0.3, "_id": "baseline"}])
+
+    agent.ax_client.configure_generation_strategy()
+    summary_df = agent.ax_client.summarize()
+    assert len(summary_df) == 1
+    assert summary_df["arm_name"].values[0] == "baseline"

@@ -215,12 +215,16 @@ class Agent(Optimizer):
         """
         for point in points:
             outcomes = {k: v for k, v in point.items() if k in self._objectives.keys()}
-            trial_index = point.pop("_id", None)
-            if trial_index is None:
+            trial_id = point.pop("_id", None)
+            if trial_id is None:
                 parameters = {k: v for k, v in point.items() if k in self._dofs.keys()}
                 self._attach_single_trial(parameters=parameters, outcomes=outcomes)
-            else:
+            elif trial_id == "baseline":
+                parameters = {k: v for k, v in point.items() if k in self._dofs.keys()}
+                trial_index = self._client.attach_baseline(parameters=parameters)
                 self._client.complete_trial(trial_index=trial_index, raw_data=outcomes)
+            else:
+                self._client.complete_trial(trial_index=trial_id, raw_data=outcomes)
 
     def _complete_trials(
         self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None, **kwargs: Any

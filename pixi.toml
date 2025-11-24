@@ -78,7 +78,8 @@ unit-tests = "pytest src/blop/tests/unit"
 
 [feature.docs.tasks]
 build-docs = "make -C docs/ html"
-test-docs = "make -C docs/ test"
+doc-tests = "make -C docs/ test"
+convert-tutorials-to-ipynb = "jupytext --to notebook docs/source/tutorials/*.md"
 
 [feature.jupyter.tasks]
 start-jupyter = "jupyter lab"

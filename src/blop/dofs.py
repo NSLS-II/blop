@@ -187,9 +187,6 @@ class DOF:
                 stacklevel=2,
             )
 
-        if not movable and not device:
-            raise ValueError("You must specify either a 'movable' or a 'device'.")
-
         # these should be set first, as they are just variables
         self.name = name
         self.description = description

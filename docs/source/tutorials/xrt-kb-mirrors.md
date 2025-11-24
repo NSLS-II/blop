@@ -46,6 +46,8 @@ from tiled.server import SimpleTiledServer
 
 from blop import DOF, Objective
 from blop.ax import Agent
+from blop.evaluation import TiledEvaluationFunction
+from blop.plans import optimize
 from blop.sim import HDF5Handler
 from blop.sim.xrt_beamline import DatabrokerBeamline, TiledBeamline
 
@@ -133,18 +135,20 @@ agent = Agent(
     readables=[beamline.det],
     dofs=dofs,
     objectives=objectives,
-    db=db,
-)
-agent.configure_experiment(
+    evaluation=TiledEvaluationFunction(
+        tiled_client=db,
+        objectives=objectives,
+    ),
     name="xrt-blop-demo",
     description="A demo of the Blop agent with XRT simulated beamline",
     experiment_type="demo",
 )
+optimization_problem = agent.to_optimization_problem()
 ```
 
 ```{code-cell} ipython3
 # Number of iterations can be increased to be more specific
-RE(agent.learn(iterations=15))
+RE(optimize(optimization_problem, iterations=15))
 ```
 
 ```{code-cell} ipython3
@@ -156,7 +160,7 @@ _ = agent.plot_objective(x_dof_name="bl_kbh_dsh", y_dof_name="bl_kbv_dsv", objec
 Below we get the optimal parameters, move the motors to their optimal positions, and observe the resulting beam.
 
 ```{code-cell} ipython3
-optimal_parameters = next(iter(agent.client.get_pareto_frontier()))[0]
+optimal_parameters = next(iter(agent.ax_client.get_pareto_frontier()))[0]
 optimal_parameters
 ```
 
@@ -173,7 +177,7 @@ uid = RE(list_scan([beamline.det], *scan_motor_params))
 ```{code-cell} ipython3
 import matplotlib.pyplot as plt
 
-image = db[uid[0]]["primary"]["bl_det_image"].read().squeeze()
+image = db[uid[0]]["primary/bl_det_image"].read().squeeze()
 plt.imshow(image)
 plt.colorbar()
 plt.show()

@@ -114,10 +114,13 @@ Now we can define the experiment we plan to run.
 
 This involves setting 4 parameters that simulate motor positions controlling two KB mirrors. The objectives of the experiment are to maximize the beam intensity while minimizing the area of the beam.
 
+We transform the Agent into an optimization problem that can be used with standard Bluesky plans.
+
 ```{code-cell} ipython3
 from blop.ax import Agent
 from blop.dofs import DOF
 from blop.objectives import Objective
+from blop.evaluation import TiledEvaluationFunction
 
 dofs = [
     DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
@@ -136,9 +139,15 @@ agent = Agent(
     readables=[beamline.det],
     dofs=dofs,
     objectives=objectives,
-    db=db,
+    evaluation=TiledEvaluationFunction(
+        tiled_client=db,
+        objectives=objectives,
+    ),
+    name="sim_kb_mirror",
+    description="Simulated KB Mirror Experiment",
 )
-agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
+
+optimization_problem = agent.to_optimization_problem()
 ```
 
 ## Optimization
@@ -148,15 +157,17 @@ With all of our experimental setup done, we can optimize the DOFs to satisfy our
 For this example, Ax will optimize the 4 motor positions to produce the greatest intensity beam with the smallest beam width and height (smallest area). It does this by first running a couple of trials which are random samples, then the remainder using Bayesian optimization through BoTorch.
 
 ```{code-cell} ipython3
-RE(agent.learn(iterations=25, n=1))
+from blop.plans import optimize
+
+RE(optimize(optimization_problem, iterations=25, n_points=1))
 ```
 
 ## Analyze Results
 
-We can start by summarizing each step of the optimization procedure and whether trials were successful or not.
+We can start by summarizing each step of the optimization procedure and whether trials were successful or not. This can be done by accessing the Ax client directly.
 
 ```{code-cell} ipython3
-agent.summarize()
+agent.ax_client.summarize()
 ```
 
 ### Plotting
@@ -166,11 +177,11 @@ We also can plot slices of the parameter space with respect to our objectives.
 ```{code-cell} ipython3
 from ax.analysis import SlicePlot
 
-_ = agent.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_sum")])
+_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_sum")])
 ```
 
 ```{code-cell} ipython3
-_ = agent.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_wid_x")])
+_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_wid_x")])
 ```
 
 ### More comprehensive analyses
@@ -180,7 +191,7 @@ Ax provides many analysis tools that can help understand optimization results.
 ```{code-cell} ipython3
 from ax.analysis import TopSurfacesAnalysis
 
-_ = agent.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
+_ = agent.ax_client.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
 ```
 
 ### Visualizing the optimal beam
@@ -188,7 +199,7 @@ _ = agent.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
 Below we get the optimal parameters, move the motors to their optimal positions, and observe the resulting beam.
 
 ```{code-cell} ipython3
-optimal_parameters = next(iter(agent.client.get_pareto_frontier()))[0]
+optimal_parameters = next(iter(agent.ax_client.get_pareto_frontier()))[0]
 optimal_parameters
 ```
 
@@ -204,7 +215,7 @@ uid = RE(list_scan([beamline.det], *scan_motor_params))
 
 ```{code-cell} ipython3
 
-image = db[uid[0]]["primary"]["bl_det_image"].read().squeeze()
+image = db[uid[0]]["primary/bl_det_image"].read().squeeze()
 plt.imshow(image)
 plt.colorbar()
 plt.show()
