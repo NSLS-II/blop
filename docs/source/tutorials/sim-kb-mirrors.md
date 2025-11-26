@@ -32,27 +32,22 @@ These features make it simple to optimize your beamline using both Bluesky & Ax.
 
 ## Preparing a test environment
 
-Here we prepare the `RunEngine`.
+Here we prepare the `RunEngine`, setup a local [Tiled](https://blueskyproject.io/tiled) server, and connect to it with a Tiled client.
 
 ```{code-cell} ipython3
-from datetime import datetime
 import logging
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
-import databroker  # type: ignore[import-untyped]
 import matplotlib.pyplot as plt
 from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
-from databroker import Broker
-from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
 from tiled.client import from_uri  # type: ignore[import-untyped]
 from tiled.client.container import Container
 from tiled.server import SimpleTiledServer
 
-from blop.sim import HDF5Handler
-from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
+from blop.sim.beamline import TiledBeamline
 
 # Suppress noisy logs from httpx 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -64,37 +59,12 @@ DETECTOR_STORAGE = "/tmp/blop/sim"
 tiled_server = SimpleTiledServer(readable_storage=[DETECTOR_STORAGE])
 tiled_client = from_uri(tiled_server.uri)
 tiled_writer = TiledWriter(tiled_client)
-
-
-def setup_re_env(db_type="default", root_dir="/default/path", method="tiled"):
-    RE = RunEngine({})
-    bec = best_effort.BestEffortCallback()
-    RE.subscribe(bec)
-    _ = make_dir_tree(datetime.now().year, base_path=root_dir)
-    if method.lower() == "tiled":
-        RE.subscribe(tiled_writer)
-        return {"RE": RE, "db": tiled_client, "bec": bec}
-    elif method.lower() == "databroker":
-        db = Broker.named(db_type)
-        db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-        try:
-            databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-        except Exception:
-            pass
-        RE.subscribe(db.insert)
-        return {"RE": RE, "db": db, "bec": bec, }
-    else:
-        raise ValueError("The method for data storage used is not supported")
-
-
-def register_handlers(db, handlers):
-    for handler_spec, handler_class in handlers.items():
-        db.reg.register_handler(handler_spec, handler_class, overwrite=True)
-
-
-env = setup_re_env(db_type="temp", root_dir="/tmp/blop/sim", method="tiled")
-globals().update(env)
+bec = best_effort.BestEffortCallback()
 bec.disable_plots()
+
+RE = RunEngine({})
+RE.subscribe(bec)
+RE.subscribe(tiled_writer)
 ```
 
 ## Simulated beamline with KB mirror pair
@@ -102,10 +72,7 @@ bec.disable_plots()
 Here we describe an analytical simulated beamline with a [KB mirror](https://en.wikipedia.org/wiki/Kirkpatrick%E2%80%93Baez_mirror) pair. This is implemented as an [Ophyd](https://blueskyproject.io/ophyd/) device for ease-of-use with Bluesky.
 
 ```{code-cell} ipython3
-if isinstance(db, Container):
-    beamline = TiledBeamline(name="bl")
-elif isinstance(db, databroker.v1.Broker):
-    beamline = DatabrokerBeamline(name="bl")
+beamline = TiledBeamline(name="bl")
 ```
 
 ## Create a Blop-Ax experiment
@@ -120,7 +87,7 @@ We transform the Agent into an optimization problem that can be used with standa
 from blop.ax import Agent
 from blop.dofs import DOF
 from blop.objectives import Objective
-from blop.evaluation import TiledEvaluationFunction
+from blop.protocols import EvaluationFunction
 
 dofs = [
     DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
@@ -135,14 +102,40 @@ objectives = [
     Objective(name="bl_det_wid_y", target="min"),
 ]
 
+class DetectorEvaluation(EvaluationFunction):
+    def __init__(self, tiled_client: Container):
+        self.tiled_client = tiled_client
+
+    def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
+        outcomes = []
+        run = self.tiled_client[uid]
+        bl_det_sum = run["primary/bl_det_sum"].read()
+        bl_det_wid_x = run["primary/bl_det_wid_x"].read()
+        bl_det_wid_y = run["primary/bl_det_wid_y"].read()
+
+        # These ids are stored in the start document's metadata when
+        # using the `blop.plans.default_acquire` plan.
+        # You may want to store them differently in your experiment when writing
+        # your a custom acquisiton plan.
+        suggestion_ids = run.metadata["start"]["blop_suggestion_ids"]
+
+        for idx, sid in enumerate(suggestion_ids):
+            outcome = {
+                "_id": sid,
+                "bl_det_sum": bl_det_sum[idx],
+                "bl_det_wid_x": bl_det_wid_x[idx],
+                "bl_det_wid_y": bl_det_wid_y[idx],
+            }
+            outcomes.append(outcome)
+        return outcomes
+
+evaluation_function = DetectorEvaluation(tiled_client)
+
 agent = Agent(
     readables=[beamline.det],
     dofs=dofs,
     objectives=objectives,
-    evaluation=TiledEvaluationFunction(
-        tiled_client=db,
-        objectives=objectives,
-    ),
+    evaluation=evaluation_function,
     name="sim_kb_mirror",
     description="Simulated KB Mirror Experiment",
 )
@@ -214,8 +207,7 @@ uid = RE(list_scan([beamline.det], *scan_motor_params))
 ```
 
 ```{code-cell} ipython3
-
-image = db[uid[0]]["primary/bl_det_image"].read().squeeze()
+image = tiled_client[uid[0]]["primary/bl_det_image"].read().squeeze()
 plt.imshow(image)
 plt.colorbar()
 plt.show()

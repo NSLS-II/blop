@@ -27,7 +27,6 @@ from typing import Any
 from blop import DOF, Objective
 from blop.ax import Agent
 from blop.dofs import DOF
-from blop.evaluation import TiledEvaluationFunction
 from blop.objectives import Objective
 from blop.plans import optimize
 
