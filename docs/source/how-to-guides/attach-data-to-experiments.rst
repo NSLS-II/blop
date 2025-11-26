@@ -5,8 +5,6 @@
     import time
 
     from bluesky.protocols import NamedMovable, Readable, Status, Hints, HasHints, HasParent
-    from tiled.client import from_uri
-    from tiled.server import SimpleTiledServer
 
     class AlwaysSuccessfulStatus(Status):
         def add_callback(self, callback) -> None:
@@ -63,24 +61,11 @@
             self._value = value
             return AlwaysSuccessfulStatus()
 
-    server = SimpleTiledServer()
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    db = from_uri(server.uri)
-
     dof1 = MovableSignal("dof1")
     dof2 = MovableSignal("dof2")
     dof3 = MovableSignal("dof3")
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
-
-.. testcleanup::
-
-    # Suppress stdout from server.close() otherwise the doctest will fail
-    import os
-    import contextlib
-
-    with contextlib.redirect_stdout(open(os.devnull, "w")):
-        server.close()
 
 Attach external data to experiments
 ===================================
@@ -121,7 +106,6 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
 
     from blop import DOF, Objective
     from blop.ax import Agent
-    from blop.evaluation import TiledEvaluationFunction
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -134,14 +118,23 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
         Objective(name="objective2", target="min"),
     ]
 
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        """Replace this with your own evaluation function."""
+        outcomes = []
+        for suggestion in suggestions:
+            outcome = {
+                "_id": suggestion["_id"],
+                "objective1": 0.1,
+                "objective2": 0.2,
+            }
+            outcomes.append(outcome)
+        return outcomes
+
     agent = Agent(
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        evaluation=TiledEvaluationFunction(
-            tiled_client=db,
-            objectives=objectives,
-        ),
+        evaluation=evaluation_function,
     )
 
 Ingest your data

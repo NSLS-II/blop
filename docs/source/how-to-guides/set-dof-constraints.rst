@@ -89,6 +89,16 @@ Create DOFs and an objective
 
     objective = Objective(name="objective1", target="max")
 
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        """Replace this with your own evaluation function."""
+        outcomes = []
+        for suggestion in suggestions:
+            outcome = {
+                "_id": suggestion["_id"],
+                "objective1": 0.1,
+            }
+            outcomes.append(outcome)
+        return outcomes
 
 Set a linear constraint
 -----------------------
@@ -107,16 +117,12 @@ Configure an agent with DOF constraints
 .. testcode::
 
     from blop.ax import Agent
-    from blop.evaluation import TiledEvaluationFunction
 
     agent = Agent(
         readables=[],
         dofs=[dof1, dof2, dof3],
         objectives=[objective],
-        evaluation=TiledEvaluationFunction(
-            tiled_client=db,
-            objectives=[objective],
-        ),
+        evaluation=evaluation_function,
         dof_constraints=[constraint],
     )
 
