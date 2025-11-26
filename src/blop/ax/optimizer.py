@@ -1,7 +1,7 @@
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
-from ax import (
-    Client, RangeParameterConfig, ChoiceParameterConfig)
+from ax import ChoiceParameterConfig, Client, RangeParameterConfig
 
 from ..protocols import Optimizer
 
@@ -25,6 +25,7 @@ class AxOptimizer(Optimizer):
     **kwargs: Any
         Additional keyword arguments to configure the experiment.
     """
+
     def __init__(
         self,
         parameters: Sequence[RangeParameterConfig | ChoiceParameterConfig],

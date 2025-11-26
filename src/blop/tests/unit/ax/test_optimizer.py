@@ -1,6 +1,6 @@
-import pytest
 import numpy as np
-from ax import RangeParameterConfig, ChoiceParameterConfig
+import pytest
+from ax import ChoiceParameterConfig, RangeParameterConfig
 from ax.exceptions.core import UnsupportedError
 
 from blop.ax.optimizer import AxOptimizer
@@ -55,10 +55,12 @@ def test_ax_optimizer_ingest():
         parameter_constraints=["x1 + x2 <= 10"],
         outcome_constraints=["y1 >= 0", "y2 <= 0"],
     )
-    optimizer.ingest([
-        {"x1": 0.0, "x2": 0.0, "x3": 0, "y1": 1.0, "y2": 2.0},
-        {"x1": 0.1, "x2": 0.2, "x3": 1, "y1": 3.0, "y2": 4.0},
-    ])
+    optimizer.ingest(
+        [
+            {"x1": 0.0, "x2": 0.0, "x3": 0, "y1": 1.0, "y2": 2.0},
+            {"x1": 0.1, "x2": 0.2, "x3": 1, "y1": 3.0, "y2": 4.0},
+        ]
+    )
 
     optimizer.ax_client.configure_generation_strategy()
     summary_df = optimizer.ax_client.summarize()
