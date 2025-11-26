@@ -3,7 +3,6 @@ import warnings
 from collections.abc import Sequence
 from typing import Any, ParamSpec
 
-from ax import Client
 from ax.analysis import AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization
 from bluesky.protocols import Readable
@@ -12,15 +11,16 @@ from bluesky.utils import MsgGenerator
 from ..dofs import DOF, DOFConstraint
 from ..objectives import Objective
 from ..plans import optimize
-from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Optimizer
-from .adapters import configure_metrics, configure_objectives, configure_parameters
+from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem
+from .adapters import configure_objectives, configure_parameters
+from .optimizer import AxOptimizer
 
 logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 
 
-class Agent(Optimizer):
+class Agent(AxOptimizer):
     """
     An optimizer that uses Ax as the backend for optimization and experiment tracking.
 
@@ -61,8 +61,16 @@ class Agent(Optimizer):
         self._objectives = {obj.name: obj for obj in objectives}
         self._evaluation_function = evaluation
         self._acquisition_plan = acquisition_plan
-        self._client = Client()
-        self._configure_experiment(**kwargs)
+        objectives, objective_constraints = configure_objectives(objectives)
+        super().__init__(
+            parameters=configure_parameters(dofs),
+            objective=objectives,
+            parameter_constraints=[constraint.to_ax_constraint() for constraint in self.dof_constraints]
+            if self.dof_constraints
+            else None,
+            outcome_constraints=objective_constraints,
+            **kwargs,
+        )
 
     @property
     def readables(self) -> Sequence[Readable]:
@@ -88,55 +96,6 @@ class Agent(Optimizer):
     def acquisition_plan(self) -> AcquisitionPlan | None:
         return self._acquisition_plan
 
-    @property
-    def ax_client(self) -> Client:
-        return self._client
-
-    def _configure_experiment(
-        self,
-        name: str | None = None,
-        description: str | None = None,
-        experiment_type: str | None = None,
-        owner: str | None = None,
-    ) -> None:
-        """
-        Configure an experiment. Uses the active DOFs and objectives.
-
-        Parameters
-        ----------
-        name : str, optional
-            A name for the experiment.
-        description : str, optional
-            A description for the experiment.
-        experiment_type : str, optional
-            The type of experiment.
-        owner : str, optional
-            The owner of the experiment.
-
-        See Also
-        --------
-        ax.Client.configure_experiment : The Ax method to configure an experiment.
-        ax.Client.configure_optimization : The Ax method to configure the optimization.
-        ax.Client.configure_metrics : The Ax method to configure tracking metrics.
-        """
-        parameters = configure_parameters(self.dofs)
-        objectives, objective_constraints = configure_objectives(self.objectives)
-        # TODO: Configure metrics separately, there should not be a concept of an "inactive" objective.
-        metrics = configure_metrics(self.objectives)
-
-        self._client.configure_experiment(
-            parameters,
-            parameter_constraints=[constraint.to_ax_constraint() for constraint in self.dof_constraints]
-            if self.dof_constraints
-            else None,
-            name=name,
-            description=description,
-            experiment_type=experiment_type,
-            owner=owner,
-        )
-        self._client.configure_optimization(objectives, objective_constraints)
-        self._client.configure_metrics(metrics)
-
     def to_optimization_problem(self) -> OptimizationProblem:
         """
         Construct an optimization problem from the agent.
@@ -153,31 +112,6 @@ class Agent(Optimizer):
             evaluation_function=self.evaluation_function,
             acquisition_plan=self.acquisition_plan,
         )
-
-    def suggest(self, num_points: int | None = None) -> list[dict]:
-        """
-        Returns a set of points in the input space, to be evaulated next.
-
-        Parameters
-        ----------
-        num_points : int | None, optional
-            The number of points to suggest. If not provided, will default to 1.
-
-        Returns
-        -------
-        list[dict]
-            A list of dictionaries, each containing a parameterization of a point to evaluate next.
-        """
-        if num_points is None:
-            num_points = 1
-        next_trials = self._client.get_next_trials(max_trials=num_points)
-        return [
-            {
-                "_id": trial_index,
-                **parameterization,
-            }
-            for trial_index, parameterization in next_trials.items()
-        ]
 
     def ask(self, n: int = 1) -> dict[int, TParameterization]:
         """
@@ -199,32 +133,6 @@ class Agent(Optimizer):
         """
         warnings.warn("ask is deprecated. Use suggest instead.", DeprecationWarning, stacklevel=2)
         return self._client.get_next_trials(n)
-
-    def ingest(self, points: list[dict]) -> None:
-        """
-        Ingest a set of points into the experiment. Either from previously suggested points or from an external source.
-
-        If points are from an external source, each dictionary must contain keys for the DOF names, the objectives, and
-        the "_id" key must be omitted.
-
-        Parameters
-        ----------
-        points : list[dict]
-            A list of dictionaries, each containing at least the outcome(s) of a trial
-            and optionally the associated parameterization
-        """
-        for point in points:
-            outcomes = {k: v for k, v in point.items() if k in self._objectives.keys()}
-            trial_id = point.pop("_id", None)
-            if trial_id is None:
-                parameters = {k: v for k, v in point.items() if k in self._dofs.keys()}
-                self._attach_single_trial(parameters=parameters, outcomes=outcomes)
-            elif trial_id == "baseline":
-                parameters = {k: v for k, v in point.items() if k in self._dofs.keys()}
-                trial_index = self._client.attach_baseline(parameters=parameters)
-                self._client.complete_trial(trial_index=trial_index, raw_data=outcomes)
-            else:
-                self._client.complete_trial(trial_index=trial_id, raw_data=outcomes)
 
     def _complete_trials(
         self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None, **kwargs: Any
@@ -270,11 +178,6 @@ class Agent(Optimizer):
         """
         warnings.warn("tell is deprecated. Use ingest instead.", DeprecationWarning, stacklevel=2)
         return self._complete_trials(trials=trials, outcomes=outcomes)
-
-    def _attach_single_trial(self, parameters: TParameterization, outcomes: TOutcome) -> None:
-        """Attach a single trial to the experiment."""
-        trial_index = self._client.attach_trial(parameters=parameters)
-        self._client.complete_trial(trial_index=trial_index, raw_data=outcomes, progression=0)
 
     def learn(self, iterations: int = 1, n: int = 1) -> MsgGenerator[None]:
         """

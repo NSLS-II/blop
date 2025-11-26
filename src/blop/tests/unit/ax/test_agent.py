@@ -9,7 +9,7 @@ from blop.dofs import DOF, DOFConstraint
 from blop.objectives import Objective
 from blop.protocols import AcquisitionPlan, EvaluationFunction
 
-from .conftest import MovableSignal, ReadableSignal
+from ..conftest import MovableSignal, ReadableSignal
 
 
 @pytest.fixture(scope="function")
