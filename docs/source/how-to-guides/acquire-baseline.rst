@@ -101,7 +101,6 @@ Here we configure an agent with three DOFs and two objectives. The second object
 
     from blop import DOF, Objective
     from blop.ax import Agent
-    from blop.evaluation import TiledEvaluationFunction
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -114,14 +113,23 @@ Here we configure an agent with three DOFs and two objectives. The second object
         Objective(name="objective2", target="max", constraint=("baseline", None)),
     ]
 
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        """Replace this with your own evaluation function."""
+        outcomes = []
+        for suggestion in suggestions:
+            outcome = {
+                "_id": suggestion["_id"],  # Will contain "baseline" to identify the baseline reading
+                "objective1": 0.1,
+                "objective2": 0.2,
+            }
+            outcomes.append(outcome)
+        return outcomes
+
     agent = Agent(
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        evaluation=TiledEvaluationFunction(
-            tiled_client=db,
-            objectives=objectives,
-        ),
+        evaluation=evaluation_function,
     )
 
     optimization_problem = agent.to_optimization_problem()

@@ -99,7 +99,6 @@ Configure an agent
 
     from blop import DOF, Objective
     from blop.ax import Agent
-    from blop.evaluation import TiledEvaluationFunction
 
     dofs = [
         DOF(movable=dof1, search_domain=(-5.0, 5.0)),
@@ -110,14 +109,22 @@ Configure an agent
         Objective(name="objective1", target="max"),
     ]
 
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        """Replace this with your own evaluation function."""
+        outcomes = []
+        for suggestion in suggestions:
+            outcome = {
+                "_id": suggestion["_id"],
+                "objective1": 0.1,
+            }
+            outcomes.append(outcome)
+        return outcomes
+
     agent = Agent(
         readables=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        evaluation=TiledEvaluationFunction(
-            tiled_client=db,
-            objectives=objectives,
-        ),
+        evaluation=evaluation_function,
     )
 
 Configure a generation strategy
