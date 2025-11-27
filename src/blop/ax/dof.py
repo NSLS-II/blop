@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, cast
@@ -8,7 +9,7 @@ from bluesky.protocols import NamedMovable
 
 
 @dataclass(frozen=True, kw_only=True)
-class DOF:
+class DOF(ABC):
     name: str | None = None
     movable: NamedMovable | None = None
 
@@ -19,6 +20,9 @@ class DOF:
     @property
     def parameter_name(self) -> str:
         return self.name or cast(NamedMovable, self.movable).name
+
+    @abstractmethod
+    def to_ax_parameter_config(self) -> RangeParameterConfig | ChoiceParameterConfig: ...
 
 
 @dataclass(frozen=True, kw_only=True)
