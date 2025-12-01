@@ -1,4 +1,7 @@
 Explanation
 ===========
 
-.. note:: This section is a work in progress.
+.. toctree::
+   :maxdepth: 1
+
+   explanations/protocols
