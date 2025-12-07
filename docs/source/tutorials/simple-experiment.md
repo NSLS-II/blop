@@ -24,11 +24,7 @@ import logging
 import time
 from typing import Any
 
-from blop import DOF, Objective
-from blop.ax import Agent
-from blop.dofs import DOF
-from blop.objectives import Objective
-from blop.plans import optimize
+from blop.ax import Agent, RangeDOF, Objective
 
 from bluesky.protocols import NamedMovable, Readable, Status, Hints, HasHints, HasParent
 from bluesky.run_engine import RunEngine
@@ -127,11 +123,11 @@ x1 = MovableSignal("x1", initial_value=0.1)
 x2 = MovableSignal("x2", initial_value=0.23)
 
 dofs = [
-    DOF(movable=x1, search_domain=(-5, 5)),
-    DOF(movable=x2, search_domain=(-5, 5)),
+    RangeDOF(movable=x1, bounds=(-5, 5), parameter_type="float"),
+    RangeDOF(movable=x2, bounds=(-5, 5), parameter_type="float"),
 ]
 objectives = [
-    Objective(name="himmelblau_2d", target="min"),
+    Objective(name="himmelblau_2d", minimize=True),
 ]
 readables = []
 ```
@@ -178,9 +174,7 @@ agent = Agent(
     description="A simple experiment optimizing the Himmelblau function",
 )
 
-optimization_problem = agent.to_optimization_problem()
-
-RE(optimize(optimization_problem, iterations=30))
+RE(agent.optimize(30))
 ```
 
 Now we can view the results.

@@ -8,7 +8,7 @@ from ax.api.types import TOutcome, TParameterization
 from bluesky.protocols import Readable
 from bluesky.utils import MsgGenerator
 
-from ..plans import acquire_baseline,optimize
+from ..plans import acquire_baseline, optimize
 from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str

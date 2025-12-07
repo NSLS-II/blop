@@ -1,5 +1,5 @@
 from .agent import Agent as Agent
-from .dof import DOF, RangeDOF, ChoiceDOF, DOFConstraint
+from .dof import DOF, ChoiceDOF, DOFConstraint, RangeDOF
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
 from .optimizer import AxOptimizer
 

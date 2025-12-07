@@ -34,9 +34,7 @@ from bluesky.run_engine import RunEngine
 from tiled.client import from_uri  # type: ignore[import-untyped]
 from tiled.server import SimpleTiledServer
 
-from blop import DOF, Objective
-from blop.ax import Agent
-from blop.plans import optimize
+from blop.ax import Agent, RangeDOF, Objective
 from blop.sim.xrt_beamline import TiledBeamline
 from blop.protocols import EvaluationFunction
 
@@ -72,16 +70,16 @@ R2, dR2 = 20000, 10000
 beamline = TiledBeamline(name="bl")
 
 dofs = [
-    DOF(movable=beamline.kbv_dsv, search_domain=(R1 - dR1, R1 + dR1)),
-    DOF(movable=beamline.kbh_dsh, search_domain=(R2 - dR2, R2 + dR2)),
+    RangeDOF(movable=beamline.kbv_dsv, bounds=(R1 - dR1, R1 + dR1), parameter_type="float"),
+    RangeDOF(movable=beamline.kbh_dsh, bounds=(R2 - dR2, R2 + dR2), parameter_type="float"),
 ]
 ```
 
 ```{code-cell} ipython3
 objectives = [
-    Objective(name="bl_det_sum", target="max"),
-    Objective(name="bl_det_wid_x", target="min"),
-    Objective(name="bl_det_wid_y", target="min"),
+    Objective(name="bl_det_sum", minimize=False),
+    Objective(name="bl_det_wid_x", minimize=True),
+    Objective(name="bl_det_wid_y", minimize=True),
 ]
 ```
 
@@ -124,12 +122,11 @@ agent = Agent(
     description="A demo of the Blop agent with XRT simulated beamline",
     experiment_type="demo",
 )
-optimization_problem = agent.to_optimization_problem()
 ```
 
 ```{code-cell} ipython3
 # Number of iterations can be increased to be more specific
-RE(optimize(optimization_problem, iterations=15))
+RE(agent.optimize(30))
 ```
 
 ```{code-cell} ipython3
