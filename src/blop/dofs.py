@@ -1,5 +1,4 @@
 import logging
-import re
 import time as ttime
 import uuid
 import warnings
@@ -445,7 +444,6 @@ class DOF:
             This method is deprecated and will be removed in Blop v1.0.0. DOFs will always be active.
         """
         self.active = False
-
 
 
 class DOFList(Sequence[DOF]):

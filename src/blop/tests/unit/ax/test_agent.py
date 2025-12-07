@@ -5,7 +5,7 @@ import pytest
 from ax import Client
 
 from blop.ax.agent import Agent
-from blop.ax.dof import RangeDOF, DOFConstraint
+from blop.ax.dof import DOFConstraint, RangeDOF
 from blop.ax.objective import Objective
 from blop.protocols import AcquisitionPlan, EvaluationFunction
 

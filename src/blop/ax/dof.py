@@ -1,7 +1,7 @@
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-import re
 from typing import Literal, cast
 
 from ax import ChoiceParameterConfig, RangeParameterConfig

@@ -2,7 +2,7 @@ import logging
 
 from . import utils  # noqa F401
 from .agent import Agent  # noqa F401
-from .dofs import DOF
+from .dofs import DOF as DOF
 from .objectives import Objective  # noqa F401
 
 try:

@@ -1,7 +1,7 @@
 import pytest
 from ax import ChoiceParameterConfig, RangeParameterConfig
 
-from blop.ax.dof import DOF, ChoiceDOF, RangeDOF, DOFConstraint
+from blop.ax.dof import DOF, ChoiceDOF, DOFConstraint, RangeDOF
 
 from ..conftest import MovableSignal
 

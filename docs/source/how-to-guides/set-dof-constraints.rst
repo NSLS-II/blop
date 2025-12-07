@@ -77,17 +77,17 @@ Create DOFs and an objective
 
 .. testcode::
 
-    from blop import DOF, Objective
+    from blop.ax import RangeDOF, Objective
 
     motor_x = MovableSignal(name="motor_x")
     motor_y = MovableSignal(name="motor_y")
     motor_z = MovableSignal(name="motor_z")
 
-    dof1 = DOF(movable=motor_x, search_domain=(0, 1000))
-    dof2 = DOF(movable=motor_y, search_domain=(0, 1000))
-    dof3 = DOF(movable=motor_z, search_domain=(0, 1000))
+    dof1 = RangeDOF(movable=motor_x, bounds=(0, 1000), parameter_type="float")
+    dof2 = RangeDOF(movable=motor_y, bounds=(0, 1000), parameter_type="float")
+    dof3 = RangeDOF(movable=motor_z, bounds=(0, 1000), parameter_type="float")
 
-    objective = Objective(name="objective1", target="max")
+    objective = Objective(name="objective1", minimize=False)
 
     def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
         """Replace this with your own evaluation function."""
@@ -100,6 +100,7 @@ Create DOFs and an objective
             outcomes.append(outcome)
         return outcomes
 
+
 Set a linear constraint
 -----------------------
 
@@ -107,9 +108,10 @@ Constraints are specified as strings that are templated and evaluated for you.
 
 .. testcode::
 
-    from blop import DOFConstraint
+    from blop.ax import DOFConstraint
 
-    constraint = DOFConstraint(constraint="5 * x1 + 2 * x2 <= 4 * x3", x1=motor_x, x2=motor_y, x3=motor_z)
+    constraint = DOFConstraint("5 * x1 + 2 * x2 <= 4 * x3", x1=dof1, x2=dof2, x3=dof3)
+
 
 Configure an agent with DOF constraints
 ---------------------------------------
@@ -125,5 +127,3 @@ Configure an agent with DOF constraints
         evaluation=evaluation_function,
         dof_constraints=[constraint],
     )
-
-    optimization_problem = agent.to_optimization_problem()

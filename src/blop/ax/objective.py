@@ -1,5 +1,5 @@
-from collections.abc import Sequence
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ax.api.protocols import IMetric
@@ -51,7 +51,7 @@ class OutcomeConstraint:
         self._constraint = constraint
         self._outcomes = outcomes
         self._validate_outcomes()
-    
+
     def _validate_outcomes(self) -> None:
         if not self._outcomes:
             raise ValueError("OutcomeConstraint requires at least one outcome.")

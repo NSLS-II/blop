@@ -8,10 +8,10 @@ from ax.api.types import TOutcome, TParameterization
 from bluesky.protocols import Readable
 from bluesky.utils import MsgGenerator
 
+from ..plans import acquire_baseline,optimize
+from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
-from ..plans import optimize
-from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem
 from .optimizer import AxOptimizer
 
 logger = logging.getLogger(__name__)
@@ -208,6 +208,17 @@ class Agent(AxOptimizer):
             stacklevel=2,
         )
         yield from self.optimize(iterations=iterations, n_points=n)
+
+    def acquire_baseline(self, parameterization: dict[str, Any] | None = None) -> MsgGenerator[None]:
+        """
+        Acquire a baseline reading. Useful for relative outcome constraints.
+
+        Parameters
+        ----------
+        parameterization : dict[str, Any] | None = None
+            Move the DOFs to the given parameterization, if provided.
+        """
+        yield from acquire_baseline(self.to_optimization_problem(), parameterization=parameterization)
 
     def optimize(self, iterations: int = 1, n_points: int = 1) -> MsgGenerator[None]:
         """
