@@ -107,9 +107,12 @@ Here we configure an agent with three DOFs and two objectives. The second object
         RangeDOF(movable=dof3, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
-    objective = Objective(name="objective1", minimize=False)
+    objectives = [
+        Objective(name="objective1", minimize=False),
+        Objective(name="objective2", minimize=False),
+    ]
 
-    outcome_constraints = [OutcomeConstraint("x >= baseline", x=objective)]
+    outcome_constraints = [OutcomeConstraint("x >= baseline", x=objectives[1])]
 
     def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
         """Replace this with your own evaluation function."""
@@ -126,8 +129,9 @@ Here we configure an agent with three DOFs and two objectives. The second object
     agent = Agent(
         readables=[readable1, readable2],
         dofs=dofs,
-        objectives=[objective],
+        objectives=objectives,
         evaluation=evaluation_function,
+        outcome_constraints=outcome_constraints,
     )
 
 
