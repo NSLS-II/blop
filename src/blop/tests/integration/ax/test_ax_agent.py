@@ -1,7 +1,6 @@
 from blop.ax.agent import Agent
-from blop.dofs import DOF
-from blop.objectives import Objective
-from blop.plans import optimize
+from blop.ax.dof import RangeDOF
+from blop.ax.objective import Objective
 from blop.sim.beamline import TiledBeamline
 
 
@@ -10,16 +9,16 @@ def test_ax_agent_sim_beamline(RE, setup):
     beamline.det.noise.put(False)
 
     dofs = [
-        DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
-        DOF(movable=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
-        DOF(movable=beamline.kbh_dsh, type="continuous", search_domain=(-5.0, 5.0)),
-        DOF(movable=beamline.kbh_ush, type="continuous", search_domain=(-5.0, 5.0)),
+        RangeDOF(movable=beamline.kbv_dsv, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=beamline.kbv_usv, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=beamline.kbh_dsh, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=beamline.kbh_ush, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
-        Objective(name="bl_det_sum", target="max"),
-        Objective(name="bl_det_wid_x", target="min"),
-        Objective(name="bl_det_wid_y", target="min"),
+        Objective(name="bl_det_sum", minimize=False),
+        Objective(name="bl_det_wid_x", minimize=True),
+        Objective(name="bl_det_wid_y", minimize=True),
     ]
 
     def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
@@ -49,4 +48,4 @@ def test_ax_agent_sim_beamline(RE, setup):
         objectives=objectives,
         evaluation=evaluation_function,
     )
-    RE(optimize(agent.to_optimization_problem(), iterations=12, n_points=1))
+    RE(agent.optimize(iterations=12, n_points=1))
