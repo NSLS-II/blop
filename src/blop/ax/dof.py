@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+import re
 from typing import Literal, cast
 
 from ax import ChoiceParameterConfig, RangeParameterConfig
@@ -57,3 +58,45 @@ class ChoiceDOF(DOF):
             is_ordered=self.is_ordered,
             dependent_parameters=self.dependent_parameters,
         )
+
+
+class DOFConstraint:
+    def __init__(self, constraint: str, **dofs: DOF) -> None:
+        self._constraint = constraint
+        self._dofs: dict[str, DOF] = dofs
+        self._validate_dofs()
+
+    def _validate_dofs(self) -> None:
+        if not self._dofs:
+            raise ValueError(
+                "DOFConstraint requires at least one movable to be specified.\n"
+                "Use keyword arguments to map template variables to movables:\n"
+                "  DOFConstraint('x + y <= 12', x=motor_x, y=motor_y)\n\n"
+                "The variable names (x, y) are your choice and make the constraint readable."
+            )
+        invalidated: list[tuple[str, DOF]] = []
+        for name, dof in self._dofs.items():
+            if name not in self._constraint:
+                invalidated.append((name, dof))
+
+        if len(invalidated) > 0:
+            msg = (
+                "The following DOFs did not have matching names in the constraint "
+                f"'{self._constraint}': {', '.join([f'{name}={dof.parameter_name}' for name, dof in invalidated])}"
+            )
+            raise ValueError(msg)
+
+    @property
+    def ax_constraint(self) -> str:
+        """Convert the constraint to a string that can be used by Ax."""
+        template = self._constraint
+        for key in self._dofs.keys():
+            template = re.sub(f"\\b{key}\\b", f"{{{key}}}", template)
+        return template.format(**{key: dof.parameter_name for key, dof in self._dofs.items()})
+
+    def __str__(self) -> str:
+        return self.ax_constraint
+
+    def __repr__(self) -> str:
+        dofs_str = ", ".join(f"{name}={dof.parameter_name}" for name, dof in self._dofs.items())
+        return f"DOFConstraint('{self._constraint}', {dofs_str})"

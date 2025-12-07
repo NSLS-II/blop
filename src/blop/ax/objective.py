@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 import re
 from dataclasses import dataclass
 
@@ -49,7 +50,9 @@ class OutcomeConstraint:
     def __init__(self, constraint: str, **outcomes: Objective | IMetric):
         self._constraint = constraint
         self._outcomes = outcomes
-
+        self._validate_outcomes()
+    
+    def _validate_outcomes(self) -> None:
         if not self._outcomes:
             raise ValueError("OutcomeConstraint requires at least one outcome.")
 
@@ -69,6 +72,9 @@ class OutcomeConstraint:
         outcomes_str = ", ".join(f"{k}={v.name}" for k, v in self._outcomes.items())
         return f"OutcomeConstraint('{self._constraint}', {outcomes_str})"
 
+    def __str__(self) -> str:
+        return self.ax_constraint
 
-def to_ax_objective_str(objectives: list[Objective]) -> str:
+
+def to_ax_objective_str(objectives: Sequence[Objective]) -> str:
     return ", ".join([o.name if not o.minimize else f"-{o.name}" for o in objectives])

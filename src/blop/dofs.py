@@ -447,54 +447,6 @@ class DOF:
         self.active = False
 
 
-class DOFConstraint:
-    def __init__(self, constraint: str, **movables: NamedMovable) -> None:
-        self._constraint = constraint
-        self._movables: dict[str, NamedMovable] = movables
-        self._validate_movables()
-        self._movable_names = {key: movable.name for key, movable in self._movables.items()}
-        self._template = self._to_template()
-
-    def _validate_movables(self) -> None:
-        if not self._movables:
-            raise ValueError(
-                "DOFConstraint requires at least one movable to be specified.\n"
-                "Use keyword arguments to map template variables to movables:\n"
-                "  DOFConstraint('x + y <= 12', x=motor_x, y=motor_y)\n\n"
-                "The variable names (x, y) are your choice and make the constraint readable."
-            )
-        invalidated = []
-        for name, movable in self._movables.items():
-            if name not in self._constraint:
-                invalidated.append((name, movable))
-
-        if len(invalidated) > 0:
-            msg = (
-                "The following movables did not have matching names in the constraint "
-                f"'{self._constraint}': {', '.join([f'{name}={movable.name}' for name, movable in invalidated])}"
-            )
-            raise ValueError(msg)
-
-    def _to_template(self) -> str:
-        """Convert the constraint to a template string."""
-        result = self._constraint
-        for key in self._movables.keys():
-            result = re.sub(f"\\b{key}\\b", f"{{{key}}}", result)
-        return result
-
-    def to_ax_constraint(self) -> str:
-        """Convert the constraint to a string that can be used by Ax."""
-        return self._template.format(**self._movable_names)
-
-    def __str__(self) -> str:
-        return self.to_ax_constraint()
-
-    def __repr__(self) -> str:
-        return (
-            f"DOFConstraint('{self._constraint}', "
-            f"{', '.join([f'{name}={movable.name}' for name, movable in self._movables.items()])})"
-        )
-
 
 class DOFList(Sequence[DOF]):
     def __init__(self, dofs: list[DOF] | None = None) -> None:

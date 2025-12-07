@@ -5,8 +5,8 @@ import pytest
 from ax import Client
 
 from blop.ax.agent import Agent
-from blop.dofs import DOF, DOFConstraint
-from blop.objectives import Objective
+from blop.ax.dof import RangeDOF, DOFConstraint
+from blop.ax.objective import Objective
 from blop.protocols import AcquisitionPlan, EvaluationFunction
 
 from ..conftest import MovableSignal, ReadableSignal
@@ -27,10 +27,10 @@ def test_agent_init(mock_evaluation_function, mock_acquisition_plan):
     movable1 = MovableSignal(name="test_movable1")
     movable2 = MovableSignal(name="test_movable2")
     readable = ReadableSignal(name="test_readable")
-    constraint = DOFConstraint(constraint="x1 + x2 <= 10", x1=movable1, x2=movable2)
-    dof1 = DOF(movable=movable1, search_domain=(0, 10))
-    dof2 = DOF(movable=movable2, search_domain=(0, 10))
-    objective = Objective(name="test_objective", target="max")
+    dof1 = RangeDOF(movable=movable1, bounds=(0, 10), parameter_type="float")
+    dof2 = RangeDOF(movable=movable2, bounds=(0, 10), parameter_type="float")
+    constraint = DOFConstraint(constraint="x1 + x2 <= 10", x1=dof1, x2=dof2)
+    objective = Objective(name="test_objective", minimize=False)
     agent = Agent(
         readables=[readable],
         dofs=[dof1, dof2],
@@ -53,10 +53,10 @@ def test_agent_to_optimization_problem(mock_evaluation_function):
     """Test that the agent can be converted to an optimization problem."""
     movable1 = MovableSignal(name="test_movable1")
     movable2 = MovableSignal(name="test_movable2")
-    constraint = DOFConstraint(constraint="x1 + x2 <= 10", x1=movable1, x2=movable2)
-    dof1 = DOF(movable=movable1, search_domain=(0, 10))
-    dof2 = DOF(movable=movable2, search_domain=(0, 10))
-    objective = Objective(name="test_objective", target="max")
+    dof1 = RangeDOF(movable=movable1, bounds=(0, 10), parameter_type="float")
+    dof2 = RangeDOF(movable=movable2, bounds=(0, 10), parameter_type="float")
+    constraint = DOFConstraint(constraint="x1 + x2 <= 10", x1=dof1, x2=dof2)
+    objective = Objective(name="test_objective", minimize=False)
     agent = Agent(
         readables=[],
         dofs=[dof1, dof2],
@@ -75,9 +75,9 @@ def test_agent_to_optimization_problem(mock_evaluation_function):
 def test_agent_suggest(mock_evaluation_function):
     movable1 = MovableSignal(name="test_movable1")
     movable2 = MovableSignal(name="test_movable2")
-    dof1 = DOF(movable=movable1, search_domain=(0, 10))
-    dof2 = DOF(movable=movable2, search_domain=(0, 10))
-    objective = Objective(name="test_objective", target="max")
+    dof1 = RangeDOF(movable=movable1, bounds=(0, 10), parameter_type="float")
+    dof2 = RangeDOF(movable=movable2, bounds=(0, 10), parameter_type="float")
+    objective = Objective(name="test_objective", minimize=False)
     agent = Agent(readables=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
 
     parameterizations = agent.suggest(1)
@@ -92,9 +92,9 @@ def test_agent_suggest(mock_evaluation_function):
 def test_agent_suggest_multiple(mock_evaluation_function):
     movable1 = MovableSignal(name="test_movable1")
     movable2 = MovableSignal(name="test_movable2")
-    dof1 = DOF(movable=movable1, search_domain=(0, 10))
-    dof2 = DOF(movable=movable2, search_domain=(0, 10))
-    objective = Objective(name="test_objective", target="max")
+    dof1 = RangeDOF(movable=movable1, bounds=(0, 10), parameter_type="float")
+    dof2 = RangeDOF(movable=movable2, bounds=(0, 10), parameter_type="float")
+    objective = Objective(name="test_objective", minimize=False)
     agent = Agent(readables=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
 
     parameterizations = agent.suggest(5)
@@ -110,9 +110,9 @@ def test_agent_suggest_multiple(mock_evaluation_function):
 def test_agent_ingest(mock_evaluation_function):
     movable1 = MovableSignal(name="test_movable1")
     movable2 = MovableSignal(name="test_movable2")
-    dof1 = DOF(movable=movable1, search_domain=(0, 10))
-    dof2 = DOF(movable=movable2, search_domain=(0, 10))
-    objective = Objective(name="test_objective", target="max")
+    dof1 = RangeDOF(movable=movable1, bounds=(0, 10), parameter_type="float")
+    dof2 = RangeDOF(movable=movable2, bounds=(0, 10), parameter_type="float")
+    objective = Objective(name="test_objective", minimize=False)
     agent = Agent(readables=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
 
     agent.ingest([{"test_movable1": 0.1, "test_movable2": 0.2, "test_objective": 0.3}])
@@ -128,9 +128,9 @@ def test_agent_ingest(mock_evaluation_function):
 def test_agent_ingest_multiple(mock_evaluation_function):
     movable1 = MovableSignal(name="test_movable1")
     movable2 = MovableSignal(name="test_movable2")
-    dof1 = DOF(movable=movable1, search_domain=(0, 10))
-    dof2 = DOF(movable=movable2, search_domain=(0, 10))
-    objective = Objective(name="test_objective", target="max")
+    dof1 = RangeDOF(movable=movable1, bounds=(0, 10), parameter_type="float")
+    dof2 = RangeDOF(movable=movable2, bounds=(0, 10), parameter_type="float")
+    objective = Objective(name="test_objective", minimize=False)
     agent = Agent(readables=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
 
     agent.ingest(
@@ -150,9 +150,9 @@ def test_agent_ingest_multiple(mock_evaluation_function):
 def test_ingest_baseline(mock_evaluation_function):
     movable1 = MovableSignal(name="test_movable1")
     movable2 = MovableSignal(name="test_movable2")
-    dof1 = DOF(movable=movable1, search_domain=(0, 10))
-    dof2 = DOF(movable=movable2, search_domain=(0, 10))
-    objective = Objective(name="test_objective", target="max")
+    dof1 = RangeDOF(movable=movable1, bounds=(0, 10), parameter_type="float")
+    dof2 = RangeDOF(movable=movable2, bounds=(0, 10), parameter_type="float")
+    objective = Objective(name="test_objective", minimize=False)
     agent = Agent(readables=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
 
     agent.ingest([{"test_movable1": 0.1, "test_movable2": 0.2, "test_objective": 0.3, "_id": "baseline"}])
