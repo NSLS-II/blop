@@ -7,6 +7,7 @@ from ax import Client
 from blop.ax.agent import Agent
 from blop.ax.dof import DOFConstraint, RangeDOF
 from blop.ax.objective import Objective
+from blop.ax.optimizer import AxOptimizer
 from blop.protocols import AcquisitionPlan, EvaluationFunction
 
 from ..conftest import MovableSignal, ReadableSignal
@@ -68,7 +69,7 @@ def test_agent_to_optimization_problem(mock_evaluation_function):
     assert optimization_problem.evaluation_function == mock_evaluation_function
     assert optimization_problem.movables == [movable1, movable2]
     assert optimization_problem.readables == []
-    assert optimization_problem.optimizer == agent
+    assert isinstance(optimization_problem.optimizer, AxOptimizer)
     assert optimization_problem.acquisition_plan is None
 
 

@@ -3,6 +3,7 @@ import warnings
 from collections.abc import Sequence
 from typing import Any, ParamSpec
 
+from ax import Client
 from ax.analysis import AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization
 from bluesky.protocols import Readable
@@ -19,9 +20,9 @@ logger = logging.getLogger(__name__)
 P = ParamSpec("P")
 
 
-class Agent(AxOptimizer):
+class Agent:
     """
-    An optimizer that uses Ax as the backend for optimization and experiment tracking.
+    An interface that uses Ax as the backend for optimization and experiment tracking.
 
     For more complex setups, you can configure the Ax client directly at ``self.ax_client``.
 
@@ -64,7 +65,7 @@ class Agent(AxOptimizer):
         self._acquisition_plan = acquisition_plan
         self._dof_constraints = dof_constraints
         self._outcome_constraints = outcome_constraints
-        super().__init__(
+        self._optimizer = AxOptimizer(
             parameters=[dof.to_ax_parameter_config() for dof in dofs],
             objective=to_ax_objective_str(objectives),
             parameter_constraints=[constraint.ax_constraint for constraint in self._dof_constraints]
@@ -104,6 +105,10 @@ class Agent(AxOptimizer):
     def outcome_constraints(self) -> Sequence[OutcomeConstraint] | None:
         return self._outcome_constraints
 
+    @property
+    def ax_client(self) -> Client:
+        return self._optimizer.ax_client
+
     def to_optimization_problem(self) -> OptimizationProblem:
         """
         Construct an optimization problem from the agent.
@@ -114,12 +119,28 @@ class Agent(AxOptimizer):
             An immutable optimization problem that can be deployed via Bluesky.
         """
         return OptimizationProblem(
-            optimizer=self,
+            optimizer=self._optimizer,
             movables=[dof.movable for dof in self.dofs if dof.movable is not None],
             readables=self.readables,
             evaluation_function=self.evaluation_function,
             acquisition_plan=self.acquisition_plan,
         )
+
+    def suggest(self, num_points: int = 1) -> list[dict]:
+        """
+        Returns a set of points in the input space, to be evaulated next.
+
+        Parameters
+        ----------
+        num_points : int | None, optional
+            The number of points to suggest. If not provided, will default to 1.
+
+        Returns
+        -------
+        list[dict]
+            A list of dictionaries, each containing a parameterization of a point to evaluate next.
+        """
+        return self._optimizer.suggest(num_points)
 
     def ask(self, n: int = 1) -> dict[int, TParameterization]:
         """
@@ -140,7 +161,7 @@ class Agent(AxOptimizer):
             A dictionary mapping trial indices to their suggested parameterizations.
         """
         warnings.warn("ask is deprecated. Use suggest instead.", DeprecationWarning, stacklevel=2)
-        return self._client.get_next_trials(n)
+        return self.ax_client.get_next_trials(n)
 
     def _complete_trials(
         self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None, **kwargs: Any
@@ -161,9 +182,24 @@ class Agent(AxOptimizer):
         ax.Client.complete_trial : The Ax method to complete a trial.
         """
         for trial_index in trials.keys():
-            self._client.complete_trial(
+            self.ax_client.complete_trial(
                 trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None, **kwargs
             )
+
+    def ingest(self, points: list[dict]) -> None:
+        """
+        Ingest a set of points into the experiment. Either from previously suggested points or from an external source.
+
+        If points are from an external source, each dictionary must contain keys for the DOF names, the objectives, and
+        the "_id" key must be omitted.
+
+        Parameters
+        ----------
+        points : list[dict]
+            A list of dictionaries, each containing at least the outcome(s) of a trial
+            and optionally the associated parameterization
+        """
+        self._optimizer.ingest(points)
 
     def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
         """
@@ -259,7 +295,7 @@ class Agent(AxOptimizer):
         ax.analysis.ContourPlot : Pre-built analysis for plotting the objective as a function of two parameters.
         ax.analysis.AnalysisCard : The Ax analysis card class which contains the raw and computed data.
         """
-        return self._client.compute_analyses(
+        return self.ax_client.compute_analyses(
             [
                 ContourPlot(
                     x_parameter_name=x_dof_name,
