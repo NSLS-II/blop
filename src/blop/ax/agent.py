@@ -8,11 +8,10 @@ from ax.api.types import TOutcome, TParameterization
 from bluesky.protocols import Readable
 from bluesky.utils import MsgGenerator
 
-from ..dofs import DOF, DOFConstraint
-from ..objectives import Objective
-from ..plans import optimize
+from ..plans import acquire_baseline, optimize
 from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem
-from .adapters import configure_objectives, configure_parameters
+from .dof import DOF, DOFConstraint
+from .objective import Objective, OutcomeConstraint, to_ax_objective_str
 from .optimizer import AxOptimizer
 
 logger = logging.getLogger(__name__)
@@ -37,10 +36,12 @@ class Agent(AxOptimizer):
         The objectives which the agent will try to optimize.
     evaluation_function : EvaluationFunction
         The function to evaluate acquired data and produce outcomes.
-    dof_constraints : Sequence[DOFConstraint] | None, optional
-        Constraints on DOFs to refine the search space.
     acquisition_plan : AcquisitionPlan | None, optional
         The acquisition plan to use for acquiring data from the beamline. If not provided, a default plan will be used.
+    dof_constraints : Sequence[DOFConstraint] | None, optional
+        Constraints on DOFs to refine the search space.
+    outcome_constraints : Sequence[OutcomeConstraint] | None, optional
+        Constraints on outcomes to be satisfied during optimization.
     **kwargs: Any
         Additional keyword arguments to configure the Ax experiment.
     """
@@ -51,24 +52,27 @@ class Agent(AxOptimizer):
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
         evaluation: EvaluationFunction,
-        dof_constraints: Sequence[DOFConstraint] | None = None,
         acquisition_plan: AcquisitionPlan | None = None,
+        dof_constraints: Sequence[DOFConstraint] | None = None,
+        outcome_constraints: Sequence[OutcomeConstraint] | None = None,
         **kwargs: Any,
     ):
         self._readables = readables
-        self._dofs = {dof.name: dof for dof in dofs}
-        self._dof_constraints = dof_constraints
+        self._dofs = {dof.parameter_name: dof for dof in dofs}
         self._objectives = {obj.name: obj for obj in objectives}
         self._evaluation_function = evaluation
         self._acquisition_plan = acquisition_plan
-        objectives, objective_constraints = configure_objectives(objectives)
+        self._dof_constraints = dof_constraints
+        self._outcome_constraints = outcome_constraints
         super().__init__(
-            parameters=configure_parameters(dofs),
-            objective=objectives,
-            parameter_constraints=[constraint.to_ax_constraint() for constraint in self.dof_constraints]
-            if self.dof_constraints
+            parameters=[dof.to_ax_parameter_config() for dof in dofs],
+            objective=to_ax_objective_str(objectives),
+            parameter_constraints=[constraint.ax_constraint for constraint in self._dof_constraints]
+            if self._dof_constraints
             else None,
-            outcome_constraints=objective_constraints,
+            outcome_constraints=[constraint.ax_constraint for constraint in self._outcome_constraints]
+            if self._outcome_constraints
+            else None,
             **kwargs,
         )
 
@@ -79,10 +83,6 @@ class Agent(AxOptimizer):
     @property
     def dofs(self) -> Sequence[DOF]:
         return list(self._dofs.values())
-
-    @property
-    def dof_constraints(self) -> Sequence[DOFConstraint] | None:
-        return self._dof_constraints
 
     @property
     def objectives(self) -> Sequence[Objective]:
@@ -96,6 +96,14 @@ class Agent(AxOptimizer):
     def acquisition_plan(self) -> AcquisitionPlan | None:
         return self._acquisition_plan
 
+    @property
+    def dof_constraints(self) -> Sequence[DOFConstraint] | None:
+        return self._dof_constraints
+
+    @property
+    def outcome_constraints(self) -> Sequence[OutcomeConstraint] | None:
+        return self._outcome_constraints
+
     def to_optimization_problem(self) -> OptimizationProblem:
         """
         Construct an optimization problem from the agent.
@@ -107,7 +115,7 @@ class Agent(AxOptimizer):
         """
         return OptimizationProblem(
             optimizer=self,
-            movables=[dof.movable for dof in self.dofs],
+            movables=[dof.movable for dof in self.dofs if dof.movable is not None],
             readables=self.readables,
             evaluation_function=self.evaluation_function,
             acquisition_plan=self.acquisition_plan,
@@ -195,11 +203,36 @@ class Agent(AxOptimizer):
             but slower optimization progress.
         """
         warnings.warn(
-            "learn is deprecated. Use blop.plans.optimize with self.to_optimization_problem instead.",
+            "learn is deprecated. Use 'optimize' instead.",
             DeprecationWarning,
             stacklevel=2,
         )
-        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n)
+        yield from self.optimize(iterations=iterations, n_points=n)
+
+    def acquire_baseline(self, parameterization: dict[str, Any] | None = None) -> MsgGenerator[None]:
+        """
+        Acquire a baseline reading. Useful for relative outcome constraints.
+
+        Parameters
+        ----------
+        parameterization : dict[str, Any] | None = None
+            Move the DOFs to the given parameterization, if provided.
+        """
+        yield from acquire_baseline(self.to_optimization_problem(), parameterization=parameterization)
+
+    def optimize(self, iterations: int = 1, n_points: int = 1) -> MsgGenerator[None]:
+        """
+        Optimize using the configured agent.
+
+        Parameters
+        ----------
+        iterations : int, optional
+            The number of optimization iterations to run.
+        n_points : int, optional
+            The number of trials to run per iteration. Higher values can lead to more efficient data acquisition,
+            but slower optimization progress.
+        """
+        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points)
 
     def plot_objective(
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any

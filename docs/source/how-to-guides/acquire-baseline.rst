@@ -99,19 +99,20 @@ Here we configure an agent with three DOFs and two objectives. The second object
 
 .. testcode::
 
-    from blop import DOF, Objective
-    from blop.ax import Agent
+    from blop.ax import Agent, RangeDOF, Objective, OutcomeConstraint
 
     dofs = [
-        DOF(movable=dof1, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof2, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof3, search_domain=(-5.0, 5.0)),
+        RangeDOF(movable=dof1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=dof2, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=dof3, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
-        Objective(name="objective1", target="min"),
-        Objective(name="objective2", target="max", constraint=("baseline", None)),
+        Objective(name="objective1", minimize=False),
+        Objective(name="objective2", minimize=False),
     ]
+
+    outcome_constraints = [OutcomeConstraint("x >= baseline", x=objectives[1])]
 
     def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
         """Replace this with your own evaluation function."""
@@ -130,9 +131,9 @@ Here we configure an agent with three DOFs and two objectives. The second object
         dofs=dofs,
         objectives=objectives,
         evaluation=evaluation_function,
+        outcome_constraints=outcome_constraints,
     )
 
-    optimization_problem = agent.to_optimization_problem()
 
 Acquire a baseline reading
 --------------------------
@@ -141,9 +142,7 @@ To acquire a baseline reading, simply call the ``acquire_baseline`` method. Opti
 
 .. testcode::
 
-    from blop.plans import acquire_baseline
-
-    RE(acquire_baseline(optimization_problem))
+    RE(agent.acquire_baseline())
 
 .. testoutput::
    :hide:

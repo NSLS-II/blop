@@ -1,7 +1,7 @@
 import pytest
 from ax import ChoiceParameterConfig, RangeParameterConfig
 
-from blop.ax.dof import DOF, ChoiceDOF, RangeDOF
+from blop.ax.dof import DOF, ChoiceDOF, DOFConstraint, RangeDOF
 
 from ..conftest import MovableSignal
 
@@ -69,3 +69,18 @@ def test_choice_dof():
     assert dof2.to_ax_parameter_config() == ChoiceParameterConfig(
         name="test_movable", values=[0, 1, 2, 3, 4, 5], parameter_type="int", is_ordered=True, dependent_parameters=None
     )
+
+
+def test_dof_constraint():
+    dof1 = RangeDOF(name="test_dof1", bounds=(0, 1), parameter_type="float", step_size=0.1, scaling="linear")
+    dof2 = RangeDOF(name="test_dof2", bounds=(0, 1), parameter_type="float", step_size=0.1, scaling="linear")
+    constraint = DOFConstraint(constraint="x1 + x2 <= 10", x1=dof1, x2=dof2)
+    assert constraint.ax_constraint == "test_dof1 + test_dof2 <= 10"
+    assert str(constraint) == "test_dof1 + test_dof2 <= 10"
+
+
+def test_invalid_dof_constraint():
+    dof1 = RangeDOF(name="test_dof1", bounds=(0, 1), parameter_type="float", step_size=0.1, scaling="linear")
+    dof2 = RangeDOF(name="test_dof2", bounds=(0, 1), parameter_type="float", step_size=0.1, scaling="linear")
+    with pytest.raises(ValueError):
+        DOFConstraint(constraint="x1 + x2 <= 10", x1=dof1, x3=dof2)

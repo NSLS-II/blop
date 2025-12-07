@@ -104,18 +104,17 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
 
 .. testcode::
 
-    from blop import DOF, Objective
-    from blop.ax import Agent
+    from blop.ax import Agent, RangeDOF, Objective
 
     dofs = [
-        DOF(movable=dof1, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof2, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof3, search_domain=(-5.0, 5.0)),
+        RangeDOF(movable=dof1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=dof2, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=dof3, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
-        Objective(name="objective1", target="min"),
-        Objective(name="objective2", target="min"),
+        Objective(name="objective1", minimize=True),
+        Objective(name="objective2", minimize=False),
     ]
 
     def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:

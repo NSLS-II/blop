@@ -97,16 +97,15 @@ Configure an agent
 
 .. testcode::
 
-    from blop import DOF, Objective
-    from blop.ax import Agent
+    from blop.ax import Agent, RangeDOF, Objective
 
     dofs = [
-        DOF(movable=dof1, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof2, search_domain=(-5.0, 5.0)),
+        RangeDOF(movable=dof1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(movable=dof2, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
-        Objective(name="objective1", target="max"),
+        Objective(name="objective1", minimize=False),
     ]
 
     def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
@@ -209,9 +208,7 @@ Run the experiment with Bluesky
 
 .. testcode::
 
-    from blop.plans import optimize
-
-    RE(optimize(agent.to_optimization_problem(), iterations=12, n_points=1))
+    RE(agent.optimize(iterations=12, n_points=1))
 
 
 Verify the generation strategy was used

@@ -84,22 +84,20 @@ This involves setting 4 parameters that simulate motor positions controlling two
 We transform the Agent into an optimization problem that can be used with standard Bluesky plans.
 
 ```{code-cell} ipython3
-from blop.ax import Agent
-from blop.dofs import DOF
-from blop.objectives import Objective
+from blop.ax import Agent, RangeDOF, Objective
 from blop.protocols import EvaluationFunction
 
 dofs = [
-    DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(movable=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(movable=beamline.kbh_dsh, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(movable=beamline.kbh_ush, type="continuous", search_domain=(-5.0, 5.0)),
+    RangeDOF(movable=beamline.kbv_dsv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(movable=beamline.kbv_usv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(movable=beamline.kbh_dsh, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(movable=beamline.kbh_ush, parameter_type="float", bounds=(-5.0, 5.0)),
 ]
 
 objectives = [
-    Objective(name="bl_det_sum", target="max"),
-    Objective(name="bl_det_wid_x", target="min"),
-    Objective(name="bl_det_wid_y", target="min"),
+    Objective(name="bl_det_sum", minimize=False),
+    Objective(name="bl_det_wid_x", minimize=True),
+    Objective(name="bl_det_wid_y", minimize=True),
 ]
 
 class DetectorEvaluation(EvaluationFunction):
@@ -139,8 +137,6 @@ agent = Agent(
     name="sim_kb_mirror",
     description="Simulated KB Mirror Experiment",
 )
-
-optimization_problem = agent.to_optimization_problem()
 ```
 
 ## Optimization
@@ -150,9 +146,7 @@ With all of our experimental setup done, we can optimize the DOFs to satisfy our
 For this example, Ax will optimize the 4 motor positions to produce the greatest intensity beam with the smallest beam width and height (smallest area). It does this by first running a couple of trials which are random samples, then the remainder using Bayesian optimization through BoTorch.
 
 ```{code-cell} ipython3
-from blop.plans import optimize
-
-RE(optimize(optimization_problem, iterations=25, n_points=1))
+RE(agent.optimize(iterations=25, n_points=1))
 ```
 
 ## Analyze Results
