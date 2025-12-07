@@ -1,7 +1,7 @@
 import logging
 import warnings
 from collections.abc import Sequence
-from typing import Any, ParamSpec
+from typing import Any
 
 from ax import Client
 from ax.analysis import AnalysisCard, ContourPlot
@@ -16,8 +16,6 @@ from .objective import Objective, OutcomeConstraint, to_ax_objective_str
 from .optimizer import AxOptimizer
 
 logger = logging.getLogger(__name__)
-
-P = ParamSpec("P")
 
 
 class Agent:
