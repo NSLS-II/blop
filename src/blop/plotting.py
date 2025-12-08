@@ -1,3 +1,5 @@
+import warnings
+
 import matplotlib as mpl
 import numpy as np
 import torch
@@ -12,6 +14,8 @@ DEFAULT_COLORMAP = "turbo"
 DEFAULT_SCATTER_SIZE = 16
 
 MAX_TEST_INPUTS = 2**11
+
+warnings.warn("The plotting module is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2)
 
 
 def _plot_objs_one_dof(agent, size=16, lw=1e0):

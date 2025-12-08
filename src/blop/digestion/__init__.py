@@ -1,6 +1,10 @@
+import warnings
+
 import pandas as pd
 
 from ..utils import get_beam_stats
+
+warnings.warn("The digestion module is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2)
 
 
 def default_digestion_function(df: pd.DataFrame) -> pd.DataFrame:

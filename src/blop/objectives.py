@@ -74,6 +74,9 @@ class Objective:
     ) -> None:
         """An objective to be used by an agent.
 
+        .. deprecated:: v0.9.0
+            This class is deprecated and will be removed in Blop v1.0.0. Use ``blop.ax.Objective`` instead.
+
         Parameters
         ----------
         name: str
