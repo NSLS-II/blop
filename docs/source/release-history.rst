@@ -2,6 +2,31 @@
 Release History
 ===============
 
+v0.9.0 (2025-12-08)
+-------------------
+
+What's Changed
+..............
+* Protocols for optimization with Bluesky by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/185
+* Evaluation functions by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/186
+* Standard plans for optimization that work with protocols by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/187
+* Refactor Ax agent to use new protocols by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/188
+* Remove default evaluation options by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/189
+* Direct AxOptimizer protocol impelementation by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/191
+* Remove unused Ax helpers by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/193
+* Simplified DOF classes for Ax backend by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/195
+* Simpler Objective class, ScalarizedObjective, and OutcomeConstraints by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/196
+* Protocol explanation by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/192
+* New DOFConstraint class and Agent update by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/198
+* Agent composition over inheritance by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/199
+* Add how-to-guide for outcome constraints by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/200
+* Extensive updates to reference docs by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/201
+* Change furo theme -> pydata-sphinx-theme by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/202
+* Update docstrings with much more detail by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/203
+
+
+`Full Changelog <https://github.com/NSLS-II/blop/compare/v0.8.1...v0.9.0>`__
+
 v0.8.1 (2025-11-06)
 -------------------
 
@@ -78,16 +103,16 @@ What's Changed
 * Fix documentation CI error by `@jennmald <https://github.com/jennmald>`_ in https://github.com/NSLS-II/blop/pull/84
 * Fix fitness and constraint plots by `@jennmald <https://github.com/jennmald>`_ in https://github.com/NSLS-II/blop/pull/80
 * Refactor: Make agent default compatible with Bluesky Adaptive by `@maffettone <https://github.com/maffettone>`_ in https://github.com/NSLS-II/blop/pull/86
-* Ruff linter support; Removal of black, flake8, and isort by `@thomashopkins32 <https://github.com/thomashopkins32>`_ in https://github.com/NSLS-II/blop/pull/95
-* Add type hints by `@thomashopkins32 <https://github.com/thomashopkins32>`_ in https://github.com/NSLS-II/blop/pull/87
-* Remove Python 3.9 support by `@thomashopkins32 <https://github.com/thomashopkins32>`_ in https://github.com/NSLS-II/blop/pull/101
+* Ruff linter support; Removal of black, flake8, and isort by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/95
+* Add type hints by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/87
+* Remove Python 3.9 support by `@thopkins32 <https://github.com/thopkins32>`_ in https://github.com/NSLS-II/blop/pull/101
 * Add XRT demo to blop tutorials by `@jennmald <https://github.com/jennmald>`_ in https://github.com/NSLS-II/blop/pull/102
 
 New Contributors
 ................
 * `@jennmald <https://github.com/jennmald>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/84
 * `@maffettone <https://github.com/maffettone>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/86
-* `@thomashopkins32 <https://github.com/thomashopkins32>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/95
+* `@thopkins32 <https://github.com/thopkins32>`_ made their first contribution in https://github.com/NSLS-II/blop/pull/95
 
 `Full Changelog <https://github.com/NSLS-II/blop/compare/v0.7.2...v0.7.3>`__
 

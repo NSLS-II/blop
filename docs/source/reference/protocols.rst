@@ -10,7 +10,6 @@ AcquisitionPlan
    :show-inheritance:
    :inherited-members:
    :special-members: __call__
-   :no-index:
 
 EvaluationFunction
 ------------------
@@ -29,7 +28,6 @@ Optimizer
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:
 
 OptimizationProblem
 -------------------
@@ -39,4 +37,3 @@ OptimizationProblem
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:

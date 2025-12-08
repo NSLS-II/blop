@@ -9,4 +9,5 @@ API Reference
     reference/dof-constraint.rst
     reference/objective.rst
     reference/outcome-constraint.rst
+    reference/plans.rst
     reference/protocols.rst
