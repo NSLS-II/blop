@@ -1,7 +1,7 @@
-Agent
-=====
+Outcome Constraint
+==================
 
-.. autoclass:: blop.ax.Agent
+.. autoclass:: blop.ax.objective.OutcomeConstraint
    :members:
    :undoc-members:
    :show-inheritance:

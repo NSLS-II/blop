@@ -7,46 +7,95 @@ from ax.api.protocols import IMetric
 
 @dataclass(frozen=True, kw_only=True)
 class Objective:
+    """
+    An objective to optimize.
+
+    Attributes
+    ----------
+    name : str
+        The name of the objective.
+    minimize : bool
+        Whether to minimize or maximize the objective.
+
+    Examples
+    --------
+    >>> objective = Objective(name="objective1", minimize=True)
+    """
+
     name: str
     minimize: bool
 
 
 class ScalarizedObjective:
-    def __init__(self, expression: str, *, minimize: bool, **objectives: Objective):
+    """
+    A scalarized objective is a weighted sum of other objectives.
+
+    Parameters
+    ----------
+    expression : str
+        The expression to evaluate containing the objectives.
+    minimize : bool
+        Whether to minimize or maximize the expression.
+    **objective_names : str
+        Keyword arguments mapping variables in the expression to objective names.
+
+    Examples
+    --------
+    >>> scalarized_objective = ScalarizedObjective(
+    ...     expression="2 * x - 4 * y",
+    ...     minimize=False,
+    ...     x="objective1",
+    ...     y="objective2",
+    ... )
+    >>> print(scalarized_objective)
+    2 * objective1 - 4 * objective2
+    """
+
+    def __init__(self, expression: str, *, minimize: bool, **objective_names: str):
         self._expression = expression
-        self._objectives = objectives
+        self._objective_names = objective_names
         self._minimize = minimize
 
-        if not self._objectives:
+        if not self._objective_names:
             raise ValueError("ScalarizedObjective requires at least one objective.")
 
-        if any(o.minimize for o in self._objectives.values()):
-            raise ValueError(
-                "ScalarizedObjective does not support minimizing individual objectives. "
-                "You can minimize the scalarized objective instead."
-            )
-
-        invalidated = [name for name in self._objectives if name not in self._expression]
+        invalidated = [key for key in self._objective_names if key not in self._expression]
         if invalidated:
             raise ValueError(f"Objectives {invalidated} not found in expression '{self._expression}'.")
 
     @property
     def ax_expression(self) -> str:
+        """Convert the scalarized objective to a string that can be used by Ax."""
         template = self._expression
-        for key in self._objectives:
+        for key in self._objective_names:
             template = re.sub(f"\\b{key}\\b", f"{{{key}}}", template)
 
-        objective_str = template.format(**{key: objective.name for key, objective in self._objectives.items()})
+        objective_str = template.format(**self._objective_names)
         return f"-({objective_str})" if self._minimize else objective_str
 
     def __repr__(self) -> str:
         return (
             f"ScalarizedObjective('{self._expression}', minimize={self._minimize}, "
-            f"{', '.join([f'{k}={v.name}' for k, v in self._objectives.items()])})"
+            f"{', '.join([f'{k}={v}' for k, v in self._objective_names.items()])})"
         )
+
+    def __str__(self) -> str:
+        return self.ax_expression
 
 
 class OutcomeConstraint:
+    """
+    A constraint on an outcome of a suggestion. This is a *soft* constraint,
+    meaning that the constraint is not guaranteed to be satisfied at all times during optimization.
+
+    Parameters
+    ----------
+    constraint : str
+        The constraint expression to evaluate.
+    **outcomes : Objective | IMetric
+        Keyword arguments mapping variables in the expression to objectives or metrics.
+    """
+
     def __init__(self, constraint: str, **outcomes: Objective | IMetric):
         self._constraint = constraint
         self._outcomes = outcomes
@@ -62,6 +111,7 @@ class OutcomeConstraint:
 
     @property
     def ax_constraint(self) -> str:
+        """Convert the constraint to a string that can be used by Ax."""
         template = self._constraint
         for key in self._outcomes:
             template = re.sub(f"\\b{key}\\b", f"{{{key}}}", template)
@@ -77,4 +127,23 @@ class OutcomeConstraint:
 
 
 def to_ax_objective_str(objectives: Sequence[Objective]) -> str:
+    """
+    Convert a list of objectives to a string that can be used by Ax.
+
+    Parameters
+    ----------
+    objectives : Sequence[Objective]
+        The objectives to convert to a string.
+
+    Returns
+    -------
+    str
+        The string representation of the objectives.
+
+    Examples
+    --------
+    >>> objectives = [Objective(name="objective1", minimize=True), Objective(name="objective2", minimize=False)]
+    >>> to_ax_objective_str(objectives)
+    -objective1, objective2
+    """
     return ", ".join([o.name if not o.minimize else f"-{o.name}" for o in objectives])

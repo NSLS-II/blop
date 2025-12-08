@@ -6,5 +6,7 @@ API Reference
 
     reference/agent.rst
     reference/dof.rst
+    reference/dof-constraint.rst
     reference/objective.rst
+    reference/outcome-constraint.rst
     reference/protocols.rst

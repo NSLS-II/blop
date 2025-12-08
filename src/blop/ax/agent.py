@@ -226,7 +226,7 @@ class Agent:
         Learn by running trials and providing the outcomes.
 
         .. deprecated:: v0.9.0
-            Use blop.plans.optimize with self.to_optimization_problem instead.
+            Use ``optimize`` instead.
 
         Parameters
         ----------
