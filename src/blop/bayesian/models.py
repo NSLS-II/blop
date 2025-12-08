@@ -1,3 +1,4 @@
+import warnings
 from typing import Any
 
 import botorch  # type: ignore[import-untyped]
@@ -16,6 +17,9 @@ def train_model(
     **kwargs: Any,
 ) -> None:
     """Fit all of the agent's models. All kwargs are passed to `botorch.fit.fit_gpytorch_mll`."""
+    warnings.warn(
+        "The train_model function is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2
+    )
     fails = 0
     while True:
         try:
@@ -42,6 +46,11 @@ def construct_single_task_model(
     """
     Construct an untrained model for an objective.
     """
+    warnings.warn(
+        "The construct_single_task_model function is deprecated and will be removed in Blop v1.0.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     skew_dims = skew_dims if skew_dims is not None else [(i,) for i in range(X.shape[-1])]
 
@@ -80,6 +89,11 @@ def construct_multi_task_model(
     """
     Construct an untrained model for an objective.
     """
+    warnings.warn(
+        "The construct_multi_task_model function is deprecated and will be removed in Blop v1.0.0.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
 
     num_inputs = X.shape[-1]
     num_tasks = Y.shape[-1]

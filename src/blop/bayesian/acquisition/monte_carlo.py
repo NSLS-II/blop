@@ -1,4 +1,5 @@
 import math
+import warnings
 from collections.abc import Callable
 
 import numpy as np
@@ -14,6 +15,13 @@ from botorch.acquisition.multi_objective.monte_carlo import (  # type: ignore[im
 )
 from botorch.models.model import Model  # type: ignore[import-untyped]
 from torch import Tensor
+
+warnings.warn(
+    "The monte_carlo module is deprecated and will be removed in Blop v1.0.0. "
+    "Use botorch.acquisition.monte_carlo.SampleReducingMCAcquisitionFunction for constrained acquisition functions.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class qConstrainedUpperConfidenceBound(qUpperConfidenceBound):
