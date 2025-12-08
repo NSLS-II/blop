@@ -22,27 +22,45 @@ class Agent:
     """
     An interface that uses Ax as the backend for optimization and experiment tracking.
 
-    For more complex setups, you can configure the Ax client directly at ``self.ax_client``.
+    The Agent is the main entry point for setting up and running Bayesian optimization
+    using Blop. It coordinates the DOFs, objectives, evaluation function, and optimizer
+    to perform intelligent exploration of the parameter space.
 
-    Attributes
+    Parameters
     ----------
-    readables : list[Readable]
+    readables : Sequence[Readable]
         The readables to use for acquisition. These should be the minimal set
         of readables that are needed to compute the objectives.
-    dofs : list[DOF]
-        The degrees of freedom that the agent can control, which determine the output of the model.
-    objectives : list[Objective]
+    dofs : Sequence[DOF]
+        The degrees of freedom that the agent can control, which determine the search space.
+    objectives : Sequence[Objective]
         The objectives which the agent will try to optimize.
-    evaluation_function : EvaluationFunction
+    evaluation : EvaluationFunction
         The function to evaluate acquired data and produce outcomes.
     acquisition_plan : AcquisitionPlan | None, optional
-        The acquisition plan to use for acquiring data from the beamline. If not provided, a default plan will be used.
+        The acquisition plan to use for acquiring data from the beamline. If not provided,
+        :func:`blop.plans.default_acquire` will be used.
     dof_constraints : Sequence[DOFConstraint] | None, optional
         Constraints on DOFs to refine the search space.
     outcome_constraints : Sequence[OutcomeConstraint] | None, optional
         Constraints on outcomes to be satisfied during optimization.
-    **kwargs: Any
+    **kwargs : Any
         Additional keyword arguments to configure the Ax experiment.
+
+    Notes
+    -----
+    For more complex setups, you can configure the Ax client directly via ``self.ax_client``.
+
+    For complete working examples of creating and using an Agent, see the tutorial
+    documentation, particularly :doc:`/tutorials/simple-experiment`.
+
+    See Also
+    --------
+    blop.ax.dof.RangeDOF : For continuous parameters.
+    blop.ax.dof.ChoiceDOF : For discrete parameters.
+    blop.ax.objective.Objective : For defining objectives.
+    blop.ax.optimizer.AxOptimizer : The optimizer used internally.
+    blop.plans.optimize : Bluesky plan for running optimization.
     """
 
     def __init__(
@@ -111,10 +129,19 @@ class Agent:
         """
         Construct an optimization problem from the agent.
 
+        Creates an immutable :class:`blop.protocols.OptimizationProblem` that
+        encapsulates all components needed for optimization. This is typically
+        used internally by optimization plans.
+
         Returns
         -------
         OptimizationProblem
             An immutable optimization problem that can be deployed via Bluesky.
+
+        See Also
+        --------
+        blop.protocols.OptimizationProblem : The optimization problem dataclass.
+        blop.plans.optimize : Uses the optimization problem to run optimization.
         """
         return OptimizationProblem(
             optimizer=self._optimizer,
@@ -126,17 +153,23 @@ class Agent:
 
     def suggest(self, num_points: int = 1) -> list[dict]:
         """
-        Returns a set of points in the input space, to be evaulated next.
+        Get the next point(s) to evaluate in the search space.
+
+        Uses the Bayesian optimization algorithm to suggest promising points based
+        on all previously acquired data. Each suggestion includes an "_id" key for
+        tracking.
 
         Parameters
         ----------
-        num_points : int | None, optional
-            The number of points to suggest. If not provided, will default to 1.
+        num_points : int, optional
+            The number of points to suggest. Default is 1. Higher values enable
+            batch optimization but may reduce optimization efficiency per iteration.
 
         Returns
         -------
         list[dict]
-            A list of dictionaries, each containing a parameterization of a point to evaluate next.
+            A list of dictionaries, each containing a parameterization of a point to
+            evaluate next. Each dictionary includes an "_id" key for identification.
         """
         return self._optimizer.suggest(num_points)
 
@@ -186,16 +219,24 @@ class Agent:
 
     def ingest(self, points: list[dict]) -> None:
         """
-        Ingest a set of points into the experiment. Either from previously suggested points or from an external source.
+        Ingest evaluation results into the optimizer.
 
-        If points are from an external source, each dictionary must contain keys for the DOF names, the objectives, and
-        the "_id" key must be omitted.
+        Updates the optimizer's model with new data. Can ingest both suggested points
+        (with "_id" key) and external data (without "_id" key).
 
         Parameters
         ----------
         points : list[dict]
-            A list of dictionaries, each containing at least the outcome(s) of a trial
-            and optionally the associated parameterization
+            A list of dictionaries, each containing outcomes for a trial. For suggested
+            points, include the "_id" key. For external data, include DOF names and
+            objective values, and omit "_id".
+
+        Notes
+        -----
+        This method is typically called automatically by :meth:`optimize`. Manual usage
+        is only needed for custom workflows or when ingesting external data.
+
+        For complete examples, see :doc:`/how-to-guides/attach-data-to-experiments`.
         """
         self._optimizer.ingest(points)
 
@@ -245,26 +286,62 @@ class Agent:
 
     def acquire_baseline(self, parameterization: dict[str, Any] | None = None) -> MsgGenerator[None]:
         """
-        Acquire a baseline reading. Useful for relative outcome constraints.
+        Acquire a baseline reading for reference.
+
+        Acquires data at a specific parameterization (or current positions) to establish
+        a baseline for comparison. Useful for relative outcome constraints.
 
         Parameters
         ----------
-        parameterization : dict[str, Any] | None = None
-            Move the DOFs to the given parameterization, if provided.
+        parameterization : dict[str, Any] | None, optional
+            The DOF values to move to before acquiring baseline. If None, acquires
+            at current positions.
+
+        Yields
+        ------
+        Msg
+            Bluesky messages for the run engine.
+
+        See Also
+        --------
+        blop.plans.acquire_baseline : The underlying Bluesky plan.
         """
         yield from acquire_baseline(self.to_optimization_problem(), parameterization=parameterization)
 
     def optimize(self, iterations: int = 1, n_points: int = 1) -> MsgGenerator[None]:
         """
-        Optimize using the configured agent.
+        Run Bayesian optimization.
+
+        Performs iterative optimization by suggesting points, acquiring data, evaluating
+        outcomes, and updating the model. This is the main method for running optimization
+        with an agent.
 
         Parameters
         ----------
         iterations : int, optional
-            The number of optimization iterations to run.
+            The number of optimization iterations to run. Default is 1. Each iteration
+            suggests, evaluates, and learns from n_points.
         n_points : int, optional
-            The number of trials to run per iteration. Higher values can lead to more efficient data acquisition,
-            but slower optimization progress.
+            The number of points to evaluate per iteration. Default is 1. Higher values
+            enable batch optimization but may reduce optimization efficiency per iteration.
+
+        Yields
+        ------
+        Msg
+            Bluesky messages for the run engine.
+
+        Notes
+        -----
+        This is the primary method for running optimization. It handles the full loop
+        of suggesting points, acquiring data, evaluating outcomes, and updating the model.
+
+        For complete examples, see :doc:`/tutorials/simple-experiment`.
+
+        See Also
+        --------
+        blop.plans.optimize : The underlying Bluesky optimization plan.
+        suggest : Get point suggestions without running acquisition.
+        ingest : Manually ingest evaluation results.
         """
         yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points)
 
@@ -272,7 +349,10 @@ class Agent:
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any
     ) -> list[AnalysisCard]:
         """
-        Plot the predicted objective as a function of the two DOFs.
+        Plot the predicted objective as a function of two DOFs.
+
+        Creates a contour plot showing the model's prediction of an objective across
+        the space defined by two DOFs. Useful for visualizing the optimization landscape.
 
         Parameters
         ----------
@@ -282,16 +362,20 @@ class Agent:
             The name of the DOF to plot on the y-axis.
         objective_name : str
             The name of the objective to plot.
+        *args : Any
+            Additional positional arguments passed to Ax's compute_analyses.
+        **kwargs : Any
+            Additional keyword arguments passed to Ax's compute_analyses.
 
         Returns
         -------
         list[AnalysisCard]
-            The computed analysis cards
+            The computed analysis cards containing the plot data.
 
         See Also
         --------
-        ax.analysis.ContourPlot : Pre-built analysis for plotting the objective as a function of two parameters.
-        ax.analysis.AnalysisCard : The Ax analysis card class which contains the raw and computed data.
+        ax.analysis.ContourPlot : Pre-built analysis for plotting objectives.
+        ax.analysis.AnalysisCard : Contains the raw and computed data.
         """
         return self.ax_client.compute_analyses(
             [
