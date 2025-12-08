@@ -1,4 +1,3 @@
-import pytest
 from ax import Client, RangeParameterConfig
 from ax.api.protocols import IMetric
 
@@ -20,24 +19,13 @@ def test_multiple_objectives_to_ax_objective_str():
 
 
 def test_scalarized_objective_to_ax_objective_str():
-    objective1 = Objective(name="test_objective1", minimize=False)
-    objective2 = Objective(name="test_objective2", minimize=False)
-    scalarized_objective = ScalarizedObjective(expression="x + y", minimize=True, x=objective1, y=objective2)
+    scalarized_objective = ScalarizedObjective(expression="x + y", minimize=True, x="test_objective1", y="test_objective2")
     assert scalarized_objective.ax_expression == "-(test_objective1 + test_objective2)"
 
 
 def test_scalarized_objective_to_ax_objective_str_minimize():
-    objective1 = Objective(name="test_objective1", minimize=False)
-    objective2 = Objective(name="test_objective2", minimize=False)
-    scalarized_objective = ScalarizedObjective(expression="x + y", minimize=False, x=objective1, y=objective2)
+    scalarized_objective = ScalarizedObjective(expression="x + y", minimize=False, x="test_objective1", y="test_objective2")
     assert scalarized_objective.ax_expression == "test_objective1 + test_objective2"
-
-
-def test_scalarized_objective_with_minimizing_individual_objectives():
-    objective1 = Objective(name="test_objective1", minimize=True)
-    objective2 = Objective(name="test_objective2", minimize=True)
-    with pytest.raises(ValueError):
-        ScalarizedObjective(expression="x + y", minimize=True, x=objective1, y=objective2)
 
 
 def test_outcome_constraint_on_objective():
@@ -102,7 +90,5 @@ def test_ax_api_consistency_scalarized_objective():
             RangeParameterConfig(name="x", bounds=(0, 1), parameter_type="float"),
         ]
     )
-    objective1 = Objective(name="objective1", minimize=False)
-    objective2 = Objective(name="objective2", minimize=False)
-    scalarized_objective = ScalarizedObjective(expression="2 * x + y", minimize=True, x=objective1, y=objective2)
+    scalarized_objective = ScalarizedObjective(expression="2 * x + y", minimize=True, x="objective1", y="objective2")
     client.configure_optimization(objective=scalarized_objective.ax_expression)
