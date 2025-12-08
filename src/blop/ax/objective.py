@@ -19,6 +19,7 @@ class Objective:
 
     Examples
     --------
+    >>> from blop.ax.objective import Objective
     >>> objective = Objective(name="objective1", minimize=True)
     """
 
@@ -41,6 +42,7 @@ class ScalarizedObjective:
 
     Examples
     --------
+    >>> from blop.ax.objective import ScalarizedObjective
     >>> scalarized_objective = ScalarizedObjective(
     ...     expression="2 * x - 4 * y",
     ...     minimize=False,
