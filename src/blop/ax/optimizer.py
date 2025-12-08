@@ -10,6 +10,8 @@ class AxOptimizer(Optimizer):
     """
     An optimizer that uses Ax as the backend for optimization and experiment tracking.
 
+    This is the built-in implementation of the :class:`blop.protocols.Optimizer` protocol.
+
     Parameters
     ----------
     parameters : Sequence[RangeParameterConfig | ChoiceParameterConfig]
@@ -20,10 +22,15 @@ class AxOptimizer(Optimizer):
         The parameter constraints to apply to the optimization.
     outcome_constraints : Sequence[str] | None, optional
         The outcome constraints to apply to the optimization.
-    client_kwargs: dict[str, Any] | None, optional
-        Additional keyword arguments to configure the client.
-    **kwargs: Any
-        Additional keyword arguments to configure the experiment.
+    client_kwargs : dict[str, Any] | None, optional
+        Additional keyword arguments to configure the Ax client.
+    **kwargs : Any
+        Additional keyword arguments to configure the Ax experiment.
+
+    See Also
+    --------
+    blop.ax.Agent : High-level interface that uses AxOptimizer internally.
+    blop.protocols.Optimizer : The protocol this class implements.
     """
 
     def __init__(
@@ -53,7 +60,10 @@ class AxOptimizer(Optimizer):
 
     def suggest(self, num_points: int | None = None) -> list[dict]:
         """
-        Returns a set of points in the input space, to be evaulated next.
+        Get the next point(s) to evaluate in the search space.
+
+        Uses Ax's Bayesian optimization to suggest promising points based on the
+        current model and acquisition function.
 
         Parameters
         ----------
@@ -63,7 +73,8 @@ class AxOptimizer(Optimizer):
         Returns
         -------
         list[dict]
-            A list of dictionaries, each containing a parameterization of a point to evaluate next.
+            A list of dictionaries, each containing a parameterization of a point to
+            evaluate next. Each dictionary includes an "_id" key for tracking.
         """
         if num_points is None:
             num_points = 1
@@ -78,16 +89,21 @@ class AxOptimizer(Optimizer):
 
     def ingest(self, points: list[dict]) -> None:
         """
-        Ingest a set of points into the experiment. Either from previously suggested points or from an external source.
+        Ingest evaluation results into the optimizer.
 
-        If points are from an external source, each dictionary must contain keys for the DOF names, the objectives, and
-        the "_id" key must be omitted.
+        Updates Ax's experiment with new data, which will be used to train the model
+        for future suggestions. Handles both suggested points and external data.
 
         Parameters
         ----------
         points : list[dict]
-            A list of dictionaries, each containing at least the outcome(s) of a trial
-            and optionally the associated parameterization
+            A list of dictionaries, each containing outcomes for a trial. For suggested
+            points (from :meth:`suggest`), include the "_id" key. For external data,
+            include parameter names and objective values, and omit "_id".
+
+        Notes
+        -----
+        Points with ``"_id": "baseline"`` are treated as baseline trials for reference.
         """
         for point in points:
             trial_idx = point.pop("_id", None)

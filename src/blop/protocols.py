@@ -12,6 +12,15 @@ ID_KEY: Literal["_id"] = "_id"
 class Optimizer(Protocol):
     """
     A minimal optimizer interface for optimization.
+
+    This protocol defines the interface for optimizers in Blop. Most users will use
+    the built-in :class:`blop.ax.optimizer.AxOptimizer`, which provides Bayesian optimization
+    via Ax. Custom implementations are only needed for specialized optimization algorithms.
+
+    See Also
+    --------
+    blop.ax.optimizer.AxOptimizer : Built-in Ax-based optimizer implementation.
+    blop.ax.Agent : High-level interface that uses AxOptimizer internally.
     """
 
     def suggest(self, num_points: int | None = None) -> list[dict]:
@@ -51,6 +60,29 @@ class Optimizer(Protocol):
 
 @runtime_checkable
 class EvaluationFunction(Protocol):
+    """
+    A protocol for transforming acquired data into measurable outcomes.
+
+    This protocol defines how to extract and compute optimization objectives from
+    acquired data. Custom implementations are needed to define how your beamline
+    data translates into the outcomes you want to optimize.
+
+    Notes
+    -----
+    The evaluation function is called after data acquisition to compute outcomes
+    from the acquired data. It should extract relevant data from the Bluesky run
+    and compute objective values and metrics for each suggestion.
+
+    Examples
+    --------
+    See the tutorial documentation for complete examples of evaluation functions:
+    :doc:`/tutorials/simple-experiment`
+
+    See Also
+    --------
+    blop.ax.Agent : Accepts an evaluation function during initialization.
+    """
+
     def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
         """
         Evaluate the data from a Bluesky run and produce outcomes.
@@ -74,6 +106,26 @@ class EvaluationFunction(Protocol):
 
 @runtime_checkable
 class AcquisitionPlan(Protocol):
+    """
+    A protocol for custom data acquisition plans.
+
+    This protocol defines how to acquire data from the beamline. Most users will use
+    the default :func:`blop.plans.default_acquire` plan, which performs a list scan
+    over the suggested points. Custom implementations are only needed for specialized
+    acquisition strategies (e.g., fly scans, complex detector configurations).
+
+    Notes
+    -----
+    The acquisition plan is a Bluesky plan that should move the movables to each
+    suggested position and acquire data from the readables. It must return the UID
+    of the Bluesky run so that the evaluation function can retrieve the data.
+
+    See Also
+    --------
+    blop.plans.default_acquire : Default acquisition plan implementation.
+    blop.ax.Agent : Accepts an optional acquisition plan during initialization.
+    """
+
     @plan
     def __call__(
         self,
@@ -111,6 +163,10 @@ class OptimizationProblem:
     """
     An optimization problem to solve. Immutable once initialized.
 
+    This dataclass encapsulates all components needed for optimization into a single
+    immutable structure. It is typically created via :meth:`blop.ax.Agent.to_optimization_problem`
+    and used with optimization plans like :func:`blop.plans.optimize`.
+
     Attributes
     ----------
     optimizer: Optimizer
@@ -124,6 +180,11 @@ class OptimizationProblem:
         A callable to evaluate data from a Bluesky run and produce outcomes.
     acquisition_plan: AcquisitionPlan, optional
         A Bluesky plan to acquire data from the beamline. If not provided, a default plan will be used.
+
+    See Also
+    --------
+    blop.ax.Agent.to_optimization_problem : Creates an OptimizationProblem from an Agent.
+    blop.plans.optimize : Bluesky plan that uses an OptimizationProblem.
     """
 
     optimizer: Optimizer
