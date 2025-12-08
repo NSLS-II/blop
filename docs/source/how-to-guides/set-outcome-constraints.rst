@@ -67,13 +67,17 @@
 Set outcome constraints
 =======================
 
-This guide will show you how to set outcome constraints. These indicate preferences for specific objectives or metrics to pass a threshold during optimization and for them to *not* be optimized further.
+This guide will show you how to set outcome constraints. These indicate preferences for specific objectives or metrics to satsify some condition during
+optimization.
 
-A surrogate model is built per constraint to approximate violation of the constraint.
+A surrogate model is built per-constraint to approximate violation of the constraint, so this is considered a *soft* constraint.
+
+For guaranteed constraints, you will have to constrain the DOFs directly using :doc:`DOF constraints <set-dof-constraints>`.
 
 For more information, check out these references:
-- `Ax Outcome Constraints documentation <https://ax.dev/docs/recipes/outcome-constraints>`_
-- `BoTorch Constraints documentation <https://botorch.org/docs/constraints/>`_
+
+* `Ax Outcome Constraints documentation <https://ax.dev/docs/recipes/outcome-constraints>`_
+* `BoTorch Constraints documentation <https://botorch.org/docs/constraints/>`_
 
 Create DOFs and multiple objectives
 -----------------------------------
