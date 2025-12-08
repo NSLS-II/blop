@@ -1,6 +1,9 @@
+import warnings
 from typing import cast
 
 import numpy as np
+
+warnings.warn("The sets module is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2)
 
 
 def validate_set(s, type="continuous") -> set | tuple[float, float]:

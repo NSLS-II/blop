@@ -1,3 +1,5 @@
+import warnings
+
 import botorch  # type: ignore[import-untyped]
 import numpy as np
 import scipy as sp  # type: ignore[import-untyped]
@@ -5,6 +7,8 @@ import torch
 from python_tsp.heuristics import solve_tsp_simulated_annealing  # type: ignore[import-untyped]
 
 from . import functions  # noqa
+
+warnings.warn("The utils module is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2)
 
 
 def get_beam_stats(image: np.ndarray, threshold: float = 0.5) -> dict[str, float | np.ndarray]:

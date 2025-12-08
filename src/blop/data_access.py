@@ -1,9 +1,17 @@
+import warnings
 from abc import ABC, abstractmethod
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import xarray as xr
+
+warnings.warn(
+    "The data_access module is deprecated and will be removed in Blop v1.0.0. "
+    "Data access should be done within your custom ``blop.protocols.EvaluationFunction``.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class DataAccess(ABC):
