@@ -1,4 +1,5 @@
 import math
+import warnings
 from collections.abc import Callable
 
 import numpy as np
@@ -10,6 +11,13 @@ from botorch.acquisition.analytic import (  # type: ignore[import-untyped]
 )
 from botorch.models.model import Model  # type: ignore[import-untyped]
 from torch import Tensor
+
+warnings.warn(
+    "The analytic module is deprecated and will be removed in Blop v1.0.0. "
+    "Use botorch.acquisition.monte_carlo.SampleReducingMCAcquisitionFunction for constrained acquisition functions.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 class ConstrainedUpperConfidenceBound(UpperConfidenceBound):
