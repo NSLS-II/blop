@@ -87,8 +87,8 @@
     with contextlib.redirect_stdout(open(os.devnull, "w")):
         server.close()
 
-Set outcome constraints relative to a baseline
-==============================================
+Acquire a baseline reading (for relative outcome constraints)
+=============================================================
 
 This guide will show you how to acquire a baseline reading for your experiment. This is useful when you are specifying constraints for your objectives and want to compare future outcomes to this baseline.
 
