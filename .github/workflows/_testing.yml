@@ -39,6 +39,3 @@ jobs:
 
       - name: Run integration tests
         run: pixi run integration-tests
-
-      - name: Test with doctest
-        run: pixi run doc-tests

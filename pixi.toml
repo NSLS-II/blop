@@ -44,6 +44,7 @@ blop = { path = ".", editable = true }
 nbval = "*"
 
 [feature.docs.dependencies]
+ophyd-async = "*"
 numpydoc = ">=1.9.0,<2"
 sphinx-copybutton = ">=0.5.2,<0.6"
 myst-nb = ">=1.3.0,<2"
@@ -97,7 +98,7 @@ scripts = ["docs/activate.sh"]
 [environments]
 dev = ["dev"]
 docs = ["docs", "dev", "jupyter"]
-py310 = ["dev", "docs", "py310"]
-py311 = ["dev", "docs", "py311"]
-py312 = ["dev", "docs", "py312"]
-py313 = ["dev", "docs", "py313"]
+py310 = ["dev", "py310"]
+py311 = ["dev", "py311"]
+py312 = ["dev", "py312"]
+py313 = ["dev", "py313"]
