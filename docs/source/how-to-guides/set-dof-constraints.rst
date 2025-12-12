@@ -121,7 +121,7 @@ Configure an agent with DOF constraints
     from blop.ax import Agent
 
     agent = Agent(
-        readables=[],
+        sensors=[],
         dofs=[dof1, dof2, dof3],
         objectives=[objective],
         evaluation=evaluation_function,

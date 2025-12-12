@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
-from bluesky.protocols import NamedMovable, Readable, Flyable, EventCollectable, EventPageCollectable
+from bluesky.protocols import EventCollectable, EventPageCollectable, Flyable, NamedMovable, Readable
 from bluesky.utils import MsgGenerator, plan
 
 ID_KEY: Literal["_id"] = "_id"

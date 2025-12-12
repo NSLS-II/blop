@@ -135,7 +135,7 @@ Configure an agent with outcome constraints
     from blop.ax import Agent
 
     agent = Agent(
-        readables=[],
+        sensors=[],
         dofs=dofs,
         objectives=objectives,
         evaluation=evaluation_function,

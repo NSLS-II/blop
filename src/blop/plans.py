@@ -10,7 +10,7 @@ from bluesky.utils import Msg, MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
 
 from .dofs import DOF
-from .protocols import Actuator, Sensor, ID_KEY, OptimizationProblem
+from .protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
 
 
 def _unpack_for_list_scan(suggestions: list[dict], actuators: Sequence[Actuator]) -> list[Any]:
