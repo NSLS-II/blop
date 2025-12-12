@@ -83,9 +83,9 @@ Create DOFs and an objective
     motor_y = MovableSignal(name="motor_y")
     motor_z = MovableSignal(name="motor_z")
 
-    dof1 = RangeDOF(movable=motor_x, bounds=(0, 1000), parameter_type="float")
-    dof2 = RangeDOF(movable=motor_y, bounds=(0, 1000), parameter_type="float")
-    dof3 = RangeDOF(movable=motor_z, bounds=(0, 1000), parameter_type="float")
+    dof1 = RangeDOF(actuator=motor_x, bounds=(0, 1000), parameter_type="float")
+    dof2 = RangeDOF(actuator=motor_y, bounds=(0, 1000), parameter_type="float")
+    dof3 = RangeDOF(actuator=motor_z, bounds=(0, 1000), parameter_type="float")
 
     objective = Objective(name="objective1", minimize=False)
 
@@ -121,7 +121,7 @@ Configure an agent with DOF constraints
     from blop.ax import Agent
 
     agent = Agent(
-        readables=[],
+        sensors=[],
         dofs=[dof1, dof2, dof3],
         objectives=[objective],
         evaluation=evaluation_function,

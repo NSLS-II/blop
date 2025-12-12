@@ -88,10 +88,10 @@ from blop.ax import Agent, RangeDOF, Objective
 from blop.protocols import EvaluationFunction
 
 dofs = [
-    RangeDOF(movable=beamline.kbv_dsv, parameter_type="float", bounds=(-5.0, 5.0)),
-    RangeDOF(movable=beamline.kbv_usv, parameter_type="float", bounds=(-5.0, 5.0)),
-    RangeDOF(movable=beamline.kbh_dsh, parameter_type="float", bounds=(-5.0, 5.0)),
-    RangeDOF(movable=beamline.kbh_ush, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbv_dsv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbv_usv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbh_dsh, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbh_ush, parameter_type="float", bounds=(-5.0, 5.0)),
 ]
 
 objectives = [
@@ -111,11 +111,11 @@ class DetectorEvaluation(EvaluationFunction):
         bl_det_wid_x = run["primary/bl_det_wid_x"].read()
         bl_det_wid_y = run["primary/bl_det_wid_y"].read()
 
-        # These ids are stored in the start document's metadata when
+        # Suggestions are stored in the start document's metadata when
         # using the `blop.plans.default_acquire` plan.
         # You may want to store them differently in your experiment when writing
         # your a custom acquisiton plan.
-        suggestion_ids = run.metadata["start"]["blop_suggestion_ids"]
+        suggestion_ids = [suggestion["_id"] for suggestion in run.metadata["start"]["blop_suggestions"]]
 
         for idx, sid in enumerate(suggestion_ids):
             outcome = {
@@ -130,7 +130,7 @@ class DetectorEvaluation(EvaluationFunction):
 evaluation_function = DetectorEvaluation(tiled_client)
 
 agent = Agent(
-    readables=[beamline.det],
+    sensors=[beamline.det],
     dofs=dofs,
     objectives=objectives,
     evaluation=evaluation_function,

@@ -9,7 +9,6 @@ DOF
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:
 
 RangeDOF
 --------
@@ -19,7 +18,6 @@ RangeDOF
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:
 
 ChoiceDOF
 ---------
@@ -29,4 +27,3 @@ ChoiceDOF
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:

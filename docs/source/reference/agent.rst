@@ -6,4 +6,3 @@ Agent
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:

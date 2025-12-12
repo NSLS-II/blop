@@ -21,8 +21,8 @@ def test_optimize(RE):
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[MovableSignal("x1", initial_value=-1.0)],
-        readables=[ReadableSignal("objective")],
+        actuators=[MovableSignal("x1", initial_value=-1.0)],
+        sensors=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
     )
 
@@ -39,8 +39,8 @@ def test_optimize_multiple(RE):
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[MovableSignal("x1", initial_value=-1.0)],
-        readables=[ReadableSignal("objective")],
+        actuators=[MovableSignal("x1", initial_value=-1.0)],
+        sensors=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
     )
 
@@ -59,8 +59,8 @@ def test_optimize_multiple_with_n_points(RE):
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}, {"objective": 0.1}])
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[MovableSignal("x1", initial_value=-1.0)],
-        readables=[ReadableSignal("objective")],
+        actuators=[MovableSignal("x1", initial_value=-1.0)],
+        sensors=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
     )
     RE(optimize(optimization_problem, iterations=5, n_points=2))
@@ -87,12 +87,12 @@ def test_optimize_complex_case(RE):
     )
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[
+        actuators=[
             MovableSignal("x1", initial_value=-1.0),
             MovableSignal("x2", initial_value=-1.0),
             MovableSignal("x3", initial_value=-1.0),
         ],
-        readables=[ReadableSignal("readable1"), ReadableSignal("readable2")],
+        sensors=[ReadableSignal("readable1"), ReadableSignal("readable2")],
         evaluation_function=evaluation_function,
     )
 
@@ -111,8 +111,8 @@ def test_optimize_step_default(RE):
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[MovableSignal("x1", initial_value=-1.0)],
-        readables=[ReadableSignal("objective")],
+        actuators=[MovableSignal("x1", initial_value=-1.0)],
+        sensors=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
     )
 
@@ -132,8 +132,8 @@ def test_optimize_step_custom_acquisition_plan(RE):
     readable = ReadableSignal("objective")
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[movable],
-        readables=[readable],
+        actuators=[movable],
+        sensors=[readable],
         evaluation_function=evaluation_function,
         acquisition_plan=acquisition_plan,
     )
@@ -224,7 +224,7 @@ def test_acquire_with_background(RE):
             acquire_with_background(
                 [{"x1": 0.0, "_id": 0}],
                 [movable],
-                readables=[readable],
+                sensors=[readable],
                 block_beam=mock_block_beam,
                 unblock_beam=mock_unblock_beam,
             )
@@ -244,8 +244,8 @@ def test_acquire_baseline(RE):
 
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[MovableSignal("x1", initial_value=-1.0)],
-        readables=[ReadableSignal("objective")],
+        actuators=[MovableSignal("x1", initial_value=-1.0)],
+        sensors=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
     )
 
@@ -266,8 +266,8 @@ def test_acquire_baseline_from_current(RE):
 
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
-        movables=[movable],
-        readables=[ReadableSignal("objective")],
+        actuators=[movable],
+        sensors=[ReadableSignal("objective")],
         evaluation_function=evaluation_function,
     )
 

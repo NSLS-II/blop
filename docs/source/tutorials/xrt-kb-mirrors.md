@@ -70,8 +70,8 @@ R2, dR2 = 20000, 10000
 beamline = TiledBeamline(name="bl")
 
 dofs = [
-    RangeDOF(movable=beamline.kbv_dsv, bounds=(R1 - dR1, R1 + dR1), parameter_type="float"),
-    RangeDOF(movable=beamline.kbh_dsh, bounds=(R2 - dR2, R2 + dR2), parameter_type="float"),
+    RangeDOF(actuator=beamline.kbv_dsv, bounds=(R1 - dR1, R1 + dR1), parameter_type="float"),
+    RangeDOF(actuator=beamline.kbh_dsh, bounds=(R2 - dR2, R2 + dR2), parameter_type="float"),
 ]
 ```
 
@@ -95,11 +95,11 @@ class DetectorEvaluation(EvaluationFunction):
         bl_det_wid_x = run["primary/bl_det_wid_x"].read()
         bl_det_wid_y = run["primary/bl_det_wid_y"].read()
 
-        # These ids are stored in the start document's metadata when
+        # Suggestions are stored in the start document's metadata when
         # using the `blop.plans.default_acquire` plan.
         # You may want to store them differently in your experiment when writing
         # your a custom acquisiton plan.
-        suggestion_ids = run.metadata["start"]["blop_suggestion_ids"]
+        suggestion_ids = [suggestion["_id"] for suggestion in run.metadata["start"]["blop_suggestions"]]
 
         for idx, sid in enumerate(suggestion_ids):
             outcome = {
@@ -114,7 +114,7 @@ class DetectorEvaluation(EvaluationFunction):
 
 ```{code-cell} ipython3
 agent = Agent(
-    readables=[beamline.det],
+    sensors=[beamline.det],
     dofs=dofs,
     objectives=objectives,
     evaluation=DetectorEvaluation(tiled_client),

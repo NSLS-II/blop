@@ -1,6 +1,16 @@
 Protocols
 =========
 
+Actuator
+--------
+
+.. autoclass:: blop.protocols.Actuator
+
+Sensor
+------
+
+.. autoclass:: blop.protocols.Sensor
+
 AcquisitionPlan
 ---------------
 
