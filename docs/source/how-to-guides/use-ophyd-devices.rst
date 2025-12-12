@@ -3,7 +3,7 @@ How to optimize with ophyd and ophyd-async devices
 
 This guide will walk you through the process of setting up Blop to optimize with `ophyd <https://blueskyproject.io/ophyd/>`_ and `ophyd-async <https://blueskyproject.io/ophyd-async/>`_ devices.
 
-ophyd devices
+Ophyd devices
 -------------
 
 Ophyd's :class:`ophyd.Signal` class implements both the :class:`blop.protocols.Sensor` and :class:`blop.protocols.Actuator` protocols, so they can be used directly with Blop. You can also use the :class:`ophyd.SignalRO` class which only implements the :class:`blop.protocols.Sensor` protocol if you want to capture this data at each step of the experiment.
@@ -26,7 +26,7 @@ The ``name`` attribute of the signal will be used as the name of the :class:`blo
         evaluation=lambda uid, suggestions: [{"result": 0.1}],
     )
 
-ophyd-async devices
+Ophyd-async devices
 -------------------
 
 Ophyd-async's :class:`ophyd_async.core.SignalW` class implements the :class:`blop.protocols.Actuator` protocol, so they can also be used directly with Blop. The :class:`ophyd_async.core.SignalR` class implements the :class:`blop.protocols.Sensor` protocol. And the :class:`ophyd_async.core.SignalRW` class implements both.
