@@ -90,7 +90,7 @@
 Using custom generation strategies
 ==================================
 
-This guide will show you how to use custom generation strategies with GPyTorch, BoTorch, Blop, and Ax.
+This guide will show you how to use custom generation strategies with BoTorch, Blop, and Ax.
 
 Configure an agent
 ------------------
