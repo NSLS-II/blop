@@ -9,7 +9,6 @@ Objective
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:
 
 
 Scalarized Objective
@@ -20,4 +19,3 @@ Scalarized Objective
    :undoc-members:
    :show-inheritance:
    :inherited-members:
-   :no-index:

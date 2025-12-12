@@ -72,9 +72,9 @@
     RE = RunEngine({})
     RE.subscribe(tiled_writer)
 
-    dof1 = MovableSignal("dof1")
-    dof2 = MovableSignal("dof2")
-    dof3 = MovableSignal("dof3")
+    movable1 = MovableSignal("movable1")
+    movable2 = MovableSignal("movable2")
+    movable3 = MovableSignal("movable3")
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
 
@@ -90,7 +90,7 @@
 Using custom generation strategies
 ==================================
 
-This guide will show you how to use custom generation strategies with GPyTorch, BoTorch, Blop, and Ax.
+This guide will show you how to use custom generation strategies with BoTorch, Blop, and Ax.
 
 Configure an agent
 ------------------
@@ -100,8 +100,8 @@ Configure an agent
     from blop.ax import Agent, RangeDOF, Objective
 
     dofs = [
-        RangeDOF(movable=dof1, bounds=(-5.0, 5.0), parameter_type="float"),
-        RangeDOF(movable=dof2, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable2, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
@@ -120,7 +120,7 @@ Configure an agent
         return outcomes
 
     agent = Agent(
-        readables=[readable1, readable2],
+        sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
         evaluation=evaluation_function,

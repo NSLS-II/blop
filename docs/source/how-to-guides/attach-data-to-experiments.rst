@@ -61,9 +61,9 @@
             self._value = value
             return AlwaysSuccessfulStatus()
 
-    dof1 = MovableSignal("dof1")
-    dof2 = MovableSignal("dof2")
-    dof3 = MovableSignal("dof3")
+    movable1 = MovableSignal("movable1")
+    movable2 = MovableSignal("movable2")
+    movable3 = MovableSignal("movable3")
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
 
@@ -83,9 +83,9 @@ We will use fake data for this example. You will be responsible for loading your
     import pandas as pd
 
     df = pd.DataFrame({
-        "dof1": [1, 2, 3, 4, 5],
-        "dof2": [1, 2, 3, 4, 5],
-        "dof3": [1, 2, 3, 4, 5],
+        "movable1": [1, 2, 3, 4, 5],
+        "movable2": [1, 2, 3, 4, 5],
+        "movable3": [1, 2, 3, 4, 5],
         "objective1": [1, 2, 3, 4, 5],
         "objective2": [1, 2, 3, 4, 5],
     })
@@ -107,9 +107,9 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
     from blop.ax import Agent, RangeDOF, Objective
 
     dofs = [
-        RangeDOF(movable=dof1, bounds=(-5.0, 5.0), parameter_type="float"),
-        RangeDOF(movable=dof2, bounds=(-5.0, 5.0), parameter_type="float"),
-        RangeDOF(movable=dof3, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable2, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable3, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
@@ -130,7 +130,7 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
         return outcomes
 
     agent = Agent(
-        readables=[readable1, readable2],
+        sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
         evaluation=evaluation_function,

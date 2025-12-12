@@ -6,11 +6,10 @@ from typing import Any
 from ax import Client
 from ax.analysis import AnalysisCard, ContourPlot
 from ax.api.types import TOutcome, TParameterization
-from bluesky.protocols import Readable
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
-from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem
+from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Sensor
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
 from .optimizer import AxOptimizer
@@ -28,9 +27,9 @@ class Agent:
 
     Parameters
     ----------
-    readables : Sequence[Readable]
-        The readables to use for acquisition. These should be the minimal set
-        of readables that are needed to compute the objectives.
+    sensors : Sequence[Sensor]
+        The sensors to use for acquisition. These should be the minimal set
+        of sensors that are needed to compute the objectives.
     dofs : Sequence[DOF]
         The degrees of freedom that the agent can control, which determine the search space.
     objectives : Sequence[Objective]
@@ -56,6 +55,7 @@ class Agent:
 
     See Also
     --------
+    blop.protocols.Sensor : The protocol for sensors.
     blop.ax.dof.RangeDOF : For continuous parameters.
     blop.ax.dof.ChoiceDOF : For discrete parameters.
     blop.ax.objective.Objective : For defining objectives.
@@ -65,7 +65,7 @@ class Agent:
 
     def __init__(
         self,
-        readables: Sequence[Readable],
+        sensors: Sequence[Sensor],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
         evaluation: EvaluationFunction,
@@ -74,7 +74,7 @@ class Agent:
         outcome_constraints: Sequence[OutcomeConstraint] | None = None,
         **kwargs: Any,
     ):
-        self._readables = readables
+        self._sensors = sensors
         self._dofs = {dof.parameter_name: dof for dof in dofs}
         self._objectives = {obj.name: obj for obj in objectives}
         self._evaluation_function = evaluation
@@ -94,8 +94,8 @@ class Agent:
         )
 
     @property
-    def readables(self) -> Sequence[Readable]:
-        return self._readables
+    def sensors(self) -> Sequence[Sensor]:
+        return self._sensors
 
     @property
     def dofs(self) -> Sequence[DOF]:
@@ -145,8 +145,8 @@ class Agent:
         """
         return OptimizationProblem(
             optimizer=self._optimizer,
-            movables=[dof.movable for dof in self.dofs if dof.movable is not None],
-            readables=self.readables,
+            actuators=[dof.actuator for dof in self.dofs if dof.actuator is not None],
+            sensors=self.sensors,
             evaluation_function=self.evaluation_function,
             acquisition_plan=self.acquisition_plan,
         )

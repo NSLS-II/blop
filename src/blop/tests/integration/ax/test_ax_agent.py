@@ -9,10 +9,10 @@ def test_ax_agent_sim_beamline(RE, setup):
     beamline.det.noise.put(False)
 
     dofs = [
-        RangeDOF(movable=beamline.kbv_dsv, bounds=(-5.0, 5.0), parameter_type="float"),
-        RangeDOF(movable=beamline.kbv_usv, bounds=(-5.0, 5.0), parameter_type="float"),
-        RangeDOF(movable=beamline.kbh_dsh, bounds=(-5.0, 5.0), parameter_type="float"),
-        RangeDOF(movable=beamline.kbh_ush, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=beamline.kbv_dsv, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=beamline.kbv_usv, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=beamline.kbh_dsh, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=beamline.kbh_ush, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
@@ -28,7 +28,7 @@ def test_ax_agent_sim_beamline(RE, setup):
         bl_det_wid_x = run["primary/bl_det_wid_x"].read()
         bl_det_wid_y = run["primary/bl_det_wid_y"].read()
 
-        trial_ids = run.metadata["start"]["blop_suggestion_ids"]
+        trial_ids = [suggestion["_id"] for suggestion in run.metadata["start"]["blop_suggestions"]]
         outcomes = []
         for suggestion in suggestions:
             idx = trial_ids.index(suggestion["_id"])
@@ -43,7 +43,7 @@ def test_ax_agent_sim_beamline(RE, setup):
         return outcomes
 
     agent = Agent(
-        readables=[beamline.det],
+        sensors=[beamline.det],
         dofs=dofs,
         objectives=objectives,
         evaluation=evaluation_function,
