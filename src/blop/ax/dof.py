@@ -6,7 +6,8 @@ from typing import Literal, cast
 
 from ax import ChoiceParameterConfig, RangeParameterConfig
 from ax.api.types import TParameterValue
-from bluesky.protocols import NamedMovable
+
+from ..protocols import Actuator
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -22,33 +23,34 @@ class DOF(ABC):
     Attributes
     ----------
     name : str | None
-        The name of the DOF. Provide a name if the DOF is not movable.
-    movable : NamedMovable | None
-        The movable to use for the DOF. Provide a movable if the DOF is movable by Bluesky.
+        The name of the DOF. Provide a name if the DOF is not an actuator.
+    actuator : Actuator | None
+        The actuator to use for the DOF. Provide an actuator if the DOF is controllable by Bluesky.
 
     Notes
     -----
-    Either ``name`` or ``movable`` must be provided, but not both. If ``movable`` is
+    Either ``name`` or ``actuator`` must be provided, but not both. If ``actuator`` is
     provided, the DOF will be associated with a Bluesky-controllable device and will
     automatically move during acquisition. If only ``name`` is provided, the DOF
     represents a parameter that is controlled externally.
 
     See Also
     --------
+    blop.protocols.Actuator : The protocol for actuators.
     RangeDOF : For continuous parameters with bounds.
     ChoiceDOF : For discrete parameters with specific values.
     """
 
     name: str | None = None
-    movable: NamedMovable | None = None
+    actuator: Actuator | None = None
 
     def __post_init__(self) -> None:
-        if not (bool(self.name) ^ bool(self.movable)):
-            raise ValueError("Either name or movable must be provided, but not both or neither.")
+        if not (bool(self.name) ^ bool(self.actuator)):
+            raise ValueError("Either name or actuator must be provided, but not both or neither.")
 
     @property
     def parameter_name(self) -> str:
-        return self.name or cast(NamedMovable, self.movable).name
+        return self.name or cast(Actuator, self.actuator).name
 
     @abstractmethod
     def to_ax_parameter_config(self) -> RangeParameterConfig | ChoiceParameterConfig: ...
@@ -76,7 +78,7 @@ class RangeDOF(DOF):
 
     Examples
     --------
-    Define a continuous DOF with a name (for non-movable parameters):
+    Define a continuous DOF with a name (for non-actuator parameters):
 
     >>> from blop.ax.dof import RangeDOF
     >>> dof = RangeDOF(name="voltage", bounds=(-10.0, 10.0), parameter_type="float")
@@ -85,7 +87,7 @@ class RangeDOF(DOF):
 
     >>> dof = RangeDOF(name="num_exposures", bounds=(1, 100), parameter_type="int", step_size=1)
 
-    For examples with movable devices, see :doc:`/tutorials/simple-experiment`.
+    For examples with actuators, see :doc:`/tutorials/simple-experiment`.
     """
 
     bounds: tuple[float, float]
@@ -208,9 +210,9 @@ class DOFConstraint:
     def _validate_dofs(self) -> None:
         if not self._dofs:
             raise ValueError(
-                "DOFConstraint requires at least one movable to be specified.\n"
-                "Use keyword arguments to map template variables to movables:\n"
-                "  DOFConstraint('x + y <= 12', x=motor_x, y=motor_y)\n\n"
+                "DOFConstraint requires at least one DOF to be specified.\n"
+                "Use keyword arguments to map template variables to DOFs:\n"
+                "  DOFConstraint('x + y <= 12', x=dof_x, y=dof_y)\n\n"
                 "The variable names (x, y) are your choice and make the constraint readable."
             )
         invalidated: list[tuple[str, DOF]] = []

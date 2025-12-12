@@ -30,9 +30,11 @@ The data flow for a typical optimization workflow is as follows:
    :width: 100%
    :align: center
 
-The Bluesky RunEngine is used to execute each optimization workflow step (:func:`blop.plans.optimize` and :func:`blop.plans.optimize_step`). Currently, these plans are compatible with any ``NamedMovable`` or ``Readable`` devices or classes that implement these Bluesky protocols. For example, `Ophyd <https://github.com/bluesky/ophyd>`_ devices and signals can be used directly with Blop since they implement both the ``NamedMovable`` and ``Readable`` protocols.
+The Bluesky RunEngine is used to execute each optimization workflow step (:func:`blop.plans.optimize` and :func:`blop.plans.optimize_step`). These plans are compatible with any ``NamedMovable`` or ``Flyable`` as an :class:`blop.protocols.Actuator` as well as ``Readable`` and ``Collectable`` as a :class:`blop.protocols.Sensor`. All of these are `Bluesky protocols <https://blueskyproject.io/bluesky/main/hardware.html>`_. For example, `Ophyd <https://github.com/bluesky/ophyd>`_ signals can be used directly with Blop since they implement both the ``NamedMovable`` and ``Readable`` protocols.
 
-.. note:: We are currently working on adding support for other Bluesky protocols to enable more flexible and powerful optimization workflows, such as the ``Flyable`` protocol for fly-scanning acquisition plans.
+Furthermore, fly-scanning acquisition plans are supported by passing an :class:`blop.protocols.AcquisitionPlan` that uses ``actuators`` and ``sensors`` that implement the ``Flyable`` and ``Collectable`` protocols, respectively.
+
+For more information on the differences between step-scanning and fly-scanning in Bluesky, see the `explanation given in ophyd-async <https://blueskyproject.io/ophyd-async/main/explanations/fly-scanning.html>`_.
 
 
 Blop optimizers and acquisition plans

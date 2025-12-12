@@ -88,10 +88,10 @@ from blop.ax import Agent, RangeDOF, Objective
 from blop.protocols import EvaluationFunction
 
 dofs = [
-    RangeDOF(movable=beamline.kbv_dsv, parameter_type="float", bounds=(-5.0, 5.0)),
-    RangeDOF(movable=beamline.kbv_usv, parameter_type="float", bounds=(-5.0, 5.0)),
-    RangeDOF(movable=beamline.kbh_dsh, parameter_type="float", bounds=(-5.0, 5.0)),
-    RangeDOF(movable=beamline.kbh_ush, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbv_dsv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbv_usv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbh_dsh, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbh_ush, parameter_type="float", bounds=(-5.0, 5.0)),
 ]
 
 objectives = [
@@ -130,7 +130,7 @@ class DetectorEvaluation(EvaluationFunction):
 evaluation_function = DetectorEvaluation(tiled_client)
 
 agent = Agent(
-    readables=[beamline.det],
+    sensors=[beamline.det],
     dofs=dofs,
     objectives=objectives,
     evaluation=evaluation_function,

@@ -92,9 +92,9 @@ Create DOFs and multiple objectives
 
 
     dofs = [
-        RangeDOF(movable=motor_x, bounds=(0, 1000), parameter_type="float"),
-        RangeDOF(movable=motor_y, bounds=(0, 1000), parameter_type="float"),
-        RangeDOF(movable=motor_z, bounds=(0, 1000), parameter_type="float"),
+        RangeDOF(actuator=motor_x, bounds=(0, 1000), parameter_type="float"),
+        RangeDOF(actuator=motor_y, bounds=(0, 1000), parameter_type="float"),
+        RangeDOF(actuator=motor_z, bounds=(0, 1000), parameter_type="float"),
     ]
 
     objectives = [

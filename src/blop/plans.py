@@ -1,26 +1,24 @@
 import functools
 import warnings
-from collections import defaultdict
 from collections.abc import Callable, Generator, Mapping, Sequence
 from typing import Any, cast
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
-from ax.api.types import TParameterization, TParameterValue
-from bluesky.protocols import Movable, NamedMovable, Readable, Reading
+from bluesky.protocols import Movable, Readable, Reading
 from bluesky.utils import Msg, MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
 
 from .dofs import DOF
-from .protocols import ID_KEY, OptimizationProblem
+from .protocols import Actuator, Sensor, ID_KEY, OptimizationProblem
 
 
-def _unpack_for_list_scan(suggestions: list[dict], movables: Sequence[NamedMovable]) -> list[NamedMovable | Any]:
-    """Unpack the movables and inputs into Bluesky list_scan plan arguments."""
-    movables_and_inputs = {movable: [suggestion[movable.name] for suggestion in suggestions] for movable in movables}
+def _unpack_for_list_scan(suggestions: list[dict], actuators: Sequence[Actuator]) -> list[Any]:
+    """Unpack the actuators and inputs into Bluesky list_scan plan arguments."""
+    actuators_and_inputs = {actuator: [suggestion[actuator.name] for suggestion in suggestions] for actuator in actuators}
     unpacked_list = []
-    for movable, values in movables_and_inputs.items():
-        unpacked_list.append(movable)
+    for actuator, values in actuators_and_inputs.items():
+        unpacked_list.append(actuator)
         unpacked_list.append(values)
 
     return unpacked_list
@@ -29,8 +27,8 @@ def _unpack_for_list_scan(suggestions: list[dict], movables: Sequence[NamedMovab
 @plan
 def default_acquire(
     suggestions: list[dict],
-    movables: Sequence[NamedMovable],
-    readables: Sequence[Readable] | None = None,
+    actuators: Sequence[Actuator],
+    sensors: Sequence[Sensor] | None = None,
     *,
     per_step: bp.PerStep | None = None,
     **kwargs: Any,
@@ -47,10 +45,10 @@ def default_acquire(
         A list of dictionaries, each containing the parameterization of a point to evaluate.
         The "_id" key is optional and can be used to identify each suggestion. It is suggested
         to add "_id" values to the run metadata for later identification of the acquired data.
-    movables: Sequence[NamedMovable]
-        The movables to move and the inputs to move them to.
-    readables: Sequence[Readable]
-        The readables to trigger and read.
+    actuators: Sequence[Actuator]
+        The actuators to move and the inputs to move them to.
+    sensors: Sequence[Sensor]
+        The sensors that produce data to evaluate.
     per_step: bp.PerStep | None, optional
         The plan to execute for each step of the scan.
     **kwargs: Any
@@ -65,14 +63,14 @@ def default_acquire(
     --------
     bluesky.plans.list_scan : The Bluesky plan to acquire data.
     """
-    if readables is None:
-        readables = []
-    md = {"blop_suggestion_ids": [suggestion.get(ID_KEY, None) for suggestion in suggestions]}
-    plan_args = _unpack_for_list_scan(suggestions, movables)
+    if sensors is None:
+        sensors = []
+    md = {"blop_suggestions": suggestions}
+    plan_args = _unpack_for_list_scan(suggestions, actuators)
     return (
         # TODO: fix argument type in bluesky.plans.list_scan
         yield from bp.list_scan(
-            readables,
+            sensors,
             *plan_args,  # type: ignore[arg-type]
             per_step=per_step,
             md=md,
@@ -103,9 +101,9 @@ def optimize_step(
     else:
         acquisition_plan = optimization_problem.acquisition_plan
     optimizer = optimization_problem.optimizer
-    movables = optimization_problem.movables
+    actuators = optimization_problem.actuators
     suggestions = optimizer.suggest(n_points)
-    uid = yield from acquisition_plan(suggestions, movables, optimization_problem.readables, *args, **kwargs)
+    uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
     optimizer.ingest(outcomes)
 
@@ -237,13 +235,13 @@ def acquire_baseline(
     --------
     default_acquire : The default plan to acquire data.
     """
-    movables = optimization_problem.movables
+    actuators = optimization_problem.actuators
     if parameterization is None:
-        if all(isinstance(movable, Readable) for movable in movables):
-            parameterization = yield from read(cast(Sequence[Readable], movables))
+        if all(isinstance(actuator, Readable) for actuator in actuators):
+            parameterization = yield from read(cast(Sequence[Readable], actuators))
         else:
             raise ValueError(
-                "All movables must also implement the Readable protocol to acquire a baseline from current positions."
+                "All actuators must also implement the Readable protocol to acquire a baseline from current positions."
             )
     if ID_KEY not in parameterization:
         parameterization[ID_KEY] = "baseline"
@@ -252,7 +250,7 @@ def acquire_baseline(
         acquisition_plan = default_acquire
     else:
         acquisition_plan = optimization_problem.acquisition_plan
-    uid = yield from acquisition_plan([parameterization], movables, optimization_problem.readables, **kwargs)
+    uid = yield from acquisition_plan([parameterization], actuators, optimization_problem.sensors, **kwargs)
     outcome = optimization_problem.evaluation_function(uid, [parameterization])[0]
     data = {**outcome, **parameterization}
     optimizer.ingest([data])
@@ -320,8 +318,8 @@ def per_step_background_read(
 @plan
 def acquire_with_background(
     suggestions: list[dict],
-    movables: Sequence[NamedMovable],
-    readables: Sequence[Readable] | None = None,
+    actuators: Sequence[Actuator],
+    sensors: Sequence[Sensor] | None = None,
     *,
     block_beam: Callable[[], MsgGenerator[None]],
     unblock_beam: Callable[[], MsgGenerator[None]],
@@ -336,10 +334,10 @@ def acquire_with_background(
         A list of dictionaries, each containing the parameterization of a point to evaluate.
         The "_id" key is optional and can be used to identify each suggestion. It is suggested
         to add "_id" values to the run metadata for later identification of the acquired data.
-    movables: Sequence[NamedMovable]
-        The movables to move to their suggested positions.
-    readables: Sequence[Readable] | None = None
-        The readables that produce data to evaluate.
+    actuators: Sequence[Actuator]
+        The actuators to move to their suggested positions.
+    sensors: Sequence[Sensor] | None = None
+        The sensors that produce data to evaluate.
     block_beam: Callable[[], MsgGenerator[None]]
         A Bluesky plan that blocks the beam (e.g. by closing a shutter).
     unblock_beam: Callable[[], MsgGenerator[None]]
@@ -357,73 +355,7 @@ def acquire_with_background(
     acquire : The base plan to acquire data.
     per_step_background_read : The per-step plan to take background readings.
     """
-    if readables is None:
-        readables = []
+    if sensors is None:
+        sensors = []
     per_step = per_step_background_read(block_beam, unblock_beam)
-    return (yield from default_acquire(suggestions, movables, readables, per_step=per_step, **kwargs))
-
-
-# ===========================================================================================================================
-# TODO: Remove when refactoring the Ax agent.
-def _unpack_parameters(dofs: dict[str, DOF], parameterizations: list[TParameterization]) -> list[Movable | TParameterValue]:
-    """Unpack the parameterizations into Bluesky plan arguments."""
-    unpacked_dict = defaultdict(list)
-    for parameterization in parameterizations:
-        for dof_name in dofs.keys():
-            if dof_name in parameterization:
-                unpacked_dict[dof_name].append(parameterization[dof_name])
-            else:
-                raise ValueError(f"Parameter {dof_name} not found in parameterization. Parameterization: {parameterization}")
-
-    unpacked_list = []
-    for dof_name, values in unpacked_dict.items():
-        unpacked_list.append(dofs[dof_name].movable)
-        unpacked_list.append(values)
-
-    return unpacked_list
-
-
-@plan
-def acquire(
-    readables: Sequence[Readable],
-    dofs: dict[str, DOF],
-    trials: dict[int, TParameterization],
-    per_step: bp.PerStep | None = None,
-    **kwargs: Any,
-) -> MsgGenerator[str]:
-    """
-    A plan to acquire data for optimization.
-
-    TODO: Remove when refactoring the Ax agent.
-
-    Parameters
-    ----------
-    readables: Sequence[Readable]
-        The readables to trigger and read.
-    dofs: dict[str, DOF]
-        A dictionary mapping DOF names to DOFs.
-    trials: dict[int, TParameterization]
-        A dictionary mapping trial indices to their suggested parameterizations. Typically only a single trial is provided.
-    per_step: bp.PerStep | None = None
-        The plan to execute for each step of the scan.
-    **kwargs: Any
-        Additional keyword arguments to pass to the list_scan plan.
-
-    Returns
-    -------
-    str
-        The UID of the Bluesky run.
-
-    See Also
-    --------
-    bluesky.plans.list_scan : The Bluesky plan to acquire data.
-    """
-    plan_args = _unpack_parameters(dofs, trials.values())
-    return (
-        yield from bp.list_scan(
-            readables, *plan_args, md={"ax_trial_indices": list(trials.keys())}, per_step=per_step, **kwargs
-        )
-    )
-
-
-# ===========================================================================================================================
+    return (yield from default_acquire(suggestions, actuators, sensors, per_step=per_step, **kwargs))

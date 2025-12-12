@@ -56,7 +56,7 @@ bec.disable_plots()
 RE.subscribe(bec)
 ```
 
-In order to control parameters and acquire data with Bluesky, we must follow the `NamedMovable` and `Readable` protocols. To do this, we implement a simple class that implements both protocols. An alternative to implementing these protocols yourself is to use Ophyd. The additional `AlwaysSuccessfulStatus` is necessary to tell the Bluesky RunEngine when a move is complete. For the purposes of this tutorial, every move is successful and complete immediately.
+In order to control parameters and acquire data with Bluesky, we can follow the `NamedMovable` and `Readable` protocols. To do this, we implement a simple class that implements both protocols. An alternative to implementing these protocols yourself is to use Ophyd. The additional `AlwaysSuccessfulStatus` is necessary to tell the Bluesky RunEngine when a move is complete. For the purposes of this tutorial, every move is successful and complete immediately.
 
 ```{code-cell} ipython3
 class AlwaysSuccessfulStatus(Status):
@@ -116,24 +116,24 @@ class MovableSignal(ReadableSignal, NamedMovable):
 ```
 
     
-Next, we'll define the DOFs and optimization objective. Since we can calculate our objective based on the two movable signals, there is no need to acquire data using an extra readable. With the movables already configured via the `DOF`s, it is implicitly added as a readable during the data acquisition.
+Next, we'll define the DOFs and optimization objective. Since we can calculate our objective based on the two movable signals, there is no need to acquire data using an extra readable. With the movables already configured via the `DOF`s, it is implicitly added as a readable during the data acquisition when using the default acquisition plan.
 
 ```{code-cell} ipython3
 x1 = MovableSignal("x1", initial_value=0.1)
 x2 = MovableSignal("x2", initial_value=0.23)
 
 dofs = [
-    RangeDOF(movable=x1, bounds=(-5, 5), parameter_type="float"),
-    RangeDOF(movable=x2, bounds=(-5, 5), parameter_type="float"),
+    RangeDOF(actuator=x1, bounds=(-5, 5), parameter_type="float"),
+    RangeDOF(actuator=x2, bounds=(-5, 5), parameter_type="float"),
 ]
 objectives = [
     Objective(name="himmelblau_2d", minimize=True),
 ]
-readables = []
+sensors = []
 ```
 
 ```{note}
-Additional readables are typically added as a list of devices that produce data, such as detectors, to help with computing the desired outcome via the evaluation function.
+Additional sensors are typically added as a list of devices that produce data, such as detectors, to help with computing the desired outcome via the evaluation function.
 ```
 
 Next, we will define the evaluation function. This is initialized with a `tiled_client`. Notice the care we take in handling
@@ -164,7 +164,7 @@ Next, we will setup the agent and perform the optimization using the run engine.
     
 ```{code-cell} ipython3
 agent = Agent(
-    readables=readables,
+    sensors=sensors,
     dofs=dofs,
     objectives=objectives,
     evaluation=Himmelblau2DEvaluation(

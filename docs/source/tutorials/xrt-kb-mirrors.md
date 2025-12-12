@@ -70,8 +70,8 @@ R2, dR2 = 20000, 10000
 beamline = TiledBeamline(name="bl")
 
 dofs = [
-    RangeDOF(movable=beamline.kbv_dsv, bounds=(R1 - dR1, R1 + dR1), parameter_type="float"),
-    RangeDOF(movable=beamline.kbh_dsh, bounds=(R2 - dR2, R2 + dR2), parameter_type="float"),
+    RangeDOF(actuator=beamline.kbv_dsv, bounds=(R1 - dR1, R1 + dR1), parameter_type="float"),
+    RangeDOF(actuator=beamline.kbh_dsh, bounds=(R2 - dR2, R2 + dR2), parameter_type="float"),
 ]
 ```
 
@@ -114,7 +114,7 @@ class DetectorEvaluation(EvaluationFunction):
 
 ```{code-cell} ipython3
 agent = Agent(
-    readables=[beamline.det],
+    sensors=[beamline.det],
     dofs=dofs,
     objectives=objectives,
     evaluation=DetectorEvaluation(tiled_client),
