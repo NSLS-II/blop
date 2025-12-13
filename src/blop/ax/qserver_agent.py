@@ -29,11 +29,9 @@ from tiled.client.container import Container
 
 from ..data_access import DatabrokerDataAccess, TiledDataAccess
 from ..digestion_function import default_digestion_function
-from ..dofs import DOF, DOFConstraint
+from .dof import DOF, DOFConstraint
 from ..objectives import Objective
-from ..plans import acquire, read
-from .adapters import configure_metrics, configure_objectives, configure_parameters
-
+from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Sensor
 logger = logging.getLogger("blop")
 
 
@@ -167,18 +165,18 @@ class BlopQserverAgent(BlopAxAgent):
     ):
         
         super().__init__(
-            readables=readables,
+            sensors=readables,
             dofs=dofs,
             objectives=objectives,
-            db=db
+            evaluation=EvaluationFunction,
+            dof_constraints=dof_constraints,
+            acquisition_plan=acquisition_plan
         )
         
-
-        self.dof_constraints = dof_constraints
-        self.client = Client()
+        #self.client = Client()
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs or {}
-        self.acquisition_plan = acquisition_plan
+        
         
         # I store this for data access although I need to check which version of Tiled I am using
         self.db = db
@@ -241,14 +239,23 @@ class BlopQserverAgent(BlopAxAgent):
                 """
 
                 # Does this work with the latest version of Tiled? Can I used agent.get_data...?
-                results =  results_db[-1].primary.read().to_dataframe()
- 
+                results_run =  results_db[-1]
+                results = results_run.primary.read().to_dataframe()
+                
                 # Get the data in the format required by complete_trials
                 results_dict = {key: results[key].to_list() for key in results}
-                data = {trial_index: self.digestion(trial_index, results_dict, **self.digestion_kwargs) for trial_index in self.trials.keys()}
+                data = {trial_index: self.digestion(trial_index, results_dict, active_objectives = [objective for objective in  self._objectives.values()]) for trial_index in self.trials.keys()}
                 
+                """
+                    optimizer = optimization_problem.optimizer
+                    actuators = optimization_problem.actuators
+                    suggestions = optimizer.suggest(n_points)
+                    uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
+                    outcomes = optimization_problem.evaluation_function(uid, suggestions)
+                    optimizer.ingest(outcomes)
+                """
                 # Learn from the data
-                self.complete_trials(self.trials, data)
+                self._complete_trials(self.trials, data)
 
                 # After this is complete, call gen_next_trials again if required
                 if self.learn_continuous_suggestion:
@@ -259,7 +266,19 @@ class BlopQserverAgent(BlopAxAgent):
                         self.learn_current_itteration = 0
                         logger.info("made all required suggestions")
                     
-            
+    def optimize(self, iterations = 1, n_points = 1):
+        
+        """
+        This method will:
+            - Generate the optimization problem
+        """
+        
+        self.current_optimization_problem = self.to_optimization_problem()
+        self.learn_num_itterations = iterations
+        self.n_points = n_points
+              
+        self.suggest()
+         
     def suggest(self):
         """
         ask for suggestions, then send the values to the queueserver (like one half of learn)
@@ -270,7 +289,7 @@ class BlopQserverAgent(BlopAxAgent):
         self.learn_current_itteration = self.learn_current_itteration + 1
         
         # Get the trials to perform     
-        self.trials = self.get_next_trials(self.learn_n_points)
+        self.trials = self._optimizer._client.get_next_trials(self.learn_n_points)
         
         # acquire the values from those trials
         logger.info("sending suggestion to acquire")
@@ -302,8 +321,8 @@ class BlopQserverAgent(BlopAxAgent):
             # ensure the values of inputs are float 64, since weirdly float 32 cannot be serialized by json to be sent to qserver
             item = BPlan(
                 self.acquisition_plan,
-                readables = self.readables,
-                dofs = [dof for dof in self.dofs],
+                readables = self.sensors,
+                dofs = [dof.name for dof in self.dofs],
                 trials = trials,          
                 md=kwargs["md"],
             )
