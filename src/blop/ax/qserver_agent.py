@@ -137,15 +137,10 @@ class BlopQserverAgent(BlopAxAgent):
                 db=db,
             )
             
-    agent.configure_experiment(name="simple_experiment", description="A simple experiment.")
     
     agent.RM.environment_open()
 
-    agent._queue_autostart = True
-    agent.learn_num_itterations = 30
-    agent.learn_n_points = 1
-
-    agent.suggest()
+    agent.optimize(iterations=30, n_points=1)
     """
 
     def __init__(
@@ -162,13 +157,14 @@ class BlopQserverAgent(BlopAxAgent):
         dof_constraints: Sequence[DOFConstraint] = None,
         digestion: DigestionFunction = default_digestion_function,
         digestion_kwargs: dict | None = None,
+        evaluation:EvaluationFunction=None
     ):
         
         super().__init__(
             sensors=readables,
             dofs=dofs,
             objectives=objectives,
-            evaluation=EvaluationFunction,
+            evaluation=evaluation,
             dof_constraints=dof_constraints,
             acquisition_plan=acquisition_plan
         )
@@ -205,6 +201,7 @@ class BlopQserverAgent(BlopAxAgent):
         self.agent_suggestion_uid = None
         self.trials = None
         self.acquisition_finished = False
+        self.optimization_problem = None
 
     
     def _stop_doc_callback(self, start_doc, stop_doc):
@@ -213,17 +210,9 @@ class BlopQserverAgent(BlopAxAgent):
 
         If it has completed, we can digest the data from it and move on to the next point.
         """
-
-        """
-        We need to check that both:
-
-        1. The stop document for the plan we submitted is recieved
-        2. The stop document of any child plans (run on other queueservers) is also recieved
-
-        """
+        
         if self._listen_to_events:
             self.acquisition_finished = True
-            
             logger.info("Stop Document found")
             
             # We can't just take any stop document, there could be other things in the queue, so we search for it
@@ -231,31 +220,17 @@ class BlopQserverAgent(BlopAxAgent):
             # get the (list of) run which contains the data we want. We can get this by calling search
             results_db = self.db.search(Eq("agent_suggestion_uid", self.agent_suggestion_uid))
             
+            # Check that there is 1 and only one entry
             if len(results_db) == 1:
-                """
-                There are two cases:
-                1. We got a stop document from another plan. In this case the length of the results db is 0
-                2. We got a stop document from the correct plan, in which case it will have the uid we are looking for
-                """
-
-                # Does this work with the latest version of Tiled? Can I used agent.get_data...?
+  
+ 
                 results_run =  results_db[-1]
-                results = results_run.primary.read().to_dataframe()
+                uid = results_run.metadata['start']['uid']
+                              
+                outcomes = self.optimization_problem.evaluation_function(uid, self.trials)
                 
-                # Get the data in the format required by complete_trials
-                results_dict = {key: results[key].to_list() for key in results}
-                data = {trial_index: self.digestion(trial_index, results_dict, active_objectives = [objective for objective in  self._objectives.values()]) for trial_index in self.trials.keys()}
-                
-                """
-                    optimizer = optimization_problem.optimizer
-                    actuators = optimization_problem.actuators
-                    suggestions = optimizer.suggest(n_points)
-                    uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
-                    outcomes = optimization_problem.evaluation_function(uid, suggestions)
-                    optimizer.ingest(outcomes)
-                """
                 # Learn from the data
-                self._complete_trials(self.trials, data)
+                self.optimization_problem.optimizer.ingest(outcomes)
 
                 # After this is complete, call gen_next_trials again if required
                 if self.learn_continuous_suggestion:
@@ -265,15 +240,14 @@ class BlopQserverAgent(BlopAxAgent):
                     else:
                         self.learn_current_itteration = 0
                         logger.info("made all required suggestions")
-                    
+        
     def optimize(self, iterations = 1, n_points = 1):
         
         """
-        This method will:
-            - Generate the optimization problem
+        This method will create the optimization problem, suggest points and execute them in the QS
         """
         
-        self.current_optimization_problem = self.to_optimization_problem()
+        self.optimization_problem = self.to_optimization_problem()
         self.learn_num_itterations = iterations
         self.n_points = n_points
               
@@ -317,6 +291,8 @@ class BlopQserverAgent(BlopAxAgent):
             kwargs = {}
             kwargs.setdefault("md", {})
             kwargs["md"]["agent_suggestion_uid"] = agent_suggestion_uid
+            suggestions = [{ "_id": trial_index, **parameterization, }  for trial_index, parameterization in trials.items()  ]
+            kwargs['md']["blop_suggestions"]= suggestions
         
             # ensure the values of inputs are float 64, since weirdly float 32 cannot be serialized by json to be sent to qserver
             item = BPlan(
