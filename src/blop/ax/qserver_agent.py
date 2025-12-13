@@ -246,10 +246,10 @@ class BlopQserverAgent(BlopAxAgent):
         logger.info("sending suggestion {self.current_itteration} to queueserver with suggestion id: {self.agent_suggestion_uid}")
 
     def acquire(self, trials: dict[int, TParameterization] | None = None):
-        """Acquire and digest according to the acquisition and digestion plans.
-
-        This method will send a plan to the queueserver. It doesn't block. 
-
+        """
+        Acquire the new data from the system by submitting the suggested
+        points to the queueserver. This method does not block while the
+        queueserver is running. 
 
         Parameters
         ----------
