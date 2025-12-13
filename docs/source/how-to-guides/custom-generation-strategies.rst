@@ -72,9 +72,9 @@
     RE = RunEngine({})
     RE.subscribe(tiled_writer)
 
-    dof1 = MovableSignal("dof1")
-    dof2 = MovableSignal("dof2")
-    dof3 = MovableSignal("dof3")
+    movable1 = MovableSignal("movable1")
+    movable2 = MovableSignal("movable2")
+    movable3 = MovableSignal("movable3")
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
 
@@ -90,30 +90,40 @@
 Using custom generation strategies
 ==================================
 
-This guide will show you how to use custom generation strategies with GPyTorch, BoTorch, Blop, and Ax.
+This guide will show you how to use custom generation strategies with BoTorch, Blop, and Ax.
 
 Configure an agent
 ------------------
 
 .. testcode::
 
-    from blop import DOF, Objective
-    from blop.ax import Agent
+    from blop.ax import Agent, RangeDOF, Objective
 
     dofs = [
-        DOF(movable=dof1, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof2, search_domain=(-5.0, 5.0)),
+        RangeDOF(actuator=movable1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable2, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
-        Objective(name="objective1", target="max"),
+        Objective(name="objective1", minimize=False),
     ]
 
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        """Replace this with your own evaluation function."""
+        outcomes = []
+        for suggestion in suggestions:
+            outcome = {
+                "_id": suggestion["_id"],
+                "objective1": 0.1,
+            }
+            outcomes.append(outcome)
+        return outcomes
+
     agent = Agent(
-        readables=[readable1, readable2],
+        sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation=evaluation_function,
     )
 
 Configure a generation strategy
@@ -191,15 +201,14 @@ Configure the experiment and set the generation strategy
 
 .. testcode::
 
-    agent.configure_experiment(name="latentgp-generation-strategy", description="LatentGP generation strategy")
-    agent.set_generation_strategy(generation_strategy)
+    agent.ax_client.set_generation_strategy(generation_strategy)
 
 Run the experiment with Bluesky
 -------------------------------
 
 .. testcode::
 
-    RE(agent.learn(iterations=12, n=1))
+    RE(agent.optimize(iterations=12, n_points=1))
 
 
 Verify the generation strategy was used
@@ -207,5 +216,5 @@ Verify the generation strategy was used
 
 .. testcode::
 
-    df = agent.summarize()
+    df = agent.ax_client.summarize()
     assert "LatentGP" in df["generation_node"].values

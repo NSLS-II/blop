@@ -1,5 +1,9 @@
+import warnings
+
 import numpy as np
 import torch
+
+warnings.warn("The functions module is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2)
 
 
 def approximate_erf(x):

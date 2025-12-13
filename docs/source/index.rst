@@ -1,11 +1,13 @@
 
 .. warning::
 
-    **Important Notice for upcoming v1.0.0 release**
+    **Important notice for the upcoming v1.0.0 release**
 
-    Major changes are expected in the v1.0.0 release of Blop. We are removing the older way of using agents and performing optimization in favor of using the Ax agent backend. The legacy agent interface will be deprecated, and users are encouraged to migrate to the new `blop.ax.Agent` interface for all optimization workflows. Please refer to the :doc:`tutorials`, :doc:`how-to-guides`, and :doc:`explanation` sections for the new interface.
+    Major changes are coming in the v1.0.0 release of Blop. We are removing the older way of using agents and performing optimization in favor of using `Ax <https://ax.dev>`_ as the backend for optimization and experiment tracking. The legacy agent interface is now deprecated, and users are encouraged to migrate to the new `blop.ax.Agent` interface for all optimization workflows. Please refer to the :doc:`tutorials`, :doc:`how-to-guides`, and :doc:`explanation` sections for the new interface.
+
+    Furthermore, Blop is moving to a more modular architecture. The core architecture is now protocol-based, allowing users to plug in their own optimization backends, acquisition plans, and evaluation functions.
     
-    Ax will be the primary backend for optimization and experiment tracking. We will also be adding support for the `gest-api <https://github.com/campa-consortium/gest-api>`_ standard with integration into Ax experiment tracking.
+    Ax will have first-class support as the default backend for optimization and experiment tracking.
 
 
 What is Blop?

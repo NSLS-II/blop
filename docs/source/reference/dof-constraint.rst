@@ -1,7 +1,7 @@
-Agent
-=====
+DOF Constraint
+==============
 
-.. autoclass:: blop.ax.Agent
+.. autoclass:: blop.ax.dof.DOFConstraint
    :members:
    :undoc-members:
    :show-inheritance:

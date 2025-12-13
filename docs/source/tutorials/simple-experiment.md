@@ -24,16 +24,14 @@ import logging
 import time
 from typing import Any
 
-from blop import DOF, Objective
-from blop.ax import Agent
-from blop.dofs import DOF
-from blop.objectives import Objective
+from blop.ax import Agent, RangeDOF, Objective
 
 from bluesky.protocols import NamedMovable, Readable, Status, Hints, HasHints, HasParent
 from bluesky.run_engine import RunEngine
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.callbacks.best_effort import BestEffortCallback
 from tiled.client import from_uri
+from tiled.client.container import Container
 from tiled.server import SimpleTiledServer
 
 # Suppress noisy logs from httpx 
@@ -58,7 +56,7 @@ bec.disable_plots()
 RE.subscribe(bec)
 ```
 
-In order to control parameters and acquire data with Bluesky, we must follow the `NamedMovable` and `Readable` protocols. To do this, we implement a simple class that implements both protocols. An alternative to implementing these protocols yourself is to use Ophyd. The additional `AlwaysSuccessfulStatus` is necessary to tell the Bluesky RunEngine when a move is complete. For the purposes of this tutorial, every move is successful and complete immediately.
+In order to control parameters and acquire data with Bluesky, we can follow the `NamedMovable` and `Readable` protocols. To do this, we implement a simple class that implements both protocols. An alternative to implementing these protocols yourself is to use Ophyd. The additional `AlwaysSuccessfulStatus` is necessary to tell the Bluesky RunEngine when a move is complete. For the purposes of this tutorial, every move is successful and complete immediately.
 
 ```{code-cell} ipython3
 class AlwaysSuccessfulStatus(Status):
@@ -118,46 +116,70 @@ class MovableSignal(ReadableSignal, NamedMovable):
 ```
 
     
-Next, we'll define the DOFs and optimization objective. Since we can calculate our objective based on the two movable signals, there is no need to acquire data using an extra readable. With the movables already configured via the `DOF`s, it is implicitly added as a readable during the data acquisition.
+Next, we'll define the DOFs and optimization objective. Since we can calculate our objective based on the two movable signals, there is no need to acquire data using an extra readable. With the movables already configured via the `DOF`s, it is implicitly added as a readable during the data acquisition when using the default acquisition plan.
 
 ```{code-cell} ipython3
 x1 = MovableSignal("x1", initial_value=0.1)
 x2 = MovableSignal("x2", initial_value=0.23)
 
 dofs = [
-    DOF(movable=x1, search_domain=(-5, 5)),
-    DOF(movable=x2, search_domain=(-5, 5)),
+    RangeDOF(actuator=x1, bounds=(-5, 5), parameter_type="float"),
+    RangeDOF(actuator=x2, bounds=(-5, 5), parameter_type="float"),
 ]
 objectives = [
-    Objective(name="himmelblau_2d", target="min"),
+    Objective(name="himmelblau_2d", minimize=True),
 ]
-readables = []
+sensors = []
 ```
 
 ```{note}
-Additional readables are typically added as a list of devices that produce data, such as detectors, to help with computing the desired outcome via the digestion function.
+Additional sensors are typically added as a list of devices that produce data, such as detectors, to help with computing the desired outcome via the evaluation function.
 ```
 
-Next, we will define the digestion function. The data that will be available to the digestion function will always be a collection of readables (specified either implicitly or explicitly).
+Next, we will define the evaluation function. This is initialized with a `tiled_client`. Notice the care we take in handling
+the evaluation of individual suggestions based on the `"_id"` key. This is important to consider when acquiring data for multiple suggestions in the same Bluesky run.
 
 ```{code-cell} ipython3
-def himmelblau_2d_digestion(trial_index: int, data: dict[str, Any]) -> float:
-    x1 = data["x1"][trial_index % len(data["x1"])]
-    x2 = data["x2"][trial_index % len(data["x2"])]
-    return {"himmelblau_2d": (x1 ** 2 + x2 - 11) ** 2 + (x1 + x2 ** 2 - 7) ** 2}
+class Himmelblau2DEvaluation():
+    def __init__(self, tiled_client: Container):
+        self.tiled_client = tiled_client
+
+    def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
+        run = self.tiled_client[uid]
+        outcomes = []
+        x1_data = run["primary/x1"].read()
+        x2_data = run["primary/x2"].read()
+
+        for suggestion in suggestions:
+            # Special key to identify a suggestion
+            suggestion_id = suggestion["_id"]
+            x1 = x1_data[suggestion_id % len(x1_data)]
+            x2 = x2_data[suggestion_id % len(x2_data)]
+            outcomes.append({"himmelblau_2d": (x1 ** 2 + x2 - 11) ** 2 + (x1 + x2 ** 2 - 7) ** 2, "_id": suggestion_id})
+        
+        return outcomes
 ```
 
 Next, we will setup the agent and perform the optimization using the run engine.
     
 ```{code-cell} ipython3
-agent = Agent(readables=readables, dofs=dofs, objectives=objectives, db=tiled_client, digestion=himmelblau_2d_digestion)
-agent.configure_experiment(name="simple_experiment", description="A simple experiment.")
-RE(agent.learn(iterations=30))
+agent = Agent(
+    sensors=sensors,
+    dofs=dofs,
+    objectives=objectives,
+    evaluation=Himmelblau2DEvaluation(
+        tiled_client=tiled_client,
+    ),
+    name="simple-experiment",
+    description="A simple experiment optimizing the Himmelblau function",
+)
+
+RE(agent.optimize(30))
 ```
 
 Now we can view the results.
 
 ```{code-cell} ipython3
 agent.plot_objective("x1", "x2", "himmelblau_2d")
-agent.summarize()
+agent.ax_client.summarize()
 ```

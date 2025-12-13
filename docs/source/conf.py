@@ -138,7 +138,7 @@ todo_include_todos = False
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = "furo"
+html_theme = "pydata_sphinx_theme"
 
 # Theme options are theme-specific and customize the look and feel of a theme
 # further.  For a list of options available for each theme, see the
@@ -241,4 +241,7 @@ intersphinx_mapping = {
     "numpy": ("https://numpy.org/doc/stable/", None),
     "pandas": ("https://pandas.pydata.org/pandas-docs/stable", None),
     "matplotlib": ("https://matplotlib.org/stable", None),
+    "bluesky": ("https://blueskyproject.io/bluesky/main", None),
+    "ophyd-async": ("https://blueskyproject.io/ophyd-async/main", None),
+    "ophyd": ("https://blueskyproject.io/ophyd", None),
 }

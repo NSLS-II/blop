@@ -5,8 +5,6 @@
     import time
 
     from bluesky.protocols import NamedMovable, Readable, Status, Hints, HasHints, HasParent
-    from tiled.client import from_uri
-    from tiled.server import SimpleTiledServer
 
     class AlwaysSuccessfulStatus(Status):
         def add_callback(self, callback) -> None:
@@ -63,24 +61,11 @@
             self._value = value
             return AlwaysSuccessfulStatus()
 
-    server = SimpleTiledServer()
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    db = from_uri(server.uri)
-
-    dof1 = MovableSignal("dof1")
-    dof2 = MovableSignal("dof2")
-    dof3 = MovableSignal("dof3")
+    movable1 = MovableSignal("movable1")
+    movable2 = MovableSignal("movable2")
+    movable3 = MovableSignal("movable3")
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
-
-.. testcleanup::
-
-    # Suppress stdout from server.close() otherwise the doctest will fail
-    import os
-    import contextlib
-
-    with contextlib.redirect_stdout(open(os.devnull, "w")):
-        server.close()
 
 Attach external data to experiments
 ===================================
@@ -98,9 +83,9 @@ We will use fake data for this example. You will be responsible for loading your
     import pandas as pd
 
     df = pd.DataFrame({
-        "dof1": [1, 2, 3, 4, 5],
-        "dof2": [1, 2, 3, 4, 5],
-        "dof3": [1, 2, 3, 4, 5],
+        "movable1": [1, 2, 3, 4, 5],
+        "movable2": [1, 2, 3, 4, 5],
+        "movable3": [1, 2, 3, 4, 5],
         "objective1": [1, 2, 3, 4, 5],
         "objective2": [1, 2, 3, 4, 5],
     })
@@ -110,18 +95,7 @@ Transform your data to the correct format
 
 .. testcode::
 
-    data = []
-    for _, row in df.iterrows():
-        data.append(({
-                "dof1": row["dof1"],
-                "dof2": row["dof2"],
-                "dof3": row["dof3"],
-            },
-            {
-                "objective1": row["objective1"],
-                "objective2": row["objective2"],
-            }
-        ))
+    data = df.to_dict(orient="records")
 
 Configure an agent
 ------------------
@@ -130,36 +104,46 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
 
 .. testcode::
 
-    from blop import DOF, Objective
-    from blop.ax import Agent
+    from blop.ax import Agent, RangeDOF, Objective
 
     dofs = [
-        DOF(movable=dof1, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof2, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof3, search_domain=(-5.0, 5.0)),
+        RangeDOF(actuator=movable1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable2, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable3, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
-        Objective(name="objective1", target="min"),
-        Objective(name="objective2", target="min"),
+        Objective(name="objective1", minimize=True),
+        Objective(name="objective2", minimize=False),
     ]
 
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        """Replace this with your own evaluation function."""
+        outcomes = []
+        for suggestion in suggestions:
+            outcome = {
+                "_id": suggestion["_id"],
+                "objective1": 0.1,
+                "objective2": 0.2,
+            }
+            outcomes.append(outcome)
+        return outcomes
+
     agent = Agent(
-        readables=[readable1, readable2],
+        sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation=evaluation_function,
     )
-    agent.configure_experiment(name="experiment_name", description="experiment_description")
 
-Attach your data to the experiment
-----------------------------------
+Ingest your data
+----------------
 
 After this, the next time you get a suggestion from the agent it will re-train the model(s) with the new data.
 
 .. code-block:: python
 
-    agent.attach_data(data)
+    agent.ingest(data)
 
 
 (Optional) Configure the generation strategy
@@ -169,7 +153,7 @@ If no trials have been run yet, you must configure the generation strategy befor
 
 .. code-block:: python
 
-    agent.configure_generation_strategy()
+    agent.ax_client.configure_generation_strategy()
 
 Sanity check the data you attached
 ----------------------------------
@@ -178,4 +162,4 @@ Verify the data you attached is correct.
 
 .. code-block:: python
 
-    agent.summarize()
+    agent.ax_client.summarize()

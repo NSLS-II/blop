@@ -32,27 +32,22 @@ These features make it simple to optimize your beamline using both Bluesky & Ax.
 
 ## Preparing a test environment
 
-Here we prepare the `RunEngine`.
+Here we prepare the `RunEngine`, setup a local [Tiled](https://blueskyproject.io/tiled) server, and connect to it with a Tiled client.
 
 ```{code-cell} ipython3
-from datetime import datetime
 import logging
 
 import bluesky.plan_stubs as bps  # noqa F401
 import bluesky.plans as bp  # noqa F401
-import databroker  # type: ignore[import-untyped]
 import matplotlib.pyplot as plt
 from bluesky.callbacks import best_effort
 from bluesky.callbacks.tiled_writer import TiledWriter
 from bluesky.run_engine import RunEngine
-from databroker import Broker
-from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
 from tiled.client import from_uri  # type: ignore[import-untyped]
 from tiled.client.container import Container
 from tiled.server import SimpleTiledServer
 
-from blop.sim import HDF5Handler
-from blop.sim.beamline import DatabrokerBeamline, TiledBeamline
+from blop.sim.beamline import TiledBeamline
 
 # Suppress noisy logs from httpx 
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -64,37 +59,12 @@ DETECTOR_STORAGE = "/tmp/blop/sim"
 tiled_server = SimpleTiledServer(readable_storage=[DETECTOR_STORAGE])
 tiled_client = from_uri(tiled_server.uri)
 tiled_writer = TiledWriter(tiled_client)
-
-
-def setup_re_env(db_type="default", root_dir="/default/path", method="tiled"):
-    RE = RunEngine({})
-    bec = best_effort.BestEffortCallback()
-    RE.subscribe(bec)
-    _ = make_dir_tree(datetime.now().year, base_path=root_dir)
-    if method.lower() == "tiled":
-        RE.subscribe(tiled_writer)
-        return {"RE": RE, "db": tiled_client, "bec": bec}
-    elif method.lower() == "databroker":
-        db = Broker.named(db_type)
-        db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-        try:
-            databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-        except Exception:
-            pass
-        RE.subscribe(db.insert)
-        return {"RE": RE, "db": db, "bec": bec, }
-    else:
-        raise ValueError("The method for data storage used is not supported")
-
-
-def register_handlers(db, handlers):
-    for handler_spec, handler_class in handlers.items():
-        db.reg.register_handler(handler_spec, handler_class, overwrite=True)
-
-
-env = setup_re_env(db_type="temp", root_dir="/tmp/blop/sim", method="tiled")
-globals().update(env)
+bec = best_effort.BestEffortCallback()
 bec.disable_plots()
+
+RE = RunEngine({})
+RE.subscribe(bec)
+RE.subscribe(tiled_writer)
 ```
 
 ## Simulated beamline with KB mirror pair
@@ -102,10 +72,7 @@ bec.disable_plots()
 Here we describe an analytical simulated beamline with a [KB mirror](https://en.wikipedia.org/wiki/Kirkpatrick%E2%80%93Baez_mirror) pair. This is implemented as an [Ophyd](https://blueskyproject.io/ophyd/) device for ease-of-use with Bluesky.
 
 ```{code-cell} ipython3
-if isinstance(db, Container):
-    beamline = TiledBeamline(name="bl")
-elif isinstance(db, databroker.v1.Broker):
-    beamline = DatabrokerBeamline(name="bl")
+beamline = TiledBeamline(name="bl")
 ```
 
 ## Create a Blop-Ax experiment
@@ -114,31 +81,62 @@ Now we can define the experiment we plan to run.
 
 This involves setting 4 parameters that simulate motor positions controlling two KB mirrors. The objectives of the experiment are to maximize the beam intensity while minimizing the area of the beam.
 
+We transform the Agent into an optimization problem that can be used with standard Bluesky plans.
+
 ```{code-cell} ipython3
-from blop.ax import Agent
-from blop.dofs import DOF
-from blop.objectives import Objective
+from blop.ax import Agent, RangeDOF, Objective
+from blop.protocols import EvaluationFunction
 
 dofs = [
-    DOF(movable=beamline.kbv_dsv, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(movable=beamline.kbv_usv, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(movable=beamline.kbh_dsh, type="continuous", search_domain=(-5.0, 5.0)),
-    DOF(movable=beamline.kbh_ush, type="continuous", search_domain=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbv_dsv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbv_usv, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbh_dsh, parameter_type="float", bounds=(-5.0, 5.0)),
+    RangeDOF(actuator=beamline.kbh_ush, parameter_type="float", bounds=(-5.0, 5.0)),
 ]
 
 objectives = [
-    Objective(name="bl_det_sum", target="max"),
-    Objective(name="bl_det_wid_x", target="min"),
-    Objective(name="bl_det_wid_y", target="min"),
+    Objective(name="bl_det_sum", minimize=False),
+    Objective(name="bl_det_wid_x", minimize=True),
+    Objective(name="bl_det_wid_y", minimize=True),
 ]
 
+class DetectorEvaluation(EvaluationFunction):
+    def __init__(self, tiled_client: Container):
+        self.tiled_client = tiled_client
+
+    def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
+        outcomes = []
+        run = self.tiled_client[uid]
+        bl_det_sum = run["primary/bl_det_sum"].read()
+        bl_det_wid_x = run["primary/bl_det_wid_x"].read()
+        bl_det_wid_y = run["primary/bl_det_wid_y"].read()
+
+        # Suggestions are stored in the start document's metadata when
+        # using the `blop.plans.default_acquire` plan.
+        # You may want to store them differently in your experiment when writing
+        # your a custom acquisiton plan.
+        suggestion_ids = [suggestion["_id"] for suggestion in run.metadata["start"]["blop_suggestions"]]
+
+        for idx, sid in enumerate(suggestion_ids):
+            outcome = {
+                "_id": sid,
+                "bl_det_sum": bl_det_sum[idx],
+                "bl_det_wid_x": bl_det_wid_x[idx],
+                "bl_det_wid_y": bl_det_wid_y[idx],
+            }
+            outcomes.append(outcome)
+        return outcomes
+
+evaluation_function = DetectorEvaluation(tiled_client)
+
 agent = Agent(
-    readables=[beamline.det],
+    sensors=[beamline.det],
     dofs=dofs,
     objectives=objectives,
-    db=db,
+    evaluation=evaluation_function,
+    name="sim_kb_mirror",
+    description="Simulated KB Mirror Experiment",
 )
-agent.configure_experiment(name="test_ax_agent", description="Test the AxAgent")
 ```
 
 ## Optimization
@@ -148,15 +146,15 @@ With all of our experimental setup done, we can optimize the DOFs to satisfy our
 For this example, Ax will optimize the 4 motor positions to produce the greatest intensity beam with the smallest beam width and height (smallest area). It does this by first running a couple of trials which are random samples, then the remainder using Bayesian optimization through BoTorch.
 
 ```{code-cell} ipython3
-RE(agent.learn(iterations=25, n=1))
+RE(agent.optimize(iterations=25, n_points=1))
 ```
 
 ## Analyze Results
 
-We can start by summarizing each step of the optimization procedure and whether trials were successful or not.
+We can start by summarizing each step of the optimization procedure and whether trials were successful or not. This can be done by accessing the Ax client directly.
 
 ```{code-cell} ipython3
-agent.summarize()
+agent.ax_client.summarize()
 ```
 
 ### Plotting
@@ -166,11 +164,11 @@ We also can plot slices of the parameter space with respect to our objectives.
 ```{code-cell} ipython3
 from ax.analysis import SlicePlot
 
-_ = agent.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_sum")])
+_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_sum")])
 ```
 
 ```{code-cell} ipython3
-_ = agent.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_wid_x")])
+_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_wid_x")])
 ```
 
 ### More comprehensive analyses
@@ -180,7 +178,7 @@ Ax provides many analysis tools that can help understand optimization results.
 ```{code-cell} ipython3
 from ax.analysis import TopSurfacesAnalysis
 
-_ = agent.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
+_ = agent.ax_client.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
 ```
 
 ### Visualizing the optimal beam
@@ -188,7 +186,7 @@ _ = agent.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
 Below we get the optimal parameters, move the motors to their optimal positions, and observe the resulting beam.
 
 ```{code-cell} ipython3
-optimal_parameters = next(iter(agent.client.get_pareto_frontier()))[0]
+optimal_parameters = next(iter(agent.ax_client.get_pareto_frontier()))[0]
 optimal_parameters
 ```
 
@@ -203,8 +201,7 @@ uid = RE(list_scan([beamline.det], *scan_motor_params))
 ```
 
 ```{code-cell} ipython3
-
-image = db[uid[0]]["primary"]["bl_det_image"].read().squeeze()
+image = tiled_client[uid[0]]["primary/bl_det_image"].read().squeeze()
 plt.imshow(image)
 plt.colorbar()
 plt.show()

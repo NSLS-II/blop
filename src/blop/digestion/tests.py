@@ -1,8 +1,13 @@
+import warnings
 from typing import Any
 
 import numpy as np
 
 from ..utils import functions
+
+warnings.warn(
+    "The digestion.tests module is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2
+)
 
 
 def himmelblau_digestion(df: dict[str, Any]) -> dict[str, Any]:

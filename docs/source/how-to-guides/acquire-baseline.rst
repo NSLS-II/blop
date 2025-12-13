@@ -72,9 +72,9 @@
     RE = RunEngine({})
     RE.subscribe(tiled_writer)
 
-    dof1 = MovableSignal("dof1")
-    dof2 = MovableSignal("dof2")
-    dof3 = MovableSignal("dof3")
+    movable1 = MovableSignal("movable1")
+    movable2 = MovableSignal("movable2")
+    movable3 = MovableSignal("movable3")
     readable1 = ReadableSignal("objective1")
     readable2 = ReadableSignal("objective2")
 
@@ -87,8 +87,8 @@
     with contextlib.redirect_stdout(open(os.devnull, "w")):
         server.close()
 
-Set outcome constraints relative to a baseline
-==============================================
+Acquire a baseline reading (for relative outcome constraints)
+=============================================================
 
 This guide will show you how to acquire a baseline reading for your experiment. This is useful when you are specifying constraints for your objectives and want to compare future outcomes to this baseline.
 
@@ -99,27 +99,41 @@ Here we configure an agent with three DOFs and two objectives. The second object
 
 .. testcode::
 
-    from blop import DOF, Objective
-    from blop.ax import Agent
+    from blop.ax import Agent, RangeDOF, Objective, OutcomeConstraint
 
     dofs = [
-        DOF(movable=dof1, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof2, search_domain=(-5.0, 5.0)),
-        DOF(movable=dof3, search_domain=(-5.0, 5.0)),
+        RangeDOF(actuator=movable1, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable2, bounds=(-5.0, 5.0), parameter_type="float"),
+        RangeDOF(actuator=movable3, bounds=(-5.0, 5.0), parameter_type="float"),
     ]
 
     objectives = [
-        Objective(name="objective1", target="min"),
-        Objective(name="objective2", target="max", constraint=("baseline", None)),
+        Objective(name="objective1", minimize=False),
+        Objective(name="objective2", minimize=False),
     ]
 
+    outcome_constraints = [OutcomeConstraint("x >= baseline", x=objectives[1])]
+
+    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+        """Replace this with your own evaluation function."""
+        outcomes = []
+        for suggestion in suggestions:
+            outcome = {
+                "_id": suggestion["_id"],  # Will contain "baseline" to identify the baseline reading
+                "objective1": 0.1,
+                "objective2": 0.2,
+            }
+            outcomes.append(outcome)
+        return outcomes
+
     agent = Agent(
-        readables=[readable1, readable2],
+        sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        db=db,
+        evaluation=evaluation_function,
+        outcome_constraints=outcome_constraints,
     )
-    agent.configure_experiment(name="experiment_name", description="experiment_description")
+
 
 Acquire a baseline reading
 --------------------------
@@ -140,7 +154,7 @@ Verify the baseline reading exists
 
 .. testcode::
 
-    agent.configure_generation_strategy()
-    df = agent.summarize()
+    agent.ax_client.configure_generation_strategy()
+    df = agent.ax_client.summarize()
     assert len(df) == 1
     assert df["arm_name"].values[0] == "baseline"

@@ -64,16 +64,23 @@
 
     db = MagicMock(spec=Container)
 
-Set DOF constraints
-===================
+Set outcome constraints
+=======================
 
-This guide will show you how to set DOF constraints to refine the search space of your optimization.
+This guide will show you how to set outcome constraints. These indicate preferences for specific objectives or metrics to satsify some condition during
+optimization.
 
-These constraints are evaluated by the Ax backend. See the `Ax API documentation <https://ax.readthedocs.io/en/stable/api.html#ax.api.client.Client.configure_experiment>`_ for more information.
+A surrogate model is built per-constraint to approximate violation of the constraint, so this is considered a *soft* constraint.
 
+For guaranteed constraints, you will have to constrain the DOFs directly using :doc:`DOF constraints <set-dof-constraints>`.
 
-Create DOFs and an objective
-----------------------------
+For more information, check out these references:
+
+* `Ax Outcome Constraints documentation <https://ax.dev/docs/recipes/outcome-constraints>`_
+* `BoTorch Constraints documentation <https://botorch.org/docs/constraints/>`_
+
+Create DOFs and multiple objectives
+-----------------------------------
 
 .. testcode::
 
@@ -83,11 +90,17 @@ Create DOFs and an objective
     motor_y = MovableSignal(name="motor_y")
     motor_z = MovableSignal(name="motor_z")
 
-    dof1 = RangeDOF(actuator=motor_x, bounds=(0, 1000), parameter_type="float")
-    dof2 = RangeDOF(actuator=motor_y, bounds=(0, 1000), parameter_type="float")
-    dof3 = RangeDOF(actuator=motor_z, bounds=(0, 1000), parameter_type="float")
 
-    objective = Objective(name="objective1", minimize=False)
+    dofs = [
+        RangeDOF(actuator=motor_x, bounds=(0, 1000), parameter_type="float"),
+        RangeDOF(actuator=motor_y, bounds=(0, 1000), parameter_type="float"),
+        RangeDOF(actuator=motor_z, bounds=(0, 1000), parameter_type="float"),
+    ]
+
+    objectives = [
+        Objective(name="objective1", minimize=False),
+        Objective(name="objective2", minimize=False),
+    ]
 
     def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
         """Replace this with your own evaluation function."""
@@ -96,25 +109,26 @@ Create DOFs and an objective
             outcome = {
                 "_id": suggestion["_id"],
                 "objective1": 0.1,
+                "objective2": 0.2,
             }
             outcomes.append(outcome)
         return outcomes
 
 
-Set a linear constraint
------------------------
+Set an objective threshold
+--------------------------
 
-Constraints are specified as strings that are templated and evaluated for you.
+Since this is a multi-objective optimization, we can set a preference for the first objective to be greater than or equal to 0.5.
 
 .. testcode::
 
-    from blop.ax import DOFConstraint
+    from blop.ax import OutcomeConstraint
 
-    constraint = DOFConstraint("5 * x1 + 2 * x2 <= 4 * x3", x1=dof1, x2=dof2, x3=dof3)
+    constraint = OutcomeConstraint("x >= 0.5", x=objectives[0])
 
 
-Configure an agent with DOF constraints
----------------------------------------
+Configure an agent with outcome constraints
+-------------------------------------------
 
 .. testcode::
 
@@ -122,8 +136,8 @@ Configure an agent with DOF constraints
 
     agent = Agent(
         sensors=[],
-        dofs=[dof1, dof2, dof3],
-        objectives=[objective],
+        dofs=dofs,
+        objectives=objectives,
         evaluation=evaluation_function,
-        dof_constraints=[constraint],
+        outcome_constraints=[constraint],
     )

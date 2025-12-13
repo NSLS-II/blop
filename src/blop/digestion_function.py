@@ -1,8 +1,16 @@
+import warnings
 from typing import Any
 
 from ax.api.types import TOutcome
 
 from .objectives import Objective
+
+warnings.warn(
+    "The digestion_function module is deprecated and will be removed in Blop v1.0.0. "
+    "See `blop.protocols.EvaluationFunction` as an alternative.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def default_digestion_function(
