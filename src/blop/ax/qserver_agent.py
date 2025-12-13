@@ -12,12 +12,10 @@ from bluesky.callbacks.zmq import RemoteDispatcher
 from bluesky_queueserver_api import BPlan
 from bluesky_queueserver_api.zmq import REManagerAPI
 
-from blop import DOF, Objective
-from blop.ax.agent import Agent as BlopAxAgent  # type: ignore[import-untyped]
-
-from ..objectives import Objective
 from ..protocols import EvaluationFunction, Sensor
+from .agent.agent import Agent as BlopAxAgent  # type: ignore[import-untyped]
 from .dof import DOF, DOFConstraint
+from .objective import Objective
 
 logger = logging.getLogger("blop")
 
@@ -288,7 +286,8 @@ class BlopQserverAgent(BlopAxAgent):
             # Send the plan to the Run Engine Manager
             r = self.RM.item_add(item)
             logger.debug(
-                f"Sent http-server request for trials {trials} with agent_suggestion_uid= {agent_suggestion_uid}\n.Received reponse: {r}"
+                f"Sent http-server request for trials {trials}"
+                f"with agent_suggestion_uid= {agent_suggestion_uid}\n.Received reponse: {r}"
             )
 
             # If the queue should start automatically, then start the queue.

@@ -7,7 +7,6 @@ from databroker.client import BlueskyRun  # type: ignore[import-untyped]
 from numpy.typing import ArrayLike
 
 from blop.agent import BaseAgent as BlopAgent  # type: ignore[import-untyped]
-from blop.agent import Agent as BlopFullAgent  # type: ignore[import-untyped]
 from blop.digestion import default_digestion_function  # type: ignore[import-untyped]
 
 
