@@ -3,36 +3,22 @@ import logging
 ###
 import threading
 import uuid
-from collections.abc import Mapping, Sequence, Callable
-from typing import Any, Concatenate, Literal, ParamSpec
+from collections.abc import Callable, Sequence
+from typing import Any, Concatenate, ParamSpec
 
-import numpy as np
-import pandas as pd
+from ax.api.types import TOutcome, TParameterization
 from bluesky.callbacks import CallbackBase
 from bluesky.callbacks.zmq import RemoteDispatcher
 from bluesky_queueserver_api import BPlan
 from bluesky_queueserver_api.zmq import REManagerAPI
-from numpy.typing import ArrayLike
-from ophyd import Signal
-
-from ax.api.types import TOutcome, TParameterization
 
 from blop import DOF, Objective
 from blop.ax.agent import Agent as BlopAxAgent  # type: ignore[import-untyped]
 
-import databroker
-from ax import Client
-from bluesky.plans import PerStep
-from bluesky.protocols import Readable
-from databroker import Broker
-from tiled.client.container import Container
-import time
-
-from ..data_access import DatabrokerDataAccess, TiledDataAccess
-from ..digestion_function import default_digestion_function
-from .dof import DOF, DOFConstraint
 from ..objectives import Objective
-from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Sensor
+from ..protocols import EvaluationFunction, Sensor
+from .dof import DOF, DOFConstraint
+
 logger = logging.getLogger("blop")
 
 
@@ -77,26 +63,27 @@ class ZMQConsumer:
         self._zmq_thread = None
 
     def start_zmq_listener_thread(self):
-        logger.info(f"Starting ZMQ Callback Thread")
-        
+        logger.info("Starting ZMQ Callback Thread")
+
         self._zmq_thread = threading.Thread(target=self.zmq_consumer.start, name="zmq-consumer", daemon=True)
         self._zmq_thread.start()
+
 
 P = ParamSpec("P")
 DigestionFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome]
 
+
 class BlopQserverAgent(BlopAxAgent):
-    
     """
     An interface that uses Ax as the backend for optimization and experiment tracking.
 
     The Agent is the main entry point for setting up and running Bayesian optimization
     using Blop. It coordinates the DOFs, objectives, evaluation function, and optimizer
     to perform intelligent exploration of the parameter space.
-    
-    This class sends JSON strings to a queueserver, rather than emmitting messages to be 
-    consumed directly by a RE. 
-    
+
+    This class sends JSON strings to a queueserver, rather than emmitting messages to be
+    consumed directly by a RE.
+
     Parameters
     ----------
     sensors : Sequence[Sensor]
@@ -132,7 +119,7 @@ class BlopQserverAgent(BlopAxAgent):
     For complete working examples of creating and using an Agent, see the tutorial
     documentation, particularly :doc:`/tutorials/qserver-experiment`.
 
-    
+
     """
 
     def __init__(
@@ -140,16 +127,15 @@ class BlopQserverAgent(BlopAxAgent):
         sensors: Sequence[Sensor],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        evaluation:EvaluationFunction=None,
+        evaluation: EvaluationFunction = None,
         acquisition_plan: str = "acquire",
         dof_constraints: Sequence[DOFConstraint] = None,
-        qserver_control_addr:str="tcp://localhost:60615",
-        qserver_info_addr:str="tcp://localhost:60625",
-        zmq_consumer_ip:str="localhost",
-        zmq_consumer_port:str="5578",
+        qserver_control_addr: str = "tcp://localhost:60615",
+        qserver_info_addr: str = "tcp://localhost:60625",
+        zmq_consumer_ip: str = "localhost",
+        zmq_consumer_port: str = "5578",
         **kwargs: Any,
     ):
-        
         super().__init__(
             sensors=sensors,
             dofs=dofs,
@@ -158,10 +144,12 @@ class BlopQserverAgent(BlopAxAgent):
             acquisition_plan=acquisition_plan,
             dof_constraints=dof_constraints,
             **kwargs,
-        )   
+        )
 
         # Instantiate an object that can communicate with the queueserver
-        self.RM = REManagerAPI(zmq_control_addr=qserver_control_addr, zmq_info_addr=qserver_info_addr)  # To Do, Add arguements to class init
+        self.RM = REManagerAPI(
+            zmq_control_addr=qserver_control_addr, zmq_info_addr=qserver_info_addr
+        )  # To Do, Add arguements to class init
 
         # Should plans be submitted and automatically started, or not?
         self._queue_autostart = False
@@ -179,7 +167,7 @@ class BlopQserverAgent(BlopAxAgent):
         # Learning parameters
         self.num_itterations = 30
         self.n_points = 1
-        
+
         # Variables used to keep track of the current optimization
         self.current_itteration = 0
         self.agent_suggestion_uid = None
@@ -187,25 +175,23 @@ class BlopQserverAgent(BlopAxAgent):
         self.acquisition_finished = False
         self.optimization_problem = None
 
-    
     def _stop_doc_callback(self, start_doc, stop_doc):
         """
         In here we can decide whether our experiment requested has completed
 
         If it has completed, we can digest the data from it and move on to the next point.
         """
-        
+
         if self._listen_to_events:
-            
             # Mark the current acquisition as finished
-            
+
             logger.info("A stop document has been received, evaluating")
-         
-            # Evaluate it with the evaluation function      
+
+            # Evaluate it with the evaluation function
             outcomes = self.optimization_problem.evaluation_function(self.agent_suggestion_uid, self.trials)
-            
+
             logger.debug(f"successfully evaluated id: {self.agent_suggestion_uid}")
-            
+
             self.acquisition_finished = True
             # ingest the data, updating the model of the optimizer
             self.optimization_problem.optimizer.ingest(outcomes)
@@ -218,27 +204,24 @@ class BlopQserverAgent(BlopAxAgent):
                 else:
                     self.current_itteration = 0
                     logger.info("made all required suggestions")
-                        
-                
-    def optimize(self, iterations = 1, n_points = 1):
-        
+
+    def optimize(self, iterations=1, n_points=1):
         """
         This method will create the optimization problem, suggest points and execute them in the QS
         """
-        
+
         # Before we do anything check the connection to the Queueserver
         status = self.RM.status()
-        if status['worker_environment_exists'] == False:
-                
+        if not status["worker_environment_exists"]:
             raise ValueError("The queueserver environment is not open")
-                
-        # Form the problem and start suggesting points to measure at 
+
+        # Form the problem and start suggesting points to measure at
         self.optimization_problem = self.to_optimization_problem()
         self.num_itterations = iterations
         self.n_points = n_points
-              
+
         self.suggest()
-         
+
     def suggest(self):
         """
         get suggestions from the optimizer, then send them to the plan on the queueserver
@@ -247,19 +230,21 @@ class BlopQserverAgent(BlopAxAgent):
 
         # record this itteration
         self.current_itteration = self.current_itteration + 1
-        
-        # Get the trials to perform     
+
+        # Get the trials to perform
         self.trials = self.optimization_problem.optimizer._client.get_next_trials(self.n_points)
-        
+
         # acquire the values from those trials
         self.agent_suggestion_uid = self.acquire(self.trials)
-        logger.info("sending suggestion {self.current_itteration} to queueserver with suggestion id: {self.agent_suggestion_uid}")
+        logger.info(
+            "sending suggestion {self.current_itteration} to queueserver with suggestion id: {self.agent_suggestion_uid}"
+        )
 
     def acquire(self, trials: dict[int, TParameterization] | None = None):
         """
         Acquire the new data from the system by submitting the suggested
         points to the queueserver. This method does not block while the
-        queueserver is running. 
+        queueserver is running.
 
         Parameters
         ----------
@@ -271,36 +256,41 @@ class BlopQserverAgent(BlopAxAgent):
             self.acquisition_finished = False
 
             # Create a unique identifier which will connect the children to the parent batch
-            # This batch ID will be used by all runs from this request by the agent. 
+            # This batch ID will be used by all runs from this request by the agent.
             # It will be used by the EvaluationFunction later to work out what happened.
 
             agent_suggestion_uid = str(uuid.uuid4())
             kwargs = {}
             kwargs.setdefault("md", {})
-            
+
             # Add the unique suggestion ID so we can find this run later
             kwargs["md"]["agent_suggestion_uid"] = agent_suggestion_uid
-            
+
             # Add the suggestion _id key so we can work out which number we are on later
-            suggestions = [{ "_id": trial_index, **parameterization, }  for trial_index, parameterization in trials.items()  ]
-            kwargs['md']["blop_suggestions"]= suggestions
-        
+            suggestions = [
+                {
+                    "_id": trial_index,
+                    **parameterization,
+                }
+                for trial_index, parameterization in trials.items()
+            ]
+            kwargs["md"]["blop_suggestions"] = suggestions
+
             # Create the BPlan object to send to the queue. Convert dofs to strings
             item = BPlan(
                 self.acquisition_plan,
-                readables = self.sensors,
-                dofs = [dof.name for dof in self.dofs],
-                trials = trials,
+                readables=self.sensors,
+                dofs=[dof.name for dof in self.dofs],
+                trials=trials,
                 md=kwargs["md"],
             )
-
 
             # Send the plan to the Run Engine Manager
             r = self.RM.item_add(item)
             logger.debug(
                 f"Sent http-server request for trials {trials} with agent_suggestion_uid= {agent_suggestion_uid}\n.Received reponse: {r}"
             )
-    
+
             # If the queue should start automatically, then start the queue.
             if self._queue_autostart:
                 logger.debug("Waiting for Queue to be idle or paused")
@@ -312,7 +302,3 @@ class BlopQserverAgent(BlopAxAgent):
             raise interrupt
 
         return agent_suggestion_uid
-
-
-
-  
