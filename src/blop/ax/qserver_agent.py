@@ -26,6 +26,7 @@ from bluesky.plans import PerStep
 from bluesky.protocols import Readable
 from databroker import Broker
 from tiled.client.container import Container
+import time
 
 from ..data_access import DatabrokerDataAccess, TiledDataAccess
 from ..digestion_function import default_digestion_function
@@ -95,7 +96,6 @@ class BlopQserverAgent(BlopAxAgent):
     
     This class sends JSON strings to a queueserver, rather than emmitting messages to be 
     consumed directly by a RE. 
-    
     
     Parameters
     ----------
@@ -198,12 +198,15 @@ class BlopQserverAgent(BlopAxAgent):
         if self._listen_to_events:
             
             # Mark the current acquisition as finished
-            self.acquisition_finished = True
-            logger.info("Stop Document found")
+            
+            logger.info("A stop document has been received, evaluating")
          
             # Evaluate it with the evaluation function      
             outcomes = self.optimization_problem.evaluation_function(self.agent_suggestion_uid, self.trials)
             
+            logger.debug(f"successfully evaluated id: {self.agent_suggestion_uid}")
+            
+            self.acquisition_finished = True
             # ingest the data, updating the model of the optimizer
             self.optimization_problem.optimizer.ingest(outcomes)
 
@@ -223,6 +226,13 @@ class BlopQserverAgent(BlopAxAgent):
         This method will create the optimization problem, suggest points and execute them in the QS
         """
         
+        # Before we do anything check the connection to the Queueserver
+        status = self.RM.status()
+        if status['worker_environment_exists'] == False:
+                
+            raise ValueError("The queueserver environment is not open")
+                
+        # Form the problem and start suggesting points to measure at 
         self.optimization_problem = self.to_optimization_problem()
         self.num_itterations = iterations
         self.n_points = n_points
@@ -239,7 +249,7 @@ class BlopQserverAgent(BlopAxAgent):
         self.current_itteration = self.current_itteration + 1
         
         # Get the trials to perform     
-        self.trials = self.optimization_problem._optimizer._client.get_next_trials(self.n_points)
+        self.trials = self.optimization_problem.optimizer._client.get_next_trials(self.n_points)
         
         # acquire the values from those trials
         self.agent_suggestion_uid = self.acquire(self.trials)
@@ -284,12 +294,13 @@ class BlopQserverAgent(BlopAxAgent):
                 md=kwargs["md"],
             )
 
+
             # Send the plan to the Run Engine Manager
             r = self.RM.item_add(item)
             logger.debug(
                 f"Sent http-server request for trials {trials} with agent_suggestion_uid= {agent_suggestion_uid}\n.Received reponse: {r}"
             )
-
+    
             # If the queue should start automatically, then start the queue.
             if self._queue_autostart:
                 logger.debug("Waiting for Queue to be idle or paused")
