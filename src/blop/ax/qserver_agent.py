@@ -14,7 +14,7 @@ from bluesky_queueserver_api import BPlan
 from bluesky_queueserver_api.zmq import REManagerAPI
 from numpy.typing import ArrayLike
 from ophyd import Signal
-from tiled.queries import Eq
+
 from ax.api.types import TOutcome, TParameterization
 
 from blop import DOF, Objective
@@ -93,7 +93,7 @@ class BlopQserverAgent(BlopAxAgent):
 
     Attributes
     ----------
-    readables : list[Readable]
+    sensors : list[Readable]
         The readables to use for acquisition. These should be the minimal set
         of readables that are needed to compute the objectives.
     dofs : list[DOF]
@@ -172,11 +172,7 @@ class BlopQserverAgent(BlopAxAgent):
         #self.client = Client()
         self.digestion = digestion
         self.digestion_kwargs = digestion_kwargs or {}
-        
-        
-        # I store this for data access although I need to check which version of Tiled I am using
-        self.db = db
-                
+
         # Instantiate an object that can communicate with the queueserver
         self.RM = REManagerAPI(zmq_control_addr=qserver_control_addr, zmq_info_addr=qserver_info_addr)  # To Do, Add arguements to class init
 
@@ -191,13 +187,14 @@ class BlopQserverAgent(BlopAxAgent):
         self._listen_to_events = True
 
         # Should new suggestions be made automatically until all of the trials are complete?
-        self.learn_continuous_suggestion = True
+        self.continuous_suggestion = True
 
         # Learning parameters
-        self.learn_num_itterations = 30
-        self.learn_current_itteration = 0
-        self.learn_n_points = 1
-        self.learn_route = True
+        self.num_itterations = 30
+        self.n_points = 1
+        
+        # Variables used to keep track of the current optimization
+        self.current_itteration = 0
         self.agent_suggestion_uid = None
         self.trials = None
         self.acquisition_finished = False
@@ -212,35 +209,27 @@ class BlopQserverAgent(BlopAxAgent):
         """
         
         if self._listen_to_events:
+            
+            # Mark the current acquisition as finished
             self.acquisition_finished = True
             logger.info("Stop Document found")
+         
+            # Evaluate it with the evaluation function      
+            outcomes = self.optimization_problem.evaluation_function(self.agent_suggestion_uid, self.trials)
             
-            # We can't just take any stop document, there could be other things in the queue, so we search for it
-            
-            # get the (list of) run which contains the data we want. We can get this by calling search
-            results_db = self.db.search(Eq("agent_suggestion_uid", self.agent_suggestion_uid))
-            
-            # Check that there is 1 and only one entry
-            if len(results_db) == 1:
-  
- 
-                results_run =  results_db[-1]
-                uid = results_run.metadata['start']['uid']
-                              
-                outcomes = self.optimization_problem.evaluation_function(uid, self.trials)
-                
-                # Learn from the data
-                self.optimization_problem.optimizer.ingest(outcomes)
+            # ingest the data, updating the model of the optimizer
+            self.optimization_problem.optimizer.ingest(outcomes)
 
-                # After this is complete, call gen_next_trials again if required
-                if self.learn_continuous_suggestion:
-                    if self.learn_current_itteration < self.learn_num_itterations:
-                        logger.info("making another suggestion")
-                        self.suggest()
-                    else:
-                        self.learn_current_itteration = 0
-                        logger.info("made all required suggestions")
-        
+            # After this is complete, call gen_next_trials again if required
+            if self.continuous_suggestion:
+                if self.current_itteration < self.num_itterations:
+                    logger.info("making another suggestion")
+                    self.suggest()
+                else:
+                    self.current_itteration = 0
+                    logger.info("made all required suggestions")
+                        
+                
     def optimize(self, iterations = 1, n_points = 1):
         
         """
@@ -248,31 +237,31 @@ class BlopQserverAgent(BlopAxAgent):
         """
         
         self.optimization_problem = self.to_optimization_problem()
-        self.learn_num_itterations = iterations
+        self.num_itterations = iterations
         self.n_points = n_points
               
         self.suggest()
          
     def suggest(self):
         """
-        ask for suggestions, then send the values to the queueserver (like one half of learn)
+        get suggestions from the optimizer, then send them to the plan on the queueserver
 
         """
 
         # record this itteration
-        self.learn_current_itteration = self.learn_current_itteration + 1
+        self.current_itteration = self.current_itteration + 1
         
         # Get the trials to perform     
-        self.trials = self._optimizer._client.get_next_trials(self.learn_n_points)
+        self.trials = self.optimization_problem._optimizer._client.get_next_trials(self.n_points)
         
         # acquire the values from those trials
-        logger.info("sending suggestion to acquire")
         self.agent_suggestion_uid = self.acquire(self.trials)
+        logger.info("sending suggestion {self.current_itteration} to queueserver with suggestion id: {self.agent_suggestion_uid}")
 
-    def acquire(self, trials: dict[int, TParameterization], per_step: PerStep | None = None):
+    def acquire(self, trials: dict[int, TParameterization] | None = None):
         """Acquire and digest according to the acquisition and digestion plans.
 
-        This method will send a plan to the queueserver and block until the stop document of that plan is recieved
+        This method will send a plan to the queueserver. It doesn't block. 
 
 
         Parameters
@@ -285,21 +274,26 @@ class BlopQserverAgent(BlopAxAgent):
             self.acquisition_finished = False
 
             # Create a unique identifier which will connect the children to the parent batch
-            # This batch ID will be used by all runs from this request by the agent. It will be used by the digestion function later to work out what happened.
+            # This batch ID will be used by all runs from this request by the agent. 
+            # It will be used by the EvaluationFunction later to work out what happened.
 
             agent_suggestion_uid = str(uuid.uuid4())
             kwargs = {}
             kwargs.setdefault("md", {})
+            
+            # Add the unique suggestion ID so we can find this run later
             kwargs["md"]["agent_suggestion_uid"] = agent_suggestion_uid
+            
+            # Add the suggestion _id key so we can work out which number we are on later
             suggestions = [{ "_id": trial_index, **parameterization, }  for trial_index, parameterization in trials.items()  ]
             kwargs['md']["blop_suggestions"]= suggestions
         
-            # ensure the values of inputs are float 64, since weirdly float 32 cannot be serialized by json to be sent to qserver
+            # Create the BPlan object to send to the queue. Convert dofs to strings
             item = BPlan(
                 self.acquisition_plan,
                 readables = self.sensors,
                 dofs = [dof.name for dof in self.dofs],
-                trials = trials,          
+                trials = trials,
                 md=kwargs["md"],
             )
 
