@@ -87,91 +87,78 @@ DigestionFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome
 class BlopQserverAgent(BlopAxAgent):
     
     """
-    An agent interface that uses Ax as the backend for optimization and experiment tracking.
-    
-    This agent connects to a Qserver to submit plans, rather than emmitting messages to be consumed directly
+    An interface that uses Ax as the backend for optimization and experiment tracking.
 
-    Attributes
+    The Agent is the main entry point for setting up and running Bayesian optimization
+    using Blop. It coordinates the DOFs, objectives, evaluation function, and optimizer
+    to perform intelligent exploration of the parameter space.
+    
+    This class sends JSON strings to a queueserver, rather than emmitting messages to be 
+    consumed directly by a RE. 
+    
+    
+    Parameters
     ----------
-    sensors : list[Readable]
-        The readables to use for acquisition. These should be the minimal set
-        of readables that are needed to compute the objectives.
-    dofs : list[DOF]
-        The degrees of freedom that the agent can control, which determine the output of the model.
-    objectives : list[Objective]
+    sensors : Sequence[Sensor]
+        The sensors to use for acquisition. These should be the minimal set
+        of sensors that are needed to compute the objectives.
+    dofs : Sequence[DOF]
+        The degrees of freedom that the agent can control, which determine the search space.
+    objectives : Sequence[Objective]
         The objectives which the agent will try to optimize.
-    db : Broker | Container
-        The databroker or tiled instance to read back data from a Bluesky run.
-    dof_constraints : Sequence[DOFConstraint], optional
+    evaluation : EvaluationFunction
+        The function to evaluate acquired data and produce outcomes.
+    acquisition_plan : str, optional
+        The name of the plan on the queueserver
+    dof_constraints : Sequence[DOFConstraint] | None, optional
         Constraints on DOFs to refine the search space.
-    digestion : DigestionFunction
-        The function to produce objective values from a dataframe of acquisition results.
-    digestion_kwargs : dict
-        Additional keyword arguments to pass to the digestion function.
-        
-    Example
-    ---------
-    
-    dofs = [
-        DOF(name='motor1', search_domain=(-6.0, 6.0)),
-        DOF(name='motor2' ,search_domain=(-6.0, 6.0)),
-    
-    ]
+    outcome_constraints : Sequence[OutcomeConstraint] | None, optional
+        Constraints on outcomes to be satisfied during optimization.
+    qserver_control_addr : str, default="tcp://localhost:60615"
+        Queueserver Control Address
+    qserver_info_addr : str, default="tcp://localhost:60625"
+        Queueserver Info Address
+    zmq_consumer_ip : str, default= "localhost"
+        The IP address of the ZMQ proxy to listen for stop document
+    zmq_consumer_port : str, default= "5578"
+        The PORT of the ZMQ proxy to listen for stop document
+    **kwargs : Any
+        Additional keyword arguments to configure the Ax experiment.
 
-    objectives = [
-        Objective(name="himmel_det", transform = 'log',target="min"),
-    
-    ]
+    Notes
+    -----
+    For more complex setups, you can configure the Ax client directly via ``self.ax_client``.
 
-    readables = ['himmel_det']
-    
-    agent = BlopQserverAgent(
-                readables=readables,
-                dofs=dofs,
-                qserver_control_addr="tcp://localhost:60615",
-                qserver_info_addr="tcp://localhost:60625",
-                zmq_consumer_ip= "localhost",
-                zmq_consumer_port= "5578",
-                objectives=objectives,
-                acquisition_plan= "acquire",
-                db=db,
-            )
-            
-    
-    agent.RM.environment_open()
+    For complete working examples of creating and using an Agent, see the tutorial
+    documentation, particularly :doc:`/tutorials/qserver-experiment`.
 
-    agent.optimize(iterations=30, n_points=1)
+    
     """
 
     def __init__(
         self,
-        readables: Sequence[Readable],
+        sensors: Sequence[Sensor],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        db: Broker | Container,
-        qserver_control_addr=None,
-        qserver_info_addr:str=None,
-        zmq_consumer_ip:str=None,
-        zmq_consumer_port:str=None,
+        evaluation:EvaluationFunction=None,
         acquisition_plan: str = "acquire",
         dof_constraints: Sequence[DOFConstraint] = None,
-        digestion: DigestionFunction = default_digestion_function,
-        digestion_kwargs: dict | None = None,
-        evaluation:EvaluationFunction=None
+        qserver_control_addr:str="tcp://localhost:60615",
+        qserver_info_addr:str="tcp://localhost:60625",
+        zmq_consumer_ip:str="localhost",
+        zmq_consumer_port:str="5578",
+        **kwargs: Any,
     ):
         
         super().__init__(
-            sensors=readables,
+            sensors=sensors,
             dofs=dofs,
             objectives=objectives,
             evaluation=evaluation,
+            acquisition_plan=acquisition_plan,
             dof_constraints=dof_constraints,
-            acquisition_plan=acquisition_plan
-        )
-        
-        #self.client = Client()
-        self.digestion = digestion
-        self.digestion_kwargs = digestion_kwargs or {}
+            **kwargs,
+        )   
 
         # Instantiate an object that can communicate with the queueserver
         self.RM = REManagerAPI(zmq_control_addr=qserver_control_addr, zmq_info_addr=qserver_info_addr)  # To Do, Add arguements to class init
