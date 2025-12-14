@@ -324,5 +324,5 @@ class BlopQserverAgent(BlopAxAgent):
         """
         Stop the agent if it is running
         """
-        self.self._queue_autostart = False
+        self._queue_autostart = False
         self._listen_to_events = False
