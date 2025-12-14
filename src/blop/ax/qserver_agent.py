@@ -216,18 +216,18 @@ class BlopQserverAgent(BlopAxAgent):
         # Check that the devices we want to interact with are in the queueserver environment
         res = self.RM.devices_allowed()
         for dof in self.dofs:
-            if dof.name not in res['devices_allowed']:
+            if dof.name not in res["devices_allowed"]:
                 raise ValueError(f"The device {dof.name} is not in the Queueserver Environment")
-            
+
         for sensor in self.sensors:
-            if sensor not in res['devices_allowed']:
+            if sensor not in res["devices_allowed"]:
                 raise ValueError(f"The device {sensor} is not in the Queueserver Environment")
-        
+
         # Check that the plan we want to call is in the queueserver environment
         res = self.RM.plans_allowed()
-        if self._acquisition_plan not in res['plans_allowed']:
-            raise ValueError(f'The plan {self._acquisition_plan} is not in the Queueserver Environment')
-        
+        if self._acquisition_plan not in res["plans_allowed"]:
+            raise ValueError(f"The plan {self._acquisition_plan} is not in the Queueserver Environment")
+
         # Form the problem and start suggesting points to measure at
         self.optimization_problem = self.to_optimization_problem()
         self.num_itterations = iterations
@@ -254,9 +254,8 @@ class BlopQserverAgent(BlopAxAgent):
         )
 
     def acquire_baseline(self, parameterization: dict[str, Any] | None = None):
-        
-        logger.info('This is not implemented for the qserver agent')
-        
+        logger.info("This is not implemented for the qserver agent")
+
     def acquire(self, trials: dict[int, TParameterization] | None = None):
         """
         Acquire the new data from the system by submitting the suggested
