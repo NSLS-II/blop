@@ -13,7 +13,7 @@ from bluesky_queueserver_api import BPlan
 from bluesky_queueserver_api.zmq import REManagerAPI
 
 from ..protocols import EvaluationFunction, Sensor
-from .agent.agent import Agent as BlopAxAgent  # type: ignore[import-untyped]
+from .agent import Agent as BlopAxAgent  # type: ignore[import-untyped]
 from .dof import DOF, DOFConstraint
 from .objective import Objective
 
@@ -150,7 +150,7 @@ class BlopQserverAgent(BlopAxAgent):
         )  # To Do, Add arguements to class init
 
         # Should plans be submitted and automatically started, or not?
-        self._queue_autostart = False
+        self._queue_autostart = True
 
         # Instantiate an object that will listen for start and stop documents and call a method on the stop document
         self.zmq_consumer = ZMQConsumer(zmq_consumer_ip, zmq_consumer_port, callback=self._stop_doc_callback)
@@ -186,9 +186,9 @@ class BlopQserverAgent(BlopAxAgent):
             logger.info("A stop document has been received, evaluating")
 
             # Evaluate it with the evaluation function
-            outcomes = self.optimization_problem.evaluation_function(self.agent_suggestion_uid, self.trials)
+            outcomes = self.optimization_problem.evaluation_function(uid=self.agent_suggestion_uid, suggestions=self.trials)
 
-            logger.debug(f"successfully evaluated id: {self.agent_suggestion_uid}")
+            logger.info(f"successfully evaluated id: {self.agent_suggestion_uid}")
 
             self.acquisition_finished = True
             # ingest the data, updating the model of the optimizer
@@ -213,6 +213,21 @@ class BlopQserverAgent(BlopAxAgent):
         if not status["worker_environment_exists"]:
             raise ValueError("The queueserver environment is not open")
 
+        # Check that the devices we want to interact with are in the queueserver environment
+        res = self.RM.devices_allowed()
+        for dof in self.dofs:
+            if dof.name not in res['devices_allowed']:
+                raise ValueError(f"The device {dof.name} is not in the Queueserver Environment")
+            
+        for sensor in self.sensors:
+            if sensor not in res['devices_allowed']:
+                raise ValueError(f"The device {sensor} is not in the Queueserver Environment")
+        
+        # Check that the plan we want to call is in the queueserver environment
+        res = self.RM.plans_allowed()
+        if self._acquisition_plan not in res['plans_allowed']:
+            raise ValueError(f'The plan {self._acquisition_plan} is not in the Queueserver Environment')
+        
         # Form the problem and start suggesting points to measure at
         self.optimization_problem = self.to_optimization_problem()
         self.num_itterations = iterations
@@ -235,9 +250,13 @@ class BlopQserverAgent(BlopAxAgent):
         # acquire the values from those trials
         self.agent_suggestion_uid = self.acquire(self.trials)
         logger.info(
-            "sending suggestion {self.current_itteration} to queueserver with suggestion id: {self.agent_suggestion_uid}"
+            f"sending suggestion {self.current_itteration} to queueserver with suggestion id: {self.agent_suggestion_uid}"
         )
 
+    def acquire_baseline(self, parameterization: dict[str, Any] | None = None):
+        
+        logger.info('This is not implemented for the qserver agent')
+        
     def acquire(self, trials: dict[int, TParameterization] | None = None):
         """
         Acquire the new data from the system by submitting the suggested
@@ -301,3 +320,10 @@ class BlopQserverAgent(BlopAxAgent):
             raise interrupt
 
         return agent_suggestion_uid
+
+    def stop(self):
+        """
+        Stop the agent if it is running
+        """
+        self.self._queue_autostart = False
+        self._listen_to_events = False

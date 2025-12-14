@@ -4,7 +4,6 @@ from . import utils  # noqa F401
 from .agent import Agent  # noqa F401
 from .dofs import DOF as DOF
 from .objectives import Objective  # noqa F401
-from .qserver_agent import BlopQserverAgent  # noqa F401
 
 try:
     from ._version import __version__
