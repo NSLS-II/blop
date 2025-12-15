@@ -13,7 +13,7 @@ kernelspec:
 
 # Himmelblau Queueserver Demo
 
-In this demo we will make the himmelblau example, but with ophyd devices inside a remote qserer. The queueserver allows us to run the agent in another process, seperated from the experiment environment. The devices in the qserver include:
+In this demo we will make the himmelblau example, but with ophyd devices inside a remote qserver. The queueserver allows us to run the agent in another process, seperated from the experiment environment. The devices in the qserver include:
 
 - A detector whose output as a function of x,y is the himmelblau function
 - a pair sim motors which the detector uses as inputs
