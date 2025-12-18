@@ -13,14 +13,14 @@ kernelspec:
 
 # Himmelblau Queueserver Demo
 
-In this demo we will make the himmelblau example, but with ophyd devices inside a remote qserer. The queueserver allows us to run the agent in another process, seperated from the experiment environment. The devices in the qserver include:
+In this demo we will make the himmelblau example, but with ophyd devices inside a remote Queueserver. The Queueserver allows us to run the agent in another process, seperated from the experiment environment. The devices in the Queueserver include:
 
 - A detector whose output is a function of x,y is the himmelblau function
 - a pair sim motors which the detector uses as inputs
 
 ## Queueserver Configuration
 
-The queueserver should have a RE which sends documents to a ZMQ buffer and then a Tiled server. In this example the queueserver is communicated with over ZMQ.
+The Queueserver should have a RE which sends documents to a ZMQ buffer and then a Tiled server. In this example the Queueserver is communicated with over ZMQ.
 
 We will:
 
@@ -157,7 +157,7 @@ himmel_det = SynHimmelblauDetector( "himmel_det",
 
 ### Plans in the Queueserver Environment
 
-The qserver environment has the plan `acquire` which wraps the `list_scan` plan like this:
+The Queueserver environment has the plan `acquire` which wraps the `list_scan` plan like this:
 
 ```python
 from blop.plans import TParameterization, Movable, TParameterValue, defaultdict
@@ -203,7 +203,7 @@ def acquire(readables, dofs, trials:dict, md=None):
 
 The remote blop agent needs to know:
 
-- The details of the queueserver (to send instructions to)
+- The details of the Queueserver (to send instructions to)
 - The details of the tiled server (to get data from)
 - The details of the ZMQ buffer (to know when the instructions are complete)
 
@@ -220,7 +220,7 @@ tiled_client = from_uri("http://localhost:8000", api_key='secret')
 
 Just as in the other tutorials, we have to configure the DOFS, Objectives and Sensors. 
 
-Unlike the other tutorials, all of these are now just strings because the objects to the real devices exist only in the queueserver environment.
+Unlike the other tutorials, all of these are now just strings because the objects to the real devices exist only in the Queueserver environment.
 
 ```{code-cell} ipython3
 from blop.ax.dof import RangeDOF
@@ -237,13 +237,13 @@ objectives = [
   
 ]
 
-# This is the list of devices we want to read from in the queueserver env
+# This is the list of devices we want to read from in the Queueserver env
 sensors = ['himmel_det']
 ```
 
 ### Making an Evaluation Function
 
-After the agent has suggested points and run them on the queueserver, we want to update our model with the results. The EvaluationFunction defines how data is read from a bluesky run and the objective values are created. 
+After the agent has suggested points and run them on the Queueserver, we want to update our model with the results. The EvaluationFunction defines how data is read from a bluesky run and the objective values are created. 
 
 It's in this function that for example a log of the data can be applied. 
 
@@ -253,7 +253,7 @@ This function is passed to the agent and called when a correct stop document is 
 from blop.protocols import EvaluationFunction
 from tiled.client.container import Container
 from tiled.queries import Eq
-from blop.ax import QserverAgent 
+from blop.ax import QueueserverAgent 
 import numpy as np
 
 class DetectorEvaluation(EvaluationFunction):
@@ -273,7 +273,7 @@ class DetectorEvaluation(EvaluationFunction):
         if len(results_db) == 1:
             run =  results_db[-1]
                
-            # Read the data from the detector in the qserver environment
+            # Read the data from the detector in the Queueserver environment
             himmel_det = run["primary/data/himmel_det"].read()
 
             # Read the suggestion ID's from the metadata
@@ -301,14 +301,14 @@ Finally we put everything together, instantiate the agent and start an optimizat
 
 ```{code-cell} ipython3
 
-agent = QserverAgent(
+agent = QueueserverAgent(
     sensors=sensors,                                # The list of sensors to read from
     dofs=dofs,                                      # The list of DOFs to search over 
     objectives=objectives,                          # The list of objectives to be optimized
     evaluation= DetectorEvaluation(tiled_client),   # The function to create objective function values
-    acquisition_plan= "acquire",                    # The name of the plan in the queueserver environment
-    qserver_control_addr="tcp://localhost:60615",
-    qserver_info_addr="tcp://localhost:60625",
+    acquisition_plan= "acquire",                    # The name of the plan in the Queueserver environment
+    Queueserver_control_addr="tcp://localhost:60615",
+    Queueserver_info_addr="tcp://localhost:60625",
     zmq_consumer_ip= "localhost",
     zmq_consumer_port= "5578", 
 )
@@ -340,13 +340,13 @@ print(f"The environment status is: {status['worker_environment_exists']}")
 ### Run the optimization task
 
 ```{code-cell} ipython3
-# Start an optimization run. Note that this is not blocking because it is interacting with the remote queueserver. 
+# Start an optimization run. Note that this is not blocking because it is interacting with the remote Queueserver. 
 agent.optimize(iterations=15, n_points=1)
 ```
 
 ## Data Evaluation
 
-Since the `QserverAgent` class is just a child of the `Agent` class, all of the useful methods are still available
+Since the `QueueserverAgent` class is just a child of the `Agent` class, all of the useful methods are still available
 
 ```{code-cell} ipython3
 agent.plot_objective("motor1", "motor2", "himmel_det_objective")
