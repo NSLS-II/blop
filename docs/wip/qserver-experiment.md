@@ -243,11 +243,9 @@ sensors = ['himmel_det']
 
 ### Making an Evaluation Function
 
-After the agent has suggested points and run them on the Queueserver, we want to update our model with the results. The EvaluationFunction defines how data is read from a bluesky run and the objective values are created. 
+After the agent has suggested points and run them on the Queueserver, we want to update our model with the results. The EvaluationFunction defines how data is read from a bluesky run and the objective values are created. Unlike the blop agent which produces messages to be consumed by a run engine, the blop Queueserver agent is operating with a process which it doesn't, or at least might not, solely control. It's possible that the agent will submit plans to a queue that is not empty. We therefore have to search for a specific key value pair in a stop document. 
 
-It's in this function that for example a log of the data can be applied. 
-
-This function is passed to the agent and called when a correct stop document is received. 
+The EvaluationFunction is called every time a stop document is recieved. It must include some check to see if this particular stop document is from the plan that was submitted previously by the agent. The `BlopQserverAgent` adds a key `agent_suggestion_uid` to the start document `md` dict. This `agent_suggestion_uid` is passed to the `EvaluationFunction` as the argument `uid`.
 
 ```{code-cell} ipython3
 from blop.protocols import EvaluationFunction
