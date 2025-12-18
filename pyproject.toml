@@ -25,6 +25,7 @@ dependencies = [
   "python-tsp",
   "ax-platform>=1.0.0,<1.1",
   "bluesky>=1.14.2",
+  "bluesky-queueserver-api>=0.0.12",
   "databroker>=1.2.0,<1.3",
   "tiled[all]>=0.1.1",
   "torch",
