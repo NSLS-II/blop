@@ -6,6 +6,11 @@ import gpytorch  # type: ignore[import-untyped]
 import torch  # type: ignore[import-untyped]
 from botorch.models.gp_regression import SingleTaskGP  # type: ignore[import-untyped]
 from botorch.models.multitask import MultiTaskGP  # type: ignore[import-untyped]
+from botorch.models.transforms.input import InputTransform
+from botorch.models.transforms.outcome import OutcomeTransform
+from botorch.utils.types import DEFAULT, _DefaultType
+from gpytorch.likelihoods.likelihood import Likelihood
+from torch import Tensor
 
 from . import kernels
 
@@ -137,6 +142,11 @@ class LatentGP(SingleTaskGP):
         self,
         train_X: torch.Tensor,
         train_Y: torch.Tensor,
+        train_Tvar: torch.Tensor = None,
+        train_Yvar: Tensor | None = None,
+        likelihood: Likelihood | None = None,
+        outcome_transform: OutcomeTransform | _DefaultType | None = DEFAULT,
+        input_transform: InputTransform | None = None,
         skew_dims: bool | list[tuple[int, ...]] = True,
         *args: Any,
         **kwargs: Any,

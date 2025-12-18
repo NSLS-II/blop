@@ -50,10 +50,10 @@ class LatentKernel(gpytorch.kernels.Kernel):
                 i = dim * torch.ones(j.shape).long()
                 skew_group_submatrix_indices.append(torch.cat((i, j, k), dim=0))
 
-        self.diag_matrix_indices: list[torch.Tensor] = [
+        self.diag_matrix_indices: list[torch.Tensor] = (
             torch.kron(torch.arange(self.num_outputs), torch.ones(self.num_inputs)).long(),
             *2 * [torch.arange(self.num_inputs).repeat(self.num_outputs)],
-        ]
+        )
 
         self.skew_matrix_indices: tuple[torch.Tensor, ...] = (
             tuple(torch.cat(skew_group_submatrix_indices, dim=1))
