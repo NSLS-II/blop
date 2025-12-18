@@ -1,3 +1,16 @@
+---
+jupytext:
+  text_representation:
+    extension: .md
+    format_name: myst
+    format_version: 0.13
+    jupytext_version: 1.18.1
+kernelspec:
+  display_name: .venv
+  language: python
+  name: python3
+---
+
 # Himmelblau Queueserver Demo
 
 In this demo we will make the himmelblau example, but with ophyd devices inside a remote qserer. The queueserver allows us to run the agent in another process, seperated from the experiment environment. The devices in the qserver include:
