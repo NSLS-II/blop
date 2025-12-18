@@ -67,8 +67,6 @@ class ZMQConsumer:
         self._zmq_thread.start()
 
 
-P = ParamSpec("P")
-DigestionFunction = Callable[Concatenate[int, dict[str, list[Any]], P], TOutcome]
 
 
 class BlopQserverAgent(BlopAxAgent):
