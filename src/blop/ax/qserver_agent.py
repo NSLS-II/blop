@@ -3,10 +3,10 @@ import logging
 ###
 import threading
 import uuid
-from collections.abc import Callable, Sequence
-from typing import Any, Concatenate, ParamSpec
+from collections.abc import Sequence
+from typing import Any
 
-from ax.api.types import TOutcome, TParameterization
+from ax.api.types import TParameterization
 from bluesky.callbacks import CallbackBase
 from bluesky.callbacks.zmq import RemoteDispatcher
 from bluesky_queueserver_api import BPlan
@@ -65,8 +65,6 @@ class ZMQConsumer:
 
         self._zmq_thread = threading.Thread(target=self.zmq_consumer.start, name="zmq-consumer", daemon=True)
         self._zmq_thread.start()
-
-
 
 
 class BlopQserverAgent(BlopAxAgent):
