@@ -9,8 +9,9 @@ from bluesky.protocols import Movable, Readable, Reading
 from bluesky.utils import Msg, MsgGenerator, plan
 from ophyd import Signal  # type: ignore[import-untyped]
 
-from .dofs import DOF
-from .protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
+from ..dofs import DOF
+from ..protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
+from .utils import route_suggestions
 
 
 def _unpack_for_list_scan(suggestions: list[dict], actuators: Sequence[Actuator]) -> list[Any]:
@@ -83,6 +84,7 @@ def default_acquire(
 def optimize_step(
     optimization_problem: OptimizationProblem,
     n_points: int = 1,
+    route: bool = True,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
@@ -103,6 +105,10 @@ def optimize_step(
     optimizer = optimization_problem.optimizer
     actuators = optimization_problem.actuators
     suggestions = optimizer.suggest(n_points)
+
+    if route and (n_points > 1):
+        suggestions = route_suggestions(suggestions)
+
     uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
     optimizer.ingest(outcomes)
