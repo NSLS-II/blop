@@ -38,6 +38,7 @@ from .digestion import default_digestion_function
 from .dofs import DOF, DOFList
 from .objectives import Objective, ObjectiveList
 from .plans import default_acquisition_plan
+from .plans.utils import get_route_index
 
 logger = logging.getLogger("blop")
 
@@ -563,8 +564,8 @@ class BaseAgent:
 
         if route and n > 1:
             current_points = np.array([dof.readback for dof in active_dofs if not dof.read_only])
-            travel_expenses = np.array([dof.travel_expense for dof in active_dofs if not dof.read_only])
-            routing_index = utils.route(current_points, points, dim_weights=travel_expenses)
+            route_points = np.concatenate([current_points[None], points], axis=0)
+            routing_index = get_route_index(route_points)[1:] - 1
             points = points[routing_index]
 
         if upsample > 1:

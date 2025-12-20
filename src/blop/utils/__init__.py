@@ -4,48 +4,10 @@ import botorch  # type: ignore[import-untyped]
 import numpy as np
 import scipy as sp  # type: ignore[import-untyped]
 import torch
-from python_tsp.heuristics import solve_tsp_simulated_annealing  # type: ignore[import-untyped]
 
 from . import functions  # noqa
 
 warnings.warn("The utils module is deprecated and will be removed in Blop v1.0.0.", DeprecationWarning, stacklevel=2)
-
-
-def get_route_index(
-    points: np.ndarray, start_point: np.ndarray | None = None, dim_weights: float | np.ndarray = 1.0
-) -> np.ndarray:
-    """
-    Returns the indices of the most efficient way to visit `points`, starting from `start_point`.
-    """
-
-    if start_point is None:
-        route_points = points
-    else:
-        route_points = np.concatenate([start_point[None], points], axis=0)
-
-    points_dim_range = np.ptp(route_points, axis=0)
-    dim_mask = points_dim_range > 0
-    scaled_points = (route_points - route_points.min(axis=0)) * (
-        dim_weights / np.where(points_dim_range > 0, points_dim_range, 1)
-    )
-
-    # compute distance matrix
-    D = np.sqrt(np.square(scaled_points[:, None, :] - scaled_points[None, :, :]).sum(axis=-1))
-
-    if start_point is not None:
-        # we don't have to return to the start, so make the cost zero
-        # D[0] = 0.
-        D[:, 0] = 0.0
-
-    if dim_mask.sum() == 0:
-        return np.arange(len(points))
-
-    permutation, _ = solve_tsp_simulated_annealing(D / np.where(D > 0, D, np.inf).min())
-
-    if start_point is None:
-        return np.array(permutation)  # ignore the starting point since we're there already
-    else:
-        return np.array(permutation[1:]) - 1  # ignore the starting point since we're there already
 
 
 def get_beam_stats(image: np.ndarray, threshold: float = 0.5) -> dict[str, float | np.ndarray]:
@@ -144,30 +106,6 @@ def mprod(*M: np.ndarray) -> np.ndarray:
     for m in M[1:]:
         res = np.matmul(res, m)
     return res
-
-
-def route(start_point: np.ndarray, points: np.ndarray, dim_weights: float | np.ndarray = 1) -> np.ndarray:
-    """
-    Returns the indices of the most efficient way to visit `points`, starting from `start_point`.
-    """
-
-    total_points = np.concatenate(
-        [start_point[None], points], axis=0
-    )  # add the starting point, even though we won't go there
-    points_dim_range = np.ptp(total_points, axis=0)
-    dim_mask = points_dim_range > 0
-    scaled_points = (total_points - total_points.min(axis=0)) * (
-        dim_weights / np.where(points_dim_range > 0, points_dim_range, 1)
-    )
-    D = np.sqrt(np.square(scaled_points[:, None, :] - scaled_points[None, :, :]).sum(axis=-1))
-    D = (D / np.where(D > 0, D, np.inf).min()).astype(int)
-    D[:, 0] = 0  # zero cost to return, since we don't care where we end up
-
-    if dim_mask.sum() == 0:
-        return np.arange(len(points))
-
-    permutation, _ = solve_tsp_simulated_annealing(D / np.where(D > 0, D, np.inf).min())
-    return np.array(permutation[1:]) - 1  # ignore the starting point since we're there already
 
 
 def get_movement_time(x: float | np.ndarray, v_max: float, a: float) -> float | np.ndarray:

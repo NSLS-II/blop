@@ -22,7 +22,6 @@ maintainers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-  "python-tsp",
   "ax-platform>=1.0.0,<1.1",
   "bluesky>=1.14.2",
   "bluesky-queueserver-api>=0.0.12",
@@ -39,8 +38,7 @@ dependencies = [
   "h5py",
   "area-detector-handlers",
   "bluesky-tiled-plugins",
-  "networkx~=2.1",  # FIXME: Required by python-tsp
-  "tabulate~=0.8.7",  # FIXME: Required by python-tsp
+  "networkx",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
