@@ -109,7 +109,7 @@ def optimize_step(
     actuators = optimization_problem.actuators
     suggestions = optimizer.suggest(n_points)
 
-    if route and (n_points > 1):
+    if route and n_points > 1:
         suggestions = route_suggestions(suggestions)
 
     uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
