@@ -1,6 +1,6 @@
 from collections.abc import Iterable
 
-import gpytorch  # type: ignore[import-untyped]
+import gpytorch
 import numpy as np
 import torch
 

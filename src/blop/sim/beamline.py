@@ -14,7 +14,7 @@ from ophyd import Device, Kind, Signal  # type: ignore[import-untyped]
 from ophyd.sim import NullStatus, new_uid  # type: ignore[import-untyped]
 from ophyd.utils import make_dir_tree  # type: ignore[import-untyped]
 
-from ..utils import get_beam_stats
+from . import get_beam_stats
 from .handlers import ExternalFileReference
 
 
