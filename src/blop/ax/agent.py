@@ -1,11 +1,9 @@
 import logging
-import warnings
 from collections.abc import Sequence
 from typing import Any
 
 from ax import Client
 from ax.analysis import AnalysisCard, ContourPlot
-from ax.api.types import TOutcome, TParameterization
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
@@ -173,50 +171,6 @@ class Agent:
         """
         return self._optimizer.suggest(num_points)
 
-    def ask(self, n: int = 1) -> dict[int, TParameterization]:
-        """
-        Get the next trial(s) to run.
-
-        .. deprecated:: v0.8.1
-            Use suggest instead.
-
-        Parameters
-        ----------
-        n : int, optional
-            The number of trials to get. Higher values can lead to more efficient data acquisition,
-            but slower optimization progress.
-
-        Returns
-        -------
-        dict[int, TParameterization]
-            A dictionary mapping trial indices to their suggested parameterizations.
-        """
-        warnings.warn("ask is deprecated. Use suggest instead.", DeprecationWarning, stacklevel=2)
-        return self.ax_client.get_next_trials(n)
-
-    def _complete_trials(
-        self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None, **kwargs: Any
-    ) -> None:
-        """
-        Complete trial(s) by providing the outcomes.
-
-        Parameters
-        ----------
-        trials : dict[int, TParameterization]
-            A dictionary mapping trial indices to their suggested parameterizations.
-        outcomes : dict[int, TOutcome], optional
-            A dictionary mapping trial indices to their outcomes. If not provided, the trial will be completed
-            with no outcomes.
-
-        See Also
-        --------
-        ax.Client.complete_trial : The Ax method to complete a trial.
-        """
-        for trial_index in trials.keys():
-            self.ax_client.complete_trial(
-                trial_index=trial_index, raw_data=outcomes[trial_index] if outcomes is not None else None, **kwargs
-            )
-
     def ingest(self, points: list[dict]) -> None:
         """
         Ingest evaluation results into the optimizer.
@@ -239,50 +193,6 @@ class Agent:
         For complete examples, see :doc:`/how-to-guides/attach-data-to-experiments`.
         """
         self._optimizer.ingest(points)
-
-    def tell(self, trials: dict[int, TParameterization], outcomes: dict[int, TOutcome] | None = None) -> None:
-        """
-        Complete trial(s) by providing the outcomes.
-
-        .. deprecated:: v0.8.1
-            Use ingest instead.
-
-        Parameters
-        ----------
-        trials : dict[int, TParameterization]
-            A dictionary mapping trial indices to their suggested parameterizations.
-        outcomes : dict[int, TOutcome], optional
-            A dictionary mapping trial indices to their outcomes. If not provided, the trial will be completed
-            with no outcomes.
-
-        See Also
-        --------
-        ax.Client.complete_trial : The Ax method to complete a trial.
-        """
-        warnings.warn("tell is deprecated. Use ingest instead.", DeprecationWarning, stacklevel=2)
-        return self._complete_trials(trials=trials, outcomes=outcomes)
-
-    def learn(self, iterations: int = 1, n: int = 1) -> MsgGenerator[None]:
-        """
-        Learn by running trials and providing the outcomes.
-
-        .. deprecated:: v0.9.0
-            Use ``optimize`` instead.
-
-        Parameters
-        ----------
-        iterations : int, optional
-            The number of optimization iterations to run.
-        n : int, optional
-            The number of trials to run per iteration. Higher values can lead to more efficient data acquisition,
-            but slower optimization progress.
-        """
-        warnings.warn(
-            "learn is deprecated. Use 'optimize' instead.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        yield from self.optimize(iterations=iterations, n_points=n)
 
     def acquire_baseline(self, parameterization: dict[str, Any] | None = None) -> MsgGenerator[None]:
         """
