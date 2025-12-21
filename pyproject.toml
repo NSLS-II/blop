@@ -130,3 +130,11 @@ convention = "numpy"
 # Ignore F821: undefined name '...' since the ipython profiles are dynamically loaded into the namespace
 "docs/**/*" = ["F821"]
 "examples/**/*" = ["F821"]
+
+[tool.pyright]
+ignore = [
+    "src/blop/sim/",
+    "src/blop/tests/",
+    "src/blop/bayesian/",  # TODO: Remove this and fix type errors
+    "src/blop/ax/qserver_agent.py",  # TODO: Remove this and fix type errors
+]

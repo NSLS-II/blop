@@ -1,12 +1,12 @@
 from collections.abc import Iterable
 
 import gpytorch
+import gpytorch.constraints
 import numpy as np
 import torch
 
 
 class LatentKernel(gpytorch.kernels.Kernel):
-    is_stationary: bool = True
     num_outputs: int = 1
     batch_inverse_lengthscale: float = 1e6
 
@@ -37,7 +37,7 @@ class LatentKernel(gpytorch.kernels.Kernel):
 
         # if not all([len(skew_group) >= 2 for skew_group in self.skew_dims]):
         #     raise ValueError("must have at least two dims per skew group")
-        skewed_dims: list[int] = [dim.item() for skew_group in self.skew_dims for dim in skew_group]
+        skewed_dims = [dim.item() for skew_group in self.skew_dims for dim in skew_group]
         if not len(set(skewed_dims)) == len(skewed_dims):
             raise ValueError("values in skew_dims must be unique")
         if not max(skewed_dims) < self.num_inputs:

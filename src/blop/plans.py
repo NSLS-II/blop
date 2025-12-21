@@ -62,6 +62,9 @@ def default_acquire(
     """
     if sensors is None:
         sensors = []
+    if not all(isinstance(sensor, Readable) for sensor in sensors):
+        raise ValueError("All sensors must implement the Readable protocol.")
+    sensors = cast(Sequence[Readable], sensors)
     md = {"blop_suggestions": suggestions}
     plan_args = _unpack_for_list_scan(suggestions, actuators)
     return (
