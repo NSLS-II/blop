@@ -1,4 +1,5 @@
 import functools
+import logging
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
@@ -8,6 +9,8 @@ from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
 from .protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
+
+logger = logging.getLogger(__name__)
 
 
 def _unpack_for_list_scan(suggestions: list[dict], actuators: Sequence[Actuator]) -> list[Any]:
@@ -62,15 +65,15 @@ def default_acquire(
     """
     if sensors is None:
         sensors = []
-    if not all(isinstance(sensor, Readable) for sensor in sensors):
-        raise ValueError("All sensors must implement the Readable protocol.")
-    sensors = cast(Sequence[Readable], sensors)
+    readables = [s for s in sensors if isinstance(s, Readable)]
+    if len(readables) != len(sensors):
+        logger.warning(f"Some sensors are not readable and will be ignored. Using only the readable sensors: {readables}")
     md = {"blop_suggestions": suggestions}
     plan_args = _unpack_for_list_scan(suggestions, actuators)
     return (
         # TODO: fix argument type in bluesky.plans.list_scan
         yield from bp.list_scan(
-            sensors,
+            readables,
             *plan_args,  # type: ignore[arg-type]
             per_step=per_step,
             md=md,
