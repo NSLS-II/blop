@@ -7,7 +7,6 @@ import torch
 
 
 class LatentKernel(gpytorch.kernels.Kernel):
-
     @property
     def is_stationary(self) -> bool:
         return True
