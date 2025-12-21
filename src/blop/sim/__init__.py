@@ -1,9 +1,6 @@
 import numpy as np
 import scipy as sp
 
-from .beamline import DatabrokerBeamline, TiledBeamline, DatabrokerDetector, TiledDetector  # noqa
-from .handlers import HDF5Handler  # noqa
-
 
 def get_beam_stats(image: np.ndarray, threshold: float = 0.5) -> dict[str, float | np.ndarray]:
     ny, nx = image.shape
@@ -59,3 +56,6 @@ def get_beam_stats(image: np.ndarray, threshold: float = 0.5) -> dict[str, float
 
     return stats
 
+
+from .beamline import DatabrokerBeamline, DatabrokerDetector, TiledBeamline, TiledDetector  # noqa: E402, F401
+from .handlers import HDF5Handler  # noqa: E402, F401

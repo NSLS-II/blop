@@ -14,9 +14,9 @@ from ophyd import Component as Cpt
 from ophyd.sim import NullStatus, new_uid
 from ophyd.utils import make_dir_tree
 
+from . import get_beam_stats
 from .handlers import ExternalFileReference
 from .xrt_kb_model import build_beamline, build_histRGB, run_process
-from . import get_beam_stats
 
 TEST = False
 
