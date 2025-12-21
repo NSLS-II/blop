@@ -7,6 +7,11 @@ import torch
 
 
 class LatentKernel(gpytorch.kernels.Kernel):
+
+    @property
+    def is_stationary(self) -> bool:
+        return True
+
     num_outputs: int = 1
     batch_inverse_lengthscale: float = 1e6
 
