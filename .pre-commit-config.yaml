@@ -19,7 +19,14 @@ repos:
       - id: ruff
         name: lint with ruff
         language: system
-        entry: ruff check --force-exclude
+        entry: ruff check --force-exclude --fix
+        types: [python]
+        require_serial: true
+      
+      - id: pyright
+        name: type check with pyright
+        language: system
+        entry: pyright
         types: [python]
         require_serial: true
 
