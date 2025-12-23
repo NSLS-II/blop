@@ -1,3 +1,66 @@
+.. testsetup::
+
+    from bluesky.protocols import NamedMovable, Readable, Status, Hints, HasHints, HasParent, Any
+    import time
+
+    class AlwaysSuccessfulStatus(Status):
+        def add_callback(self, callback) -> None:
+            callback(self)
+
+        def exception(self, timeout = 0.0):
+            return None
+        
+        @property
+        def done(self) -> bool:
+            return True
+        
+        @property
+        def success(self) -> bool:
+            return True
+
+    class ReadableSignal(Readable, HasHints, HasParent):
+        def __init__(self, name: str) -> None:
+            self._name = name
+            self._value = 0.0
+
+        @property
+        def name(self) -> str:
+            return self._name
+
+        @property
+        def hints(self) -> Hints:
+            return { 
+                "fields": [self._name],
+                "dimensions": [],
+                "gridding": "rectilinear",
+            }
+        
+        @property
+        def parent(self) -> Any | None:
+            return None
+
+        def read(self):
+            return {
+                self._name: { "value": self._value, "timestamp": time.time() }
+            }
+
+        def describe(self):
+            return {
+                self._name: { "source": self._name, "dtype": "number", "shape": [] }
+            }
+
+    class MovableSignal(ReadableSignal, NamedMovable):
+        def __init__(self, name: str, initial_value: float = 0.0) -> None:
+            super().__init__(name)
+            self._value: float = initial_value
+
+        def set(self, value: float) -> Status:
+            self._value = value
+            return AlwaysSuccessfulStatus() 
+    
+    motor_x = MovableSignal(name="motor_x")
+
+
 Tiled/Databroker with Blop
 ================================
 This guide explains how we can use Tiled and Databroker for data storage and retrieval with Blop.
@@ -9,22 +72,34 @@ To access the data for optimization, you have to connect to a Tiled server or Da
 
 **Tiled:**
 
-.. code-block:: python
+.. testcode::
 
-    from tiled.client import from_uri, from_profile
-    
-    # Connect via profile (if available)
-    tiled_client = from_profile("profile_name")
-    
-    # Connect via URI
-    tiled_client = from_uri("uri_string")
+    from bluesky.run_engine import RunEngine
+    from bluesky.callbacks.tiled_writer import TiledWriter
+    from tiled.client import from_uri
+    from tiled.server import SimpleTiledServer
+
+    server = SimpleTiledServer()
+    tiled_client = from_uri(server.uri)
+    tiled_writer = TiledWriter(tiled_client)
+    RE = RunEngine({})
+    RE.subscribe(tiled_writer)
+
 
 **Databroker:**
 
-.. code-block:: python
+.. testcode::
 
+    from blop.sim import HDF5Handler
+    import databroker  # type: ignore[import-untyped]
     from databroker import Broker
-    db = Broker.named("profile_name")
+
+    db = Broker.named("temp")
+    db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
+    try:
+        databroker.assets.utils.install_sentinels(db.reg.config, version=1)
+    except Exception:
+        pass
 
 For more details, see `Tiled <https://github.com/bluesky/tiled>`_ or `Databroker <https://github.com/bluesky/databroker>`_ .
 
@@ -34,7 +109,7 @@ Data Storage with Blop's Default Plans
 Blop provides a default acquisition plan (:func:`blop.plans.default_acquire`) that handle data acquisition. This plan:
 
 - Uses the **"primary" stream** to store all acquired data
-- Includes a default metadata key **blop_suggestion_ids** which identifies suggestions that were acquired at each step of the scan.
+- Includes a default metadata key **blop_suggestions** which contains all of the suggestions (and their identifiers)
 
 When a custom acquisition plan is used, how the data is stored depends on the plan implementation. 
 
@@ -52,30 +127,27 @@ Evaluation Function with Tiled
 
 Here's an example evaluation function that reads data from Tiled for where all data is stored in the "primary" stream:
 
-.. code-block:: python
+.. testcode::
 
     from tiled.client.container import Container
 
-    class MyEvaluation:
+    class TiledEvaluation:
         def __init__(self, tiled_client: Container):
             self.tiled_client = tiled_client
 
         def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
-            # Access the data of a specific run
+            # Access the run data 
             run = self.tiled_client[uid]
             
-            # Read data for specific signals from the "primary" stream
-            x1_data = run["primary/x1"].read()
-            
-            # Process each suggestion
+            # Extract data columns
+            motor_x_data = run["primary/motor_x"].read()
             outcomes = []
             for suggestion in suggestions:
                 suggestion_id = suggestion["_id"]
-                x1 = x1_data[suggestion_id % len(x1_data)]
+                motor_x = motor_x_data[suggestion_id % len(motor_x_data)]
                 outcome = {
                     "_id": suggestion["_id"],
-                    "objective1": 0.1,
-                    "objective2": 0.2,
+                    "objective1": 0.1 * motor_x,
                 }
                 outcomes.append(outcome)
             return outcomes
@@ -85,9 +157,9 @@ Evaluation Function with Databroker
 
 Here's an equivalent evaluation function using Databroker:
 
-.. code-block:: python
+.. testcode::
 
-    class MyEvaluation:
+    class DatabrokerEvaluation:
         def __init__(self, db):
             self.db = db
 
@@ -96,17 +168,50 @@ Here's an equivalent evaluation function using Databroker:
             run = self.db[uid].table()
             
             # Extract data columns
-            x1_data = run["x1"]
-            
-            # Process each suggestion
+            motor_x_data = run["motor_x"]
             outcomes = []
             for suggestion in suggestions:
                 suggestion_id = suggestion["_id"]
-                x1 = x1_data[suggestion_id % len(x1_data)]
+                motor_x = motor_x_data[suggestion_id % len(motor_x_data) + 1]
                 outcome = {
                     "_id": suggestion["_id"],
-                    "objective1": 0.1,
-                    "objective2": 0.2,
+                    "objective1": 0.1 * motor_x,
                 }
                 outcomes.append(outcome)
             return outcomes
+
+Configure an agent
+------------------
+
+.. testcode::
+
+    from blop.ax import RangeDOF, Agent, Objective
+
+    dof1 = RangeDOF(actuator=motor_x, bounds=(0, 1000), parameter_type="float")
+
+    objective = Objective(name="objective1", minimize=False) 
+
+    # Add motor_x as a sensor so it gets read and stored in Tiled
+    agent = Agent(
+        sensors=[motor_x],
+        dofs=[dof1],
+        objectives=[objective],
+        evaluation=TiledEvaluation(tiled_client=tiled_client),
+    )
+    RE(agent.optimize())
+    server.close()
+
+or for Databroker:
+
+.. testcode::
+    
+    RE = RunEngine()
+    RE.subscribe(db.insert)
+
+    agent_db = Agent(
+        sensors=[motor_x],
+        dofs=[dof1],
+        objectives=[objective],
+        evaluation=DatabrokerEvaluation(db=db),
+    )
+    RE(agent_db.optimize())
