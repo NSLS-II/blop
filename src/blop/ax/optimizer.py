@@ -3,7 +3,7 @@ from typing import Any
 
 from ax import ChoiceParameterConfig, Client, RangeParameterConfig
 
-from ..protocols import Optimizer
+from ..protocols import Optimizer, ID_KEY
 
 
 class AxOptimizer(Optimizer):
@@ -87,6 +87,19 @@ class AxOptimizer(Optimizer):
             for trial_index, parameterization in next_trials.items()
         ]
 
+    def _split_point(self, point: dict) -> tuple[dict, dict]:
+        """Helper function to split a point into parameters and outcomes."""
+        parameters = {}
+        outcomes = {}
+        for k, v in point.items():
+            if k == ID_KEY:
+                continue
+            elif k in self._parameter_names:
+                parameters[k] = v
+            else:
+                outcomes[k] = v
+        return parameters, outcomes
+
     def ingest(self, points: list[dict]) -> None:
         """
         Ingest evaluation results into the optimizer.
@@ -106,11 +119,10 @@ class AxOptimizer(Optimizer):
         Points with ``"_id": "baseline"`` are treated as baseline trials for reference.
         """
         for point in points:
-            trial_idx = point.pop("_id", None)
+            trial_idx = point.get(ID_KEY, None)
+            parameters, outcomes = self._split_point(point)
             if trial_idx is None:
-                parameters = {k: v for k, v in point.items() if k in self._parameter_names}
                 trial_idx = self._client.attach_trial(parameters=parameters)
             elif trial_idx == "baseline":
-                parameters = {k: v for k, v in point.items() if k in self._parameter_names}
                 trial_idx = self._client.attach_baseline(parameters=parameters)
-            self._client.complete_trial(trial_index=trial_idx, raw_data=point)
+            self._client.complete_trial(trial_index=trial_idx, raw_data=outcomes)
