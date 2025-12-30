@@ -3,7 +3,7 @@ from typing import Any
 
 from ax import ChoiceParameterConfig, Client, RangeParameterConfig
 
-from ..protocols import Optimizer, ID_KEY
+from ..protocols import ID_KEY, Optimizer
 
 
 class AxOptimizer(Optimizer):
