@@ -141,10 +141,11 @@ For more information on generation strategies, see the `Ax documentation <https:
 
     from ax.generation_strategy.generation_node import GenerationNode
     from ax.generation_strategy.generation_strategy import GenerationStrategy
-    from ax.generation_strategy.model_spec import GeneratorSpec
+    from ax.generation_strategy.generator_spec import GeneratorSpec
     from ax.generation_strategy.transition_criterion import MinTrials
-    from ax.modelbridge.registry import Generators
-    from ax.models.torch.botorch_modular.surrogate import ModelConfig, SurrogateSpec
+    from ax.adapter.registry import Generators
+    from ax.generators.torch.botorch_modular.surrogate import SurrogateSpec
+    from ax.generators.torch.botorch_modular.utils import ModelConfig
     from botorch.acquisition.logei import qLogNoisyExpectedImprovement
 
     from blop.bayesian.models import LatentGP
@@ -154,9 +155,9 @@ For more information on generation strategies, see the `Ax documentation <https:
         name="Custom Generation Strategy",
         nodes=[
             GenerationNode(
-                node_name="Sobol",
-                model_specs=[
-                    GeneratorSpec(model_enum=Generators.SOBOL, model_kwargs={"seed": 0}),
+                name="Sobol",
+                generator_specs=[
+                    GeneratorSpec(generator_enum=Generators.SOBOL, model_kwargs={"seed": 0}),
                 ],
                 transition_criteria=[
                     MinTrials(
@@ -167,10 +168,10 @@ For more information on generation strategies, see the `Ax documentation <https:
                 ],
             ),
             GenerationNode(
-                node_name="LatentGP",
-                model_specs=[
+                name="LatentGP",
+                generator_specs=[
                     GeneratorSpec(
-                        model_enum=Generators.BOTORCH_MODULAR,
+                        generator_enum=Generators.BOTORCH_MODULAR,
                         model_kwargs={
                             "surrogate_spec": SurrogateSpec(
                                 model_configs=[
