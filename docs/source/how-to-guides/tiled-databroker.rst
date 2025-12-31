@@ -90,16 +90,9 @@ To access the data for optimization, you have to connect to a Tiled server or Da
 
 .. testcode::
 
-    from blop.sim import HDF5Handler
-    import databroker  # type: ignore[import-untyped]
     from databroker import Broker
 
     db = Broker.named("temp")
-    db.reg.register_handler("HDF5", HDF5Handler, overwrite=True)
-    try:
-        databroker.assets.utils.install_sentinels(db.reg.config, version=1)
-    except Exception:
-        pass
 
 For more details, see `Tiled <https://github.com/bluesky/tiled>`_ or `Databroker <https://github.com/bluesky/databroker>`_ .
 
