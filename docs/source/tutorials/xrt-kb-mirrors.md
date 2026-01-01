@@ -185,13 +185,43 @@ RE(agent.optimize(30))
 
 ## Understanding the Results
 
-After optimization, we can visualize what the agent learned. The `plot_objective` method shows how an objective varies across the DOF space, based on the surrogate model:
+After optimization, we can examine what the agent learned. First, let's summarize the trials:
+
+```{code-cell} ipython3
+agent.ax_client.summarize()
+```
+
+### Visualizing the Surrogate Model
+
+The `plot_objective` method shows how an objective varies across the DOF space, based on the surrogate model the agent built:
 
 ```{code-cell} ipython3
 _ = agent.plot_objective(x_dof_name="bl_kbh_dsh", y_dof_name="bl_kbv_dsv", objective_name="bl_det_sum")
 ```
 
 This plot reveals the landscape the optimizer explored. Peaks (for maximization) or valleys (for minimization) show where good configurations lie.
+
+### Using Ax Analysis Tools
+
+Blop uses [Ax](https://ax.dev) as its optimization backend, which provides additional analysis tools. `SlicePlot` shows how an objective changes along a single DOF:
+
+```{code-cell} ipython3
+from ax.analysis import SlicePlot
+
+_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_sum")])
+```
+
+```{code-cell} ipython3
+_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_wid_x")])
+```
+
+For a more comprehensive view, `TopSurfacesAnalysis` shows the predicted response surface:
+
+```{code-cell} ipython3
+from ax.analysis import TopSurfacesAnalysis
+
+_ = agent.ax_client.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
+```
 
 ## Applying the Optimal Configuration
 
