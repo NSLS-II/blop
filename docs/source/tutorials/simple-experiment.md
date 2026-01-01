@@ -11,13 +11,13 @@ kernelspec:
   name: python3
 ---
 
-# Run a simple experiment with Bluesky
+# Your first Bayesian optimization with Blop
 
-This guide will walk you through the process of running a simple experiment using Blop, Bluesky, and Tiled. See [https://blueskyproject.io/](https://blueskyproject.io/) for more information on the Bluesky ecosystem and how these tools work together.
+In this tutorial, you will learn the three core concepts of Blop: **DOFs** (the parameters you can adjust), **objectives** (what you want to optimize), and the **Agent** (which coordinates the optimization). We'll optimize a simple mathematical function using simulated devices—the same patterns apply to real hardware.
 
-Bluesky along with a data access backend (either Tiled or Databroker) are not necessary for using Blop, but are fully integrated into the package.
+## Setup
 
-We'll start by importing the necessary libraries.
+First, let's import what we need and start the data infrastructure:
 
 ```{code-cell} ipython3
 import logging
@@ -38,15 +38,11 @@ from tiled.server import SimpleTiledServer
 logging.getLogger("httpx").setLevel(logging.WARNING)
 ```
 
-First, we will start up a Tiled server. This will act as our data access service which Bluesky will write to and that Blop can read from.
-
 ```{code-cell} ipython3
+# Start a local Tiled server for data storage
 tiled_server = SimpleTiledServer()
-```
 
-Next, we'll set up the Bluesky run engine and connect to the local Tiled server.
-
-```{code-cell} ipython3
+# Set up the Bluesky RunEngine and connect it to Tiled
 RE = RunEngine({})
 tiled_client = from_uri(tiled_server.uri)
 tiled_writer = TiledWriter(tiled_client)
@@ -56,20 +52,19 @@ bec.disable_plots()
 RE.subscribe(bec)
 ```
 
-In order to control parameters and acquire data with Bluesky, we can follow the `NamedMovable` and `Readable` protocols. To do this, we implement a simple class that implements both protocols. An alternative to implementing these protocols yourself is to use Ophyd. The additional `AlwaysSuccessfulStatus` is necessary to tell the Bluesky RunEngine when a move is complete. For the purposes of this tutorial, every move is successful and complete immediately.
+## Creating simulated devices
+
+Bluesky controls devices through protocols. For this tutorial, we create simple simulated "movable" devices. In real experiments, you would use [Ophyd](https://blueskyproject.io/ophyd-async) devices or similar—the code below is just boilerplate to simulate hardware:
 
 ```{code-cell} ipython3
 class AlwaysSuccessfulStatus(Status):
     def add_callback(self, callback) -> None:
         callback(self)
-
     def exception(self, timeout = 0.0):
         return None
-    
     @property
     def done(self) -> bool:
         return True
-    
     @property
     def success(self) -> bool:
         return True
@@ -78,45 +73,32 @@ class ReadableSignal(Readable, HasHints, HasParent):
     def __init__(self, name: str) -> None:
         self._name = name
         self._value = 0.0
-
     @property
     def name(self) -> str:
         return self._name
-
     @property
     def hints(self) -> Hints:
-        return { 
-            "fields": [self._name],
-            "dimensions": [],
-            "gridding": "rectilinear",
-        }
-    
+        return {"fields": [self._name], "dimensions": [], "gridding": "rectilinear"}
     @property
     def parent(self) -> Any | None:
         return None
-
     def read(self):
-        return {
-            self._name: { "value": self._value, "timestamp": time.time() }
-        }
-
+        return {self._name: {"value": self._value, "timestamp": time.time()}}
     def describe(self):
-        return {
-            self._name: { "source": self._name, "dtype": "number", "shape": [] }
-        }
+        return {self._name: {"source": self._name, "dtype": "number", "shape": []}}
 
 class MovableSignal(ReadableSignal, NamedMovable):
     def __init__(self, name: str, initial_value: float = 0.0) -> None:
         super().__init__(name)
         self._value: float = initial_value
-
     def set(self, value: float) -> Status:
         self._value = value
         return AlwaysSuccessfulStatus()
 ```
 
-    
-Next, we'll define the DOFs and optimization objective. Since we can calculate our objective based on the two movable signals, there is no need to acquire data using an extra readable. With the movables already configured via the `DOF`s, it is implicitly added as a readable during the data acquisition when using the default acquisition plan.
+## Defining DOFs and objectives
+
+**DOFs** (degrees of freedom) are the parameters the optimizer can adjust. **Objectives** are what you want to optimize. Here we define two DOFs (`x1` and `x2`) that can range from -5 to 5, and one objective (the Himmelblau function) that we want to minimize:
 
 ```{code-cell} ipython3
 x1 = MovableSignal("x1", initial_value=0.1)
@@ -132,12 +114,9 @@ objectives = [
 sensors = []
 ```
 
-```{note}
-Additional sensors are typically added as a list of devices that produce data, such as detectors, to help with computing the desired outcome via the evaluation function.
-```
+## Writing the evaluation function
 
-Next, we will define the evaluation function. This is initialized with a `tiled_client`. Notice the care we take in handling
-the evaluation of individual suggestions based on the `"_id"` key. This is important to consider when acquiring data for multiple suggestions in the same Bluesky run.
+The **evaluation function** computes objective values from experimental data. After each run, Blop calls this function with the run's unique ID and the suggestions that were tried. It returns the computed objective values:
 
 ```{code-cell} ipython3
 class Himmelblau2DEvaluation():
@@ -151,25 +130,28 @@ class Himmelblau2DEvaluation():
         x2_data = run["primary/x2"].read()
 
         for suggestion in suggestions:
-            # Special key to identify a suggestion
             suggestion_id = suggestion["_id"]
             x1 = x1_data[suggestion_id % len(x1_data)]
             x2 = x2_data[suggestion_id % len(x2_data)]
-            outcomes.append({"himmelblau_2d": (x1 ** 2 + x2 - 11) ** 2 + (x1 + x2 ** 2 - 7) ** 2, "_id": suggestion_id})
+            # Himmelblau function: has four global minima where value = 0
+            outcomes.append({
+                "himmelblau_2d": (x1 ** 2 + x2 - 11) ** 2 + (x1 + x2 ** 2 - 7) ** 2,
+                "_id": suggestion_id
+            })
         
         return outcomes
 ```
 
-Next, we will setup the agent and perform the optimization using the run engine.
-    
+## Running the optimization
+
+The **Agent** brings everything together. Create one with your DOFs, objectives, and evaluation function, then run the optimization:
+
 ```{code-cell} ipython3
 agent = Agent(
     sensors=sensors,
     dofs=dofs,
     objectives=objectives,
-    evaluation=Himmelblau2DEvaluation(
-        tiled_client=tiled_client,
-    ),
+    evaluation=Himmelblau2DEvaluation(tiled_client=tiled_client),
     name="simple-experiment",
     description="A simple experiment optimizing the Himmelblau function",
 )
@@ -177,9 +159,25 @@ agent = Agent(
 RE(agent.optimize(30))
 ```
 
-Now we can view the results.
+## Viewing the results
+
+After optimization, visualize what the Agent learned and see the best parameters found:
 
 ```{code-cell} ipython3
 agent.plot_objective("x1", "x2", "himmelblau_2d")
 agent.ax_client.summarize()
 ```
+
+The Himmelblau function has four global minima (all with value 0). The `summarize` output shows which one(s) the optimizer found.
+
+## What you learned
+
+You now understand the three core concepts of Blop:
+
+- **DOFs**: The parameters the optimizer adjusts (here, `x1` and `x2` with bounds)
+- **Objectives**: What you're optimizing (here, minimizing the Himmelblau function)
+- **Agent**: Coordinates the optimization loop between Bluesky and the evaluation function
+
+## Next steps
+
+For a more comprehensive tutorial with multiple objectives and diagnostic tools, see [Optimizing KB Mirrors](./xrt-kb-mirrors.md).
