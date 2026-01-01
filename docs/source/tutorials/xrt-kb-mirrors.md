@@ -231,28 +231,6 @@ _ = agent.plot_objective(x_dof_name="bl_kbh_dsh", y_dof_name="bl_kbv_dsv", objec
 
 This plot reveals the landscape the optimizer explored. Peaks (for maximization) or valleys (for minimization) show where good configurations lie.
 
-### Using Ax Analysis Tools
-
-Blop uses [Ax](https://ax.dev) as its optimization backend, which provides additional analysis tools. `SlicePlot` shows how an objective changes along a single DOF:
-
-```{code-cell} ipython3
-from ax.analysis import SlicePlot
-
-_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_sum")])
-```
-
-```{code-cell} ipython3
-_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_wid_x")])
-```
-
-For a more comprehensive view, `TopSurfacesAnalysis` shows the predicted response surface:
-
-```{code-cell} ipython3
-from ax.analysis import TopSurfacesAnalysis
-
-_ = agent.ax_client.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
-```
-
 ## Applying the Optimal Configuration
 
 The Pareto frontier contains all optimal trade-off solutions. Let's retrieve one and apply it to see the resulting beam:
