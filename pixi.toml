@@ -7,10 +7,10 @@ version = "0.9.0"
 
 [dependencies]
 python = ">=3.10.0,<3.14"
-ax-platform = ">=1.0.0,<1.1"
+ax-platform = ">=1.2.0,<2"
 bluesky-base = ">=1.14.4,<2"
 pytorch = ">=2.8.0,<3"
-botorch = ">=0.14.0,<0.16"
+botorch = ">=0.16.0,<0.17"
 gpytorch = ">=1.14,<2"
 scipy = ">=1.15.2,<2"
 numpy = ">=2.2.6,<3"

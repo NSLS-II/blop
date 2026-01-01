@@ -17,7 +17,8 @@ class LatentGP(SingleTaskGP):
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        super().__init__(train_X, train_Y, *args, **kwargs)
+        # Disable outcome transform to avoid shape mismatches with multi-output kernel
+        super().__init__(train_X, train_Y, *args, outcome_transform=None, **kwargs)
 
         self.mean_module = gpytorch.means.ConstantMean(constant_prior=gpytorch.priors.NormalPrior(loc=0, scale=1))
 

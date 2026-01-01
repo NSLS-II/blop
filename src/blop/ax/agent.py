@@ -3,7 +3,8 @@ from collections.abc import Sequence
 from typing import Any
 
 from ax import Client
-from ax.analysis import AnalysisCard, ContourPlot
+from ax.analysis import ContourPlot
+from ax.analysis.analysis_card import AnalysisCardBase
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
@@ -257,7 +258,7 @@ class Agent:
 
     def plot_objective(
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any
-    ) -> list[AnalysisCard]:
+    ) -> list[AnalysisCardBase]:
         """
         Plot the predicted objective as a function of two DOFs.
 
