@@ -19,6 +19,7 @@ In this tutorial, you will learn how to use Blop to optimize a Kirkpatrick-Baez 
 - How **objectives** define what you're trying to optimize
 - How to write an **evaluation function** that extracts results from experimental data
 - How the **Agent** coordinates the optimization loop
+- How to **check optimization health** mid-run and continue
 
 We'll work with a simulated KB mirror beamline, but the concepts apply directly to real experimental setups.
 
@@ -77,9 +78,11 @@ RE.subscribe(tiled_writer)
 **Degrees of freedom (DOFs)** are the parameters the optimizer can adjust. In our KB system, we control the curvature radius of each mirror. Let's define the search space:
 
 ```{code-cell} ipython3
-# Approximate optimal values and search ranges
-R1, dR1 = 40000, 10000  # Vertical mirror: center at 40000, search ±10000
-R2, dR2 = 20000, 10000  # Horizontal mirror: center at 20000, search ±10000
+# Define search ranges for each mirror's curvature radius
+# The optimal values (~38000 and ~21000) are intentionally placed
+# away from the center to make the optimization more realistic
+VERTICAL_BOUNDS = (25000, 45000)    # Optimal ~38000 is in upper portion
+HORIZONTAL_BOUNDS = (15000, 35000)  # Optimal ~21000 is in lower portion
 ```
 
 Now we create the beamline and define our DOFs. Each `RangeDOF` wraps an actuator (something we can move) with bounds that constrain the search space:
@@ -88,8 +91,8 @@ Now we create the beamline and define our DOFs. Each `RangeDOF` wraps an actuato
 beamline = TiledBeamline(name="bl")
 
 dofs = [
-    RangeDOF(actuator=beamline.kbv_dsv, bounds=(R1 - dR1, R1 + dR1), parameter_type="float"),
-    RangeDOF(actuator=beamline.kbh_dsh, bounds=(R2 - dR2, R2 + dR2), parameter_type="float"),
+    RangeDOF(actuator=beamline.kbv_dsv, bounds=VERTICAL_BOUNDS, parameter_type="float"),
+    RangeDOF(actuator=beamline.kbh_dsh, bounds=HORIZONTAL_BOUNDS, parameter_type="float"),
 ]
 ```
 
@@ -176,16 +179,43 @@ agent = Agent(
 
 The `sensors` list contains any devices that produce data during acquisition. Here, `beamline.det` is our detector.
 
-Now, let's run the optimization. The agent will iteratively suggest configurations, run experiments, evaluate results, and update its model:
+## Running the Optimization
+
+Let's start the optimization. Rather than running all iterations at once, we'll pause partway through to check the optimization's health—a practical workflow you'll use in real experiments.
 
 ```{code-cell} ipython3
-# 30 iterations of optimization
-RE(agent.optimize(30))
+# Run first 10 iterations
+RE(agent.optimize(10))
+```
+
+## Checking Optimization Health
+
+After running some iterations, it's good practice to check how the optimization is progressing. Ax provides built-in health checks and diagnostics through `compute_analyses()`:
+
+```{code-cell} ipython3
+_ = agent.ax_client.compute_analyses()
+```
+
+This runs all applicable analyses for the current experiment state, including health checks that flag potential issues like model fit problems or exploration gaps. Review these before continuing.
+
+## Continuing the Optimization
+
+The optimization state is preserved, so we can simply run more iterations:
+
+```{code-cell} ipython3
+# Run remaining 20 iterations
+RE(agent.optimize(20))
 ```
 
 ## Understanding the Results
 
-After optimization, we can examine what the agent learned. First, let's summarize the trials:
+After optimization, we can examine what the agent learned. Let's run the full suite of analyses again to see how things have improved:
+
+```{code-cell} ipython3
+_ = agent.ax_client.compute_analyses()
+```
+
+We can also get a tabular summary of the trials:
 
 ```{code-cell} ipython3
 agent.ax_client.summarize()
@@ -200,28 +230,6 @@ _ = agent.plot_objective(x_dof_name="bl_kbh_dsh", y_dof_name="bl_kbv_dsv", objec
 ```
 
 This plot reveals the landscape the optimizer explored. Peaks (for maximization) or valleys (for minimization) show where good configurations lie.
-
-### Using Ax Analysis Tools
-
-Blop uses [Ax](https://ax.dev) as its optimization backend, which provides additional analysis tools. `SlicePlot` shows how an objective changes along a single DOF:
-
-```{code-cell} ipython3
-from ax.analysis import SlicePlot
-
-_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_sum")])
-```
-
-```{code-cell} ipython3
-_ = agent.ax_client.compute_analyses(analyses=[SlicePlot("bl_kbv_dsv", "bl_det_wid_x")])
-```
-
-For a more comprehensive view, `TopSurfacesAnalysis` shows the predicted response surface:
-
-```{code-cell} ipython3
-from ax.analysis import TopSurfacesAnalysis
-
-_ = agent.ax_client.compute_analyses(analyses=[TopSurfacesAnalysis("bl_det_sum")])
-```
 
 ## Applying the Optimal Configuration
 
@@ -259,6 +267,7 @@ In this tutorial, you worked through a complete Bayesian optimization workflow:
 2. **Objectives** specify your goals and whether to minimize or maximize each one
 3. **Evaluation functions** extract meaningful metrics from experimental data
 4. **The Agent** coordinates everything, building a model of your system and intelligently exploring the parameter space
+5. **Health checks** let you diagnose optimization progress and catch issues early
 
 These same components apply to any optimization problem: swap the simulated beamline for real hardware, adjust the DOFs and objectives for your system, and write an evaluation function that extracts your metrics.
 
