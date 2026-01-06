@@ -69,6 +69,14 @@ def default_acquire(
     readables = [s for s in sensors if isinstance(s, Readable)]
     if len(readables) != len(sensors):
         logger.warning(f"Some sensors are not readable and will be ignored. Using only the readable sensors: {readables}")
+
+    if len(suggestions) > 1:
+        if all(isinstance(actuator, Readable) for actuator in actuators):
+            current_position = yield from read(cast(Sequence[Readable], actuators))
+        else:
+            current_position = None
+        suggestions = route_suggestions(suggestions, starting_position=current_position)
+
     md = {"blop_suggestions": suggestions}
     plan_args = _unpack_for_list_scan(suggestions, actuators)
     return (
@@ -87,7 +95,6 @@ def default_acquire(
 def optimize_step(
     optimization_problem: OptimizationProblem,
     n_points: int = 1,
-    route: bool = True,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
@@ -108,9 +115,6 @@ def optimize_step(
     optimizer = optimization_problem.optimizer
     actuators = optimization_problem.actuators
     suggestions = optimizer.suggest(n_points)
-
-    if route and n_points > 1:
-        suggestions = route_suggestions(suggestions)
 
     uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
