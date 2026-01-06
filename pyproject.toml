@@ -22,18 +22,15 @@ maintainers = [
 ]
 requires-python = ">=3.10"
 dependencies = [
-  "ax-platform>=1.0.0,<1.1",
+  "ax-platform>=1.1.0,<1.3",
   "bluesky>=1.14.2",
   "bluesky-queueserver-api>=0.0.12",
   "torch",
   "botorch>=0.16.0",
   "gpytorch",
   "scipy",
+  "networkx>=3",
   "numpy",
-  "h5py",
-  "area-detector-handlers",
-  "bluesky-tiled-plugins",
-  "networkx",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",

@@ -1,8 +1,10 @@
 import networkx as nx
 import numpy as np
 
+from ..protocols import ID_KEY
 
-def get_route_index(points: np.ndarray, starting_point: np.ndarray = None):
+
+def get_route_index(points: np.ndarray, starting_point: np.ndarray | None = None):
     if starting_point is not None:
         points = np.concatenate([starting_point[None], points], axis=0)
 
@@ -24,11 +26,11 @@ def get_route_index(points: np.ndarray, starting_point: np.ndarray = None):
     return index
 
 
-def route_suggestions(suggestions: list[dict], starting_position: dict = None):
+def route_suggestions(suggestions: list[dict], starting_position: dict | None = None):
     if len(suggestions) == 1:
         return suggestions
 
-    dims_to_route = [dim for dim, value in suggestions[0].items() if (dim != "_id") and isinstance(value, float)]
+    dims_to_route = [dim for dim, value in suggestions[0].items() if (dim != ID_KEY) and isinstance(value, float)]
     points = np.array([[s[dim] for dim in dims_to_route] for s in suggestions])
     starting_point = np.array([starting_position[dim] for dim in dims_to_route]) if starting_position else None
 
