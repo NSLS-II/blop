@@ -3,8 +3,8 @@ import numpy as np
 from blop.plans.utils import get_route_index, route_suggestions
 from blop.protocols import ID_KEY
 
-
 # get_route_index tests
+
 
 def test_get_route_index_two_points_no_start():
     points = np.array([[0.0, 0.0], [1.0, 1.0]])
@@ -26,6 +26,7 @@ def test_get_route_index_with_starting_point():
 
 
 # route_suggestions tests
+
 
 def test_route_suggestions_single_returns_unchanged():
     suggestions = [{"x": 1.0, "y": 2.0, ID_KEY: "a"}]
