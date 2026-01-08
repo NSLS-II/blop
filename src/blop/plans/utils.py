@@ -1,7 +1,23 @@
+import time
+
+from bluesky.protocols import Readable, Reading, SyncOrAsync
+from event_model import DataKey
 import networkx as nx
 import numpy as np
 
 from ..protocols import ID_KEY
+
+
+class NumberReadable(Readable[float]):
+    def __init__(self, name: str, value: float = 0.0):
+        self.name: str = name
+        self._value = value
+
+    def read(self) -> SyncOrAsync[dict[str, Reading[float]]]:
+        return {self.name: {"value": self._value, "timestamp": time.time()}}
+
+    def describe(self) -> SyncOrAsync[dict[str, DataKey]]:
+        return {self.name: {"source": self.name, "dtype": "number", "shape": []}}
 
 
 def get_route_index(points: np.ndarray, starting_point: np.ndarray | None = None):

@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from bluesky.protocols import EventCollectable, EventPageCollectable, Flyable, NamedMovable, Readable
 from bluesky.utils import MsgGenerator, plan
@@ -56,6 +56,32 @@ class Optimizer(Protocol):
         ----------
         points : list[dict]
             A list of dictionaries, each containing the outcomes of each suggested parameterization.
+        """
+        ...
+
+
+@runtime_checkable
+class HasMetadata(Protocol):
+    """
+    Optional protocol for optimizers that provide metadata for logging.
+
+    Optimizers implementing this protocol can provide metadata that will be
+    included in the Bluesky run start document when using :func:`blop.plans.optimize`.
+
+    See Also
+    --------
+    blop.ax.optimizer.AxOptimizer : Built-in optimizer that implements this protocol.
+    """
+
+    def get_metadata(self) -> dict[str, Any]:
+        """
+        Return metadata about the optimizer for logging purposes.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary of metadata to include in the run start document.
+            Typical keys include "experiment_name", "parameter_names", "objective_names".
         """
         ...
 

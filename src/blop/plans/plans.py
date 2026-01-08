@@ -8,8 +8,8 @@ import bluesky.plans as bp
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
-from ..protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
-from .utils import route_suggestions
+from ..protocols import ID_KEY, Actuator, HasMetadata, OptimizationProblem, Sensor
+from .utils import route_suggestions, NumberReadable
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ def optimize_step(
     n_points: int = 1,
     *args: Any,
     **kwargs: Any,
-) -> MsgGenerator[None]:
+) -> MsgGenerator[tuple[list[dict], list[dict], str]]:
     """
     A single step of the optimization loop.
 
@@ -107,6 +107,11 @@ def optimize_step(
         The optimization problem to solve.
     n_points : int, optional
         The number of points to suggest.
+
+    Returns
+    -------
+    tuple[list[dict], list[dict], str]
+        A tuple of (suggestions, outcomes, acquisition_uid).
     """
     if optimization_problem.acquisition_plan is None:
         acquisition_plan = default_acquire
@@ -120,6 +125,8 @@ def optimize_step(
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
     optimizer.ingest(outcomes)
 
+    return suggestions, outcomes, uid
+
 
 @plan
 def optimize(
@@ -128,9 +135,12 @@ def optimize(
     n_points: int = 1,
     *args: Any,
     **kwargs: Any,
-) -> MsgGenerator[None]:
+) -> MsgGenerator[str]:
     """
     A plan to solve the optimization problem.
+
+    Creates an outer Bluesky run that captures optimizer state (suggestions, outcomes,
+    acquisition UIDs) in an "optimizer" event stream for each iteration.
 
     Parameters
     ----------
@@ -140,10 +150,50 @@ def optimize(
         The number of optimization iterations to run.
     n_points : int, optional
         The number of points to suggest per iteration.
-    """
 
-    for _ in range(iterations):
-        yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
+    Returns
+    -------
+    str
+        The UID of the optimizer run.
+    """
+    optimizer = optimization_problem.optimizer
+
+    # Get metadata if optimizer supports it
+    if isinstance(optimizer, HasMetadata):
+        md = optimizer.get_metadata()
+    else:
+        md = {}
+    md["plan_name"] = "blop_optimize"
+    md["iterations"] = iterations
+    md["n_points"] = n_points
+
+    iteration_readable = NumberReadable("iteration")
+    suggestions_readable = NumberReadable("suggestions")
+    outcomes_readable = NumberReadable("outcomes")
+    acquisition_uid_readable = NumberReadable("acquisition_uid")
+    readables = [iteration_readable, suggestions_readable, outcomes_readable, acquisition_uid_readable]
+
+    uid = yield from bps.open_run(md=md)
+    yield from bps.declare_stream(
+        *readables,
+        name="optimizer",
+    )
+
+    for i in range(iterations):
+        suggestions, outcomes, acq_uid = yield from optimize_step(
+            optimization_problem, n_points, *args, **kwargs
+        )
+        iteration_readable.value = i
+        suggestions_readable.value = suggestions
+        outcomes_readable.value = outcomes
+        acquisition_uid_readable.value = acq_uid
+        yield from read(readables)
+        yield from bps.save(
+            "optimizer",
+        )
+
+    yield from bps.close_run()
+    return uid
 
 
 @plan

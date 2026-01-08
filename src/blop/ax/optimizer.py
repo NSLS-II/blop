@@ -3,10 +3,10 @@ from typing import Any
 
 from ax import ChoiceParameterConfig, Client, RangeParameterConfig
 
-from ..protocols import ID_KEY, Optimizer
+from ..protocols import HasMetadata, ID_KEY, Optimizer
 
 
-class AxOptimizer(Optimizer):
+class AxOptimizer(Optimizer, HasMetadata):
     """
     An optimizer that uses Ax as the backend for optimization and experiment tracking.
 
@@ -31,6 +31,7 @@ class AxOptimizer(Optimizer):
     --------
     blop.ax.Agent : High-level interface that uses AxOptimizer internally.
     blop.protocols.Optimizer : The protocol this class implements.
+    blop.protocols.HasMetadata : The metadata protocol this class implements.
     """
 
     def __init__(
@@ -126,3 +127,21 @@ class AxOptimizer(Optimizer):
             elif trial_idx == "baseline":
                 trial_idx = self._client.attach_baseline(parameters=parameters)
             self._client.complete_trial(trial_index=trial_idx, raw_data=outcomes)
+
+    def get_metadata(self) -> dict[str, Any]:
+        """
+        Return metadata about the optimizer for logging purposes.
+
+        Returns
+        -------
+        dict[str, Any]
+            A dictionary containing experiment_name, parameter_names, and objective_names.
+        """
+        exp = self._client._experiment
+        if exp.optimization_config is None:
+            raise ValueError("Optimization config is not set")
+        return {
+            "experiment_name": exp.name,
+            "parameter_names": self._parameter_names,
+            "objective_names": list(exp.optimization_config.metrics.keys()),
+        }
