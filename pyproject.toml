@@ -29,6 +29,7 @@ dependencies = [
   "botorch>=0.16.0",
   "gpytorch",
   "scipy",
+  "networkx>=3",
   "numpy",
 ]
 classifiers = [
