@@ -8,7 +8,8 @@ import bluesky.plans as bp
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
-from .protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
+from ..protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
+from .utils import route_suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,14 @@ def default_acquire(
     readables = [s for s in sensors if isinstance(s, Readable)]
     if len(readables) != len(sensors):
         logger.warning(f"Some sensors are not readable and will be ignored. Using only the readable sensors: {readables}")
+
+    if len(suggestions) > 1:
+        if all(isinstance(actuator, Readable) for actuator in actuators):
+            current_position = yield from read(cast(Sequence[Readable], actuators))
+        else:
+            current_position = None
+        suggestions = route_suggestions(suggestions, starting_position=current_position)
+
     md = {"blop_suggestions": suggestions}
     plan_args = _unpack_for_list_scan(suggestions, actuators)
     return (
@@ -106,6 +115,7 @@ def optimize_step(
     optimizer = optimization_problem.optimizer
     actuators = optimization_problem.actuators
     suggestions = optimizer.suggest(n_points)
+
     uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
     optimizer.ingest(outcomes)
