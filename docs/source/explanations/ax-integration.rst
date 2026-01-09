@@ -15,8 +15,8 @@ Wrapping Ax
 Generally, we want to avoid wrapping the Ax API and allow users to use the full power of Ax themselves. However, there are some cases where
 an API wrapper is useful:
 
-- **DOFs**: We wrap Ax parameters to link them with Bluesky :class:`~blop.protocols.Actuator`\s, enabling automatic movement during acquisition (see :class:`blop.ax.DOF`).
-- **Constraints**: We provide :class:`blop.ax.DOFConstraint` and :class:`blop.ax.OutcomeConstraint` with a readable syntax that maps to Ax constraints.
+- **DOFs**: We wrap Ax parameters to link them with Bluesky :class:`~blop.protocols.Actuator`\s, enabling automatic movement during acquisition (see :class:`blop.ax.dof.DOF`).
+- **Constraints**: We provide :class:`blop.ax.dof.DOFConstraint` and :class:`blop.ax.objective.OutcomeConstraint` with a readable syntax that maps to Ax constraints.
 - **Agent**: The :class:`blop.ax.Agent` class provides a higher-level interface for common optimization workflows.
 
 Blop handles the following aspects of the Ax API for you:
