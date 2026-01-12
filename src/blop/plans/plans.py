@@ -150,7 +150,7 @@ def optimize(
         yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
         if stopping_strategy is not None:
             should_stop, message = stopping_strategy.should_stop_optimization(
-                experiment=optimization_problem.optimizer.ax_client._experiment
+                experiment=optimization_problem.optimizer.ax_client._experiment  # type: ignore[attr-defined]
             )
             if should_stop:
                 print(f"Global stopping strategy triggered optimization stop: {message}")
