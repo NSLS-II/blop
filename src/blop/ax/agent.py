@@ -5,6 +5,7 @@ from typing import Any
 from ax import Client
 from ax.analysis import ContourPlot
 from ax.analysis.analysis_card import AnalysisCardBase
+from ax.global_stopping.strategies.base import BaseGlobalStoppingStrategy
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
@@ -42,6 +43,8 @@ class Agent:
         Constraints on DOFs to refine the search space.
     outcome_constraints : Sequence[OutcomeConstraint] | None, optional
         Constraints on outcomes to be satisfied during optimization.
+    stopping_strategy : BaseGlobalStoppingStrategy | None, optional
+        A global stopping strategy to determine when/if to stop optimization early.
     **kwargs : Any
         Additional keyword arguments to configure the Ax experiment.
 
@@ -71,6 +74,7 @@ class Agent:
         acquisition_plan: AcquisitionPlan | None = None,
         dof_constraints: Sequence[DOFConstraint] | None = None,
         outcome_constraints: Sequence[OutcomeConstraint] | None = None,
+        stopping_strategy: BaseGlobalStoppingStrategy | None = None,
         **kwargs: Any,
     ):
         self._sensors = sensors
@@ -80,6 +84,7 @@ class Agent:
         self._acquisition_plan = acquisition_plan
         self._dof_constraints = dof_constraints
         self._outcome_constraints = outcome_constraints
+        self._stopping_strategy = stopping_strategy
         self._optimizer = AxOptimizer(
             parameters=[dof.to_ax_parameter_config() for dof in dofs],
             objective=to_ax_objective_str(objectives),
@@ -123,6 +128,10 @@ class Agent:
     @property
     def ax_client(self) -> Client:
         return self._optimizer.ax_client
+
+    @property
+    def stopping_strategy(self) -> BaseGlobalStoppingStrategy | None:
+        return self._stopping_strategy
 
     def to_optimization_problem(self) -> OptimizationProblem:
         """
@@ -254,7 +263,12 @@ class Agent:
         suggest : Get point suggestions without running acquisition.
         ingest : Manually ingest evaluation results.
         """
-        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points)
+        yield from optimize(
+            self.to_optimization_problem(),
+            stopping_strategy=self._stopping_strategy,
+            iterations=iterations,
+            n_points=n_points,
+        )
 
     def plot_objective(
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any

@@ -5,6 +5,7 @@ from typing import Any, cast
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
+from ax.global_stopping.strategies.base import BaseGlobalStoppingStrategy
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
@@ -126,6 +127,7 @@ def optimize(
     optimization_problem: OptimizationProblem,
     iterations: int = 1,
     n_points: int = 1,
+    stopping_strategy: BaseGlobalStoppingStrategy | None = None,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
@@ -140,10 +142,19 @@ def optimize(
         The number of optimization iterations to run.
     n_points : int, optional
         The number of points to suggest per iteration.
+    stopping_strategy : BaseGlobalStoppingStrategy | None, optional
+        A global stopping strategy to determine when/if to stop optimization early.
     """
 
     for _ in range(iterations):
         yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
+        if stopping_strategy is not None:
+            should_stop, message = stopping_strategy.should_stop_optimization(
+                experiment=optimization_problem.optimizer.ax_client._experiment  # type: ignore[attr-defined]
+            )
+            if should_stop:
+                print(f"Global stopping strategy triggered optimization stop: {message}")
+                break
 
 
 @plan
