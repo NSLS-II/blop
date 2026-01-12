@@ -8,7 +8,7 @@ import bluesky.plans as bp
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
-from ..protocols import ID_KEY, Actuator, OptimizationProblem, Sensor
+from ..protocols import ID_KEY, Actuator, OptimizationProblem, Sensor, Checkpointable
 from .utils import route_suggestions
 
 logger = logging.getLogger(__name__)
@@ -126,6 +126,7 @@ def optimize(
     optimization_problem: OptimizationProblem,
     iterations: int = 1,
     n_points: int = 1,
+    checkpoint_interval: int | None = None,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
@@ -140,10 +141,29 @@ def optimize(
         The number of optimization iterations to run.
     n_points : int, optional
         The number of points to suggest per iteration.
+    checkpoint_interval : int | None, optional
+        The number of iterations between optimizer checkpoints. If None, checkpoints
+        will not be saved. Optimizer must implement the
+        :class:`blop.protocols.Checkpointable` protocol.
+    *args : Any
+        Additional positional arguments to pass to the :func:`optimize_step` plan.
+    **kwargs : Any
+        Additional keyword arguments to pass to the :func:`optimize_step` plan.
+    
+    See Also
+    --------
+    blop.protocols.OptimizationProblem : The problem to solve.
+    blop.protocols.Checkpointable : The protocol for checkpointable objects.
+    optimize_step : The plan to execute a single step of the optimization.
     """
 
-    for _ in range(iterations):
+    for i in range(iterations):
         yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
+        if checkpoint_interval and (i + 1) % checkpoint_interval == 0:
+            if not isinstance(optimization_problem.optimizer, Checkpointable):
+                raise ValueError("The optimizer is not checkpointable. Please review "
+                                 "your optimizer configuration or implementation.")
+            optimization_problem.optimizer.checkpoint()
 
 
 @plan

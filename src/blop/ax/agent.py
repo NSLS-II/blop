@@ -42,6 +42,8 @@ class Agent:
         Constraints on DOFs to refine the search space.
     outcome_constraints : Sequence[OutcomeConstraint] | None, optional
         Constraints on outcomes to be satisfied during optimization.
+    checkpoint_path : str | None, optional
+        The path to the checkpoint file to save the optimizer's state to.
     **kwargs : Any
         Additional keyword arguments to configure the Ax experiment.
 
@@ -71,6 +73,7 @@ class Agent:
         acquisition_plan: AcquisitionPlan | None = None,
         dof_constraints: Sequence[DOFConstraint] | None = None,
         outcome_constraints: Sequence[OutcomeConstraint] | None = None,
+        checkpoint_path: str | None = None,
         **kwargs: Any,
     ):
         self._sensors = sensors
@@ -89,6 +92,7 @@ class Agent:
             outcome_constraints=[constraint.ax_constraint for constraint in self._outcome_constraints]
             if self._outcome_constraints
             else None,
+            checkpoint_path=checkpoint_path,
             **kwargs,
         )
 
@@ -123,6 +127,10 @@ class Agent:
     @property
     def ax_client(self) -> Client:
         return self._optimizer.ax_client
+
+    @property
+    def checkpoint_path(self) -> str | None:
+        return self._optimizer.checkpoint_path
 
     def to_optimization_problem(self) -> OptimizationProblem:
         """
@@ -299,3 +307,9 @@ class Agent:
             *args,
             **kwargs,
         )
+
+    def checkpoint(self) -> None:
+        """
+        Save the agent's state to a JSON file.
+        """
+        self._optimizer.checkpoint()

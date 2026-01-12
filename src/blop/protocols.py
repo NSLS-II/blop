@@ -1,3 +1,4 @@
+from pathlib import Path
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
@@ -8,6 +9,21 @@ from bluesky.utils import MsgGenerator, plan
 ID_KEY: Literal["_id"] = "_id"
 Actuator = NamedMovable | Flyable
 Sensor = Readable | EventCollectable | EventPageCollectable
+
+
+@runtime_checkable
+class Checkpointable(Protocol):
+    """
+    A protocol for objects that can can write state to persistent storage.
+
+    Implementers configure storage at construction time (e.g., a file path, databse URI).
+    The checkpoint method then saves or updates to that pre-configured location.
+    """
+    def checkpoint(self) -> None:
+        """
+        Write the object's state to persistent storage.
+        """
+        ...
 
 
 @runtime_checkable
