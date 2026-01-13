@@ -59,7 +59,7 @@ class AxOptimizer(Optimizer, Checkpointable):
         )
 
     @classmethod
-    def load_checkpoint(cls, checkpoint_path: str) -> "AxOptimizer":
+    def from_checkpoint(cls, checkpoint_path: str) -> "AxOptimizer":
         """
         Load an optimizer from a checkpoint file.
 

@@ -142,7 +142,7 @@ def test_ax_optimizer_checkpoint(tmp_path):
     assert checkpoint_path.exists()
 
     # Load from checkpoint
-    optimizer = AxOptimizer.load_checkpoint(str(checkpoint_path))
+    optimizer = AxOptimizer.from_checkpoint(str(checkpoint_path))
     summary_df = optimizer.ax_client.summarize()
     assert "x1" in summary_df.columns
     assert "y1" in summary_df.columns

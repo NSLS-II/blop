@@ -42,12 +42,39 @@ def test_agent_init(mock_evaluation_function, mock_acquisition_plan):
         name="test_experiment",
     )
     assert agent.sensors == [readable]
-    assert agent.dofs == [dof1, dof2]
-    assert agent.objectives == [objective]
+    assert agent.actuators == [dof1.actuator, dof2.actuator]
     assert agent.evaluation_function == mock_evaluation_function
-    assert agent.dof_constraints == [constraint]
     assert agent.acquisition_plan == mock_acquisition_plan
     assert isinstance(agent.ax_client, Client)
+
+
+def test_agent_checkpoint(mock_evaluation_function, mock_acquisition_plan, tmp_path):
+    checkpoint_path = tmp_path / "checkpoint.json"
+    readable = ReadableSignal(name="test_readable")
+    agent = Agent(
+        sensors=[ReadableSignal(name="test_readable")],
+        dofs=[RangeDOF(name="x1", bounds=(0, 10), parameter_type="float")],
+        objectives=[Objective(name="test_objective", minimize=False)],
+        evaluation=mock_evaluation_function,
+        acquisition_plan=mock_acquisition_plan,
+        checkpoint_path=str(checkpoint_path),
+    )
+
+    assert agent.checkpoint_path == str(checkpoint_path)
+    assert not checkpoint_path.exists()
+    agent.ingest([{"x1": 0.1, "test_objective": 0.2}])
+    agent.ax_client.configure_generation_strategy()
+    agent.checkpoint()
+    assert checkpoint_path.exists()
+
+    agent = Agent.from_checkpoint(
+        str(checkpoint_path),
+        sensors=[readable],
+        actuators=[],
+        evaluation=mock_evaluation_function,
+        acquisition_plan=mock_acquisition_plan,
+    )
+    assert len(agent.ax_client.summarize()) == 1
 
 
 def test_agent_to_optimization_problem(mock_evaluation_function):

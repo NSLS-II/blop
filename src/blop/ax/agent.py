@@ -8,7 +8,7 @@ from ax.analysis.analysis_card import AnalysisCardBase
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
-from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Sensor
+from ..protocols import AcquisitionPlan, Actuator, EvaluationFunction, OptimizationProblem, Sensor
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
 from .optimizer import AxOptimizer
@@ -77,36 +77,68 @@ class Agent:
         **kwargs: Any,
     ):
         self._sensors = sensors
-        self._dofs = {dof.parameter_name: dof for dof in dofs}
-        self._objectives = {obj.name: obj for obj in objectives}
+        self._actuators = [dof.actuator for dof in dofs if dof.actuator is not None]
         self._evaluation_function = evaluation
         self._acquisition_plan = acquisition_plan
-        self._dof_constraints = dof_constraints
-        self._outcome_constraints = outcome_constraints
         self._optimizer = AxOptimizer(
             parameters=[dof.to_ax_parameter_config() for dof in dofs],
             objective=to_ax_objective_str(objectives),
-            parameter_constraints=[constraint.ax_constraint for constraint in self._dof_constraints]
-            if self._dof_constraints
-            else None,
-            outcome_constraints=[constraint.ax_constraint for constraint in self._outcome_constraints]
-            if self._outcome_constraints
+            parameter_constraints=[constraint.ax_constraint for constraint in dof_constraints] if dof_constraints else None,
+            outcome_constraints=[constraint.ax_constraint for constraint in outcome_constraints]
+            if outcome_constraints
             else None,
             checkpoint_path=checkpoint_path,
             **kwargs,
         )
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint_path: str,
+        sensors: Sequence[Sensor],
+        actuators: Sequence[Actuator],
+        evaluation: EvaluationFunction,
+        acquisition_plan: AcquisitionPlan | None = None,
+    ) -> "Agent":
+        """
+        Load an agent from the optimizer's checkpoint file.
+
+        .. note::
+
+            Only the optimizer state is saved during a checkpoint, so we cannot reliably validate
+            the remaining state against the optimizer configuration.
+
+        Parameters
+        ----------
+        checkpoint_path : str
+            The checkpoint path to load the agent from.
+        sensors : Sequence[Sensor]
+            The sensors to use for acquisition. These should be the minimal set
+            of sensors that are needed to compute the objectives.
+        actuators : Sequence[Actuator]
+            Devices that are controllable from Bluesky that are part of the acquisition.
+        evaluation : EvaluationFunction
+            The function to evaluate acquired data and produce outcomes.
+        acquisition_plan : AcquisitionPlan | None, optional
+            The acquisition plan to use for acquiring data from the beamline. If not provided,
+            :func:`blop.plans.default_acquire` will be used.
+        """
+        instance = object.__new__(cls)
+        instance._optimizer = AxOptimizer.from_checkpoint(checkpoint_path)
+        instance._sensors = sensors
+        instance._actuators = actuators
+        instance._evaluation_function = evaluation
+        instance._acquisition_plan = acquisition_plan
+
+        return instance
 
     @property
     def sensors(self) -> Sequence[Sensor]:
         return self._sensors
 
     @property
-    def dofs(self) -> Sequence[DOF]:
-        return list(self._dofs.values())
-
-    @property
-    def objectives(self) -> Sequence[Objective]:
-        return list(self._objectives.values())
+    def actuators(self) -> Sequence[Actuator]:
+        return self._actuators
 
     @property
     def evaluation_function(self) -> EvaluationFunction:
@@ -115,14 +147,6 @@ class Agent:
     @property
     def acquisition_plan(self) -> AcquisitionPlan | None:
         return self._acquisition_plan
-
-    @property
-    def dof_constraints(self) -> Sequence[DOFConstraint] | None:
-        return self._dof_constraints
-
-    @property
-    def outcome_constraints(self) -> Sequence[OutcomeConstraint] | None:
-        return self._outcome_constraints
 
     @property
     def ax_client(self) -> Client:
@@ -152,7 +176,7 @@ class Agent:
         """
         return OptimizationProblem(
             optimizer=self._optimizer,
-            actuators=[dof.actuator for dof in self.dofs if dof.actuator is not None],
+            actuators=self.actuators,
             sensors=self.sensors,
             evaluation_function=self.evaluation_function,
             acquisition_plan=self.acquisition_plan,
