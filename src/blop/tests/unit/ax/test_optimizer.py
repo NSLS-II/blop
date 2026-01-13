@@ -117,3 +117,35 @@ def test_ax_optimizer_suggest_ingest():
     assert len(summary_df) == 2
     assert np.all(summary_df["y1"].values == [1.0, 3.0])
     assert np.all(summary_df["y2"].values == [2.0, 4.0])
+
+
+def test_ax_optimizer_checkpoint(tmp_path):
+    optimizer = AxOptimizer(
+        parameters=[
+            RangeParameterConfig(name="x1", bounds=(-5.0, 5.0), parameter_type="float"),
+        ],
+        objective="y1",
+        checkpoint_path=str(tmp_path / "checkpoint.json")
+    )
+    suggestions = optimizer.suggest(num_points=2)
+    outcomes = [
+        {"_id": suggestions[0]["_id"], "y1": 1.0},
+        {"_id": suggestions[1]["_id"], "y1": 3.0},
+    ]
+    optimizer.ingest(outcomes)
+
+    assert not (tmp_path / "checkpoint.json").exists()
+    optimizer.checkpoint()
+    assert (tmp_path / "checkpoint.json").exists()
+
+
+def test_ax_optimizer_checkpoint_no_path():
+    optimizer = AxOptimizer(
+        parameters=[
+            RangeParameterConfig(name="x1", bounds=(-5.0, 5.0), parameter_type="float"),
+        ],
+        objective="y1",
+    )
+
+    with pytest.raises(ValueError):
+        optimizer.checkpoint()
