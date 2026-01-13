@@ -123,7 +123,7 @@ Configure an agent
         sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        evaluation_function,
+        evaluation_function=evaluation_function,
     )
 
 Configure a generation strategy
