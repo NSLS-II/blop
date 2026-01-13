@@ -57,6 +57,29 @@ class AxOptimizer(Optimizer, Checkpointable):
             objective=objective,
             outcome_constraints=outcome_constraints,
         )
+
+    @classmethod
+    def load_checkpoint(cls, checkpoint_path: str) -> "AxOptimizer":
+        """
+        Load an optimizer from a checkpoint file.
+
+        Parameters
+        ----------
+        checkpoint_path : str
+            The path to the checkpoint file to load the optimizer from.
+        
+        Returns
+        -------
+        AxOptimizer
+            An instance of the optimizer class, initialized from the checkpoint.
+        """
+        client = Client.load_from_json_file(checkpoint_path)
+        instance = object.__new__(cls)
+        instance._parameter_names = list(client._experiment.parameters.keys())
+        instance._checkpoint_path = checkpoint_path
+        instance._client = client
+
+        return instance
     
     @property
     def checkpoint_path(self) -> str | None:

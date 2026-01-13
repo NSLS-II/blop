@@ -120,12 +120,15 @@ def test_ax_optimizer_suggest_ingest():
 
 
 def test_ax_optimizer_checkpoint(tmp_path):
+    checkpoint_path = tmp_path / "checkpoint.json"
+
+    # Save to checkpoint
     optimizer = AxOptimizer(
         parameters=[
             RangeParameterConfig(name="x1", bounds=(-5.0, 5.0), parameter_type="float"),
         ],
         objective="y1",
-        checkpoint_path=str(tmp_path / "checkpoint.json")
+        checkpoint_path=str(checkpoint_path)
     )
     suggestions = optimizer.suggest(num_points=2)
     outcomes = [
@@ -134,9 +137,17 @@ def test_ax_optimizer_checkpoint(tmp_path):
     ]
     optimizer.ingest(outcomes)
 
-    assert not (tmp_path / "checkpoint.json").exists()
+    assert not checkpoint_path.exists()
     optimizer.checkpoint()
-    assert (tmp_path / "checkpoint.json").exists()
+    assert checkpoint_path.exists()
+
+    # Load from checkpoint
+    optimizer = AxOptimizer.load_checkpoint(str(checkpoint_path))
+    summary_df = optimizer.ax_client.summarize()
+    assert "x1" in summary_df.columns
+    assert "y1" in summary_df.columns
+    assert len(summary_df) == 2
+    assert optimizer.checkpoint_path == str(checkpoint_path)
 
 
 def test_ax_optimizer_checkpoint_no_path():
