@@ -1,4 +1,3 @@
-from pathlib import Path
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
@@ -19,6 +18,7 @@ class Checkpointable(Protocol):
     Implementers configure storage at construction time (e.g., a file path, databse URI).
     The checkpoint method then saves or updates to that pre-configured location.
     """
+
     def checkpoint(self) -> None:
         """
         Write the object's state to persistent storage.

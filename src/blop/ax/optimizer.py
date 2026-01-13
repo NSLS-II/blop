@@ -3,7 +3,7 @@ from typing import Any
 
 from ax import ChoiceParameterConfig, Client, RangeParameterConfig
 
-from ..protocols import ID_KEY, Optimizer, Checkpointable
+from ..protocols import ID_KEY, Checkpointable, Optimizer
 
 
 class AxOptimizer(Optimizer, Checkpointable):
@@ -67,7 +67,7 @@ class AxOptimizer(Optimizer, Checkpointable):
         ----------
         checkpoint_path : str
             The path to the checkpoint file to load the optimizer from.
-        
+
         Returns
         -------
         AxOptimizer
@@ -80,7 +80,7 @@ class AxOptimizer(Optimizer, Checkpointable):
         instance._client = client
 
         return instance
-    
+
     @property
     def checkpoint_path(self) -> str | None:
         return self._checkpoint_path
@@ -163,6 +163,5 @@ class AxOptimizer(Optimizer, Checkpointable):
         Save the optimizer's state to JSON file.
         """
         if not self.checkpoint_path:
-            raise ValueError("Checkpoint path is not set. Please set a checkpoint path "
-                             "when initializing the optimizer.")
+            raise ValueError("Checkpoint path is not set. Please set a checkpoint path when initializing the optimizer.")
         self._client.save_to_json_file(self.checkpoint_path)

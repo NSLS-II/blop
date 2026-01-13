@@ -128,7 +128,7 @@ def test_ax_optimizer_checkpoint(tmp_path):
             RangeParameterConfig(name="x1", bounds=(-5.0, 5.0), parameter_type="float"),
         ],
         objective="y1",
-        checkpoint_path=str(checkpoint_path)
+        checkpoint_path=str(checkpoint_path),
     )
     suggestions = optimizer.suggest(num_points=2)
     outcomes = [

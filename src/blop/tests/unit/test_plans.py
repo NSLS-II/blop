@@ -5,13 +5,12 @@ import pytest
 from bluesky.run_engine import RunEngine
 
 from blop.plans import acquire_baseline, acquire_with_background, default_acquire, optimize, optimize_step
-from blop.protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Optimizer, Checkpointable
+from blop.protocols import AcquisitionPlan, Checkpointable, EvaluationFunction, OptimizationProblem, Optimizer
 
 from .conftest import MovableSignal, ReadableSignal
 
 
-class CheckpointableOptimizer(Optimizer, Checkpointable):
-    ...
+class CheckpointableOptimizer(Optimizer, Checkpointable): ...
 
 
 @pytest.fixture(scope="function")
@@ -118,7 +117,8 @@ def test_optimize_with_checkpoint_every_iteration(RE, checkpoint_interval):
         optimizer=optimizer,
         actuators=[MovableSignal("x1", initial_value=-1.0)],
         sensors=[ReadableSignal("objective")],
-        evaluation_function=evaluation_function)
+        evaluation_function=evaluation_function,
+    )
 
     with patch.object(optimizer, "checkpoint", wraps=optimizer.checkpoint) as mock_checkpoint:
         RE(optimize(optimization_problem, iterations=5, n_points=2, checkpoint_interval=checkpoint_interval))
@@ -136,7 +136,8 @@ def test_optimize_with_non_checkpointable_optimizer(RE):
         optimizer=optimizer,
         actuators=[MovableSignal("x1", initial_value=-1.0)],
         sensors=[ReadableSignal("objective")],
-        evaluation_function=evaluation_function)
+        evaluation_function=evaluation_function,
+    )
     with pytest.raises(ValueError):
         RE(optimize(optimization_problem, iterations=5, n_points=2, checkpoint_interval=1))
 

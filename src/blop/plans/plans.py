@@ -8,7 +8,7 @@ import bluesky.plans as bp
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
-from ..protocols import ID_KEY, Actuator, OptimizationProblem, Sensor, Checkpointable
+from ..protocols import ID_KEY, Actuator, Checkpointable, OptimizationProblem, Sensor
 from .utils import route_suggestions
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,7 @@ def optimize(
         Additional positional arguments to pass to the :func:`optimize_step` plan.
     **kwargs : Any
         Additional keyword arguments to pass to the :func:`optimize_step` plan.
-    
+
     See Also
     --------
     blop.protocols.OptimizationProblem : The problem to solve.
@@ -161,8 +161,9 @@ def optimize(
         yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
         if checkpoint_interval and (i + 1) % checkpoint_interval == 0:
             if not isinstance(optimization_problem.optimizer, Checkpointable):
-                raise ValueError("The optimizer is not checkpointable. Please review "
-                                 "your optimizer configuration or implementation.")
+                raise ValueError(
+                    "The optimizer is not checkpointable. Please review your optimizer configuration or implementation."
+                )
             optimization_problem.optimizer.checkpoint()
 
 
