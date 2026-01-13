@@ -109,7 +109,8 @@ def test_optimize_complex_case(RE):
     assert evaluation_function.call_count == 2
 
 
-def test_optimize_with_checkpoint_interval(RE):
+@pytest.mark.parametrize("checkpoint_interval", [0, 1, 2, 3])
+def test_optimize_with_checkpoint_every_iteration(RE, checkpoint_interval):
     optimizer = MagicMock(spec=CheckpointableOptimizer)
     optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
     evaluation_function = MagicMock(spec=EvaluationFunction, return_value={"objective": 0.0})
@@ -120,8 +121,24 @@ def test_optimize_with_checkpoint_interval(RE):
         evaluation_function=evaluation_function)
 
     with patch.object(optimizer, "checkpoint", wraps=optimizer.checkpoint) as mock_checkpoint:
+        RE(optimize(optimization_problem, iterations=5, n_points=2, checkpoint_interval=checkpoint_interval))
+        if checkpoint_interval == 0:
+            assert mock_checkpoint.call_count == 0
+        else:
+            assert mock_checkpoint.call_count == 5 // checkpoint_interval
+
+
+def test_optimize_with_non_checkpointable_optimizer(RE):
+    optimizer = MagicMock(spec=Optimizer)
+    optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
+    evaluation_function = MagicMock(spec=EvaluationFunction, return_value={"objective": 0.0})
+    optimization_problem = OptimizationProblem(
+        optimizer=optimizer,
+        actuators=[MovableSignal("x1", initial_value=-1.0)],
+        sensors=[ReadableSignal("objective")],
+        evaluation_function=evaluation_function)
+    with pytest.raises(ValueError):
         RE(optimize(optimization_problem, iterations=5, n_points=2, checkpoint_interval=1))
-        assert mock_checkpoint.call_count == 5
 
 
 def test_optimize_step_default(RE):
