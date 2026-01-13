@@ -3,10 +3,10 @@ from typing import Any
 
 from ax import ChoiceParameterConfig, Client, RangeParameterConfig
 
-from ..protocols import ID_KEY, Optimizer
+from ..protocols import ID_KEY, Checkpointable, Optimizer
 
 
-class AxOptimizer(Optimizer):
+class AxOptimizer(Optimizer, Checkpointable):
     """
     An optimizer that uses Ax as the backend for optimization and experiment tracking.
 
@@ -22,6 +22,8 @@ class AxOptimizer(Optimizer):
         The parameter constraints to apply to the optimization.
     outcome_constraints : Sequence[str] | None, optional
         The outcome constraints to apply to the optimization.
+    checkpoint_path : str | None, optional
+        The path to the checkpoint file to save the optimizer's state to.
     client_kwargs : dict[str, Any] | None, optional
         Additional keyword arguments to configure the Ax client.
     **kwargs : Any
@@ -39,10 +41,12 @@ class AxOptimizer(Optimizer):
         objective: str,
         parameter_constraints: Sequence[str] | None = None,
         outcome_constraints: Sequence[str] | None = None,
+        checkpoint_path: str | None = None,
         client_kwargs: dict[str, Any] | None = None,
         **kwargs: Any,
     ):
         self._parameter_names = [parameter.name for parameter in parameters]
+        self._checkpoint_path = checkpoint_path
         self._client = Client(**(client_kwargs or {}))
         self._client.configure_experiment(
             parameters=parameters,
@@ -53,6 +57,33 @@ class AxOptimizer(Optimizer):
             objective=objective,
             outcome_constraints=outcome_constraints,
         )
+
+    @classmethod
+    def from_checkpoint(cls, checkpoint_path: str) -> "AxOptimizer":
+        """
+        Load an optimizer from a checkpoint file.
+
+        Parameters
+        ----------
+        checkpoint_path : str
+            The path to the checkpoint file to load the optimizer from.
+
+        Returns
+        -------
+        AxOptimizer
+            An instance of the optimizer class, initialized from the checkpoint.
+        """
+        client = Client.load_from_json_file(checkpoint_path)
+        instance = object.__new__(cls)
+        instance._parameter_names = list(client._experiment.parameters.keys())
+        instance._checkpoint_path = checkpoint_path
+        instance._client = client
+
+        return instance
+
+    @property
+    def checkpoint_path(self) -> str | None:
+        return self._checkpoint_path
 
     @property
     def ax_client(self) -> Client:
@@ -126,3 +157,11 @@ class AxOptimizer(Optimizer):
             elif trial_idx == "baseline":
                 trial_idx = self._client.attach_baseline(parameters=parameters)
             self._client.complete_trial(trial_index=trial_idx, raw_data=outcomes)
+
+    def checkpoint(self) -> None:
+        """
+        Save the optimizer's state to JSON file.
+        """
+        if not self.checkpoint_path:
+            raise ValueError("Checkpoint path is not set. Please set a checkpoint path when initializing the optimizer.")
+        self._client.save_to_json_file(self.checkpoint_path)

@@ -133,7 +133,7 @@ The ``DOF`` and ``Objective`` names must match the keys in the data dictionaries
         sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        evaluation=evaluation_function,
+        evaluation_function=evaluation_function,
     )
 
 Ingest your data

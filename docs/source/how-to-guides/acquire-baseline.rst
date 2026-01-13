@@ -130,7 +130,7 @@ Here we configure an agent with three DOFs and two objectives. The second object
         sensors=[readable1, readable2],
         dofs=dofs,
         objectives=objectives,
-        evaluation=evaluation_function,
+        evaluation_function=evaluation_function,
         outcome_constraints=outcome_constraints,
     )
 

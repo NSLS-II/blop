@@ -189,7 +189,7 @@ Configure an agent
         sensors=[motor_x],
         dofs=[dof1],
         objectives=[objective],
-        evaluation=TiledEvaluation(tiled_client=tiled_client),
+        evaluation_function=TiledEvaluation(tiled_client=tiled_client),
     )
     RE(agent.optimize())
     server.close()
@@ -205,6 +205,6 @@ or for Databroker:
         sensors=[motor_x],
         dofs=[dof1],
         objectives=[objective],
-        evaluation=DatabrokerEvaluation(db=db),
+        evaluation_function=DatabrokerEvaluation(db=db),
     )
     RE(agent_db.optimize())

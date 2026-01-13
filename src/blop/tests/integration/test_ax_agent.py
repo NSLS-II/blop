@@ -46,6 +46,6 @@ def test_ax_agent_sim_beamline(RE, setup):
         sensors=[beamline.det],
         dofs=dofs,
         objectives=objectives,
-        evaluation=evaluation_function,
+        evaluation_function=evaluation_function,
     )
     RE(agent.optimize(iterations=12, n_points=1))

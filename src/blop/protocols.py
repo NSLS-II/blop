@@ -11,6 +11,22 @@ Sensor = Readable | EventCollectable | EventPageCollectable
 
 
 @runtime_checkable
+class Checkpointable(Protocol):
+    """
+    A protocol for objects that can can write state to persistent storage.
+
+    Implementers configure storage at construction time (e.g., a file path, databse URI).
+    The checkpoint method then saves or updates to that pre-configured location.
+    """
+
+    def checkpoint(self) -> None:
+        """
+        Write the object's state to persistent storage.
+        """
+        ...
+
+
+@runtime_checkable
 class Optimizer(Protocol):
     """
     A minimal optimizer interface for optimization.

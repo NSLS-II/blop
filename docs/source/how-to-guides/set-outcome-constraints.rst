@@ -138,6 +138,6 @@ Configure an agent with outcome constraints
         sensors=[],
         dofs=dofs,
         objectives=objectives,
-        evaluation=evaluation_function,
+        evaluation_function=evaluation_function,
         outcome_constraints=[constraint],
     )

@@ -8,7 +8,7 @@ from ax.analysis.analysis_card import AnalysisCardBase
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
-from ..protocols import AcquisitionPlan, EvaluationFunction, OptimizationProblem, Sensor
+from ..protocols import AcquisitionPlan, Actuator, EvaluationFunction, OptimizationProblem, Sensor
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
 from .optimizer import AxOptimizer
@@ -33,7 +33,7 @@ class Agent:
         The degrees of freedom that the agent can control, which determine the search space.
     objectives : Sequence[Objective]
         The objectives which the agent will try to optimize.
-    evaluation : EvaluationFunction
+    evaluation_function : EvaluationFunction
         The function to evaluate acquired data and produce outcomes.
     acquisition_plan : AcquisitionPlan | None, optional
         The acquisition plan to use for acquiring data from the beamline. If not provided,
@@ -42,6 +42,8 @@ class Agent:
         Constraints on DOFs to refine the search space.
     outcome_constraints : Sequence[OutcomeConstraint] | None, optional
         Constraints on outcomes to be satisfied during optimization.
+    checkpoint_path : str | None, optional
+        The path to the checkpoint file to save the optimizer's state to.
     **kwargs : Any
         Additional keyword arguments to configure the Ax experiment.
 
@@ -67,42 +69,75 @@ class Agent:
         sensors: Sequence[Sensor],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        evaluation: EvaluationFunction,
+        evaluation_function: EvaluationFunction,
         acquisition_plan: AcquisitionPlan | None = None,
         dof_constraints: Sequence[DOFConstraint] | None = None,
         outcome_constraints: Sequence[OutcomeConstraint] | None = None,
+        checkpoint_path: str | None = None,
         **kwargs: Any,
     ):
         self._sensors = sensors
-        self._dofs = {dof.parameter_name: dof for dof in dofs}
-        self._objectives = {obj.name: obj for obj in objectives}
-        self._evaluation_function = evaluation
+        self._actuators = [dof.actuator for dof in dofs if dof.actuator is not None]
+        self._evaluation_function = evaluation_function
         self._acquisition_plan = acquisition_plan
-        self._dof_constraints = dof_constraints
-        self._outcome_constraints = outcome_constraints
         self._optimizer = AxOptimizer(
             parameters=[dof.to_ax_parameter_config() for dof in dofs],
             objective=to_ax_objective_str(objectives),
-            parameter_constraints=[constraint.ax_constraint for constraint in self._dof_constraints]
-            if self._dof_constraints
+            parameter_constraints=[constraint.ax_constraint for constraint in dof_constraints] if dof_constraints else None,
+            outcome_constraints=[constraint.ax_constraint for constraint in outcome_constraints]
+            if outcome_constraints
             else None,
-            outcome_constraints=[constraint.ax_constraint for constraint in self._outcome_constraints]
-            if self._outcome_constraints
-            else None,
+            checkpoint_path=checkpoint_path,
             **kwargs,
         )
+
+    @classmethod
+    def from_checkpoint(
+        cls,
+        checkpoint_path: str,
+        actuators: Sequence[Actuator],
+        sensors: Sequence[Sensor],
+        evaluation_function: EvaluationFunction,
+        acquisition_plan: AcquisitionPlan | None = None,
+    ) -> "Agent":
+        """
+        Load an agent from the optimizer's checkpoint file.
+
+        .. note::
+
+            Only the optimizer state is saved during a checkpoint, so we cannot reliably validate
+            the remaining state against the optimizer configuration.
+
+        Parameters
+        ----------
+        checkpoint_path : str
+            The checkpoint path to load the agent from.
+        actuators: Sequence[Actuator]
+            Objects that can be moved to control the beamline using the Bluesky RunEngine.
+            A subset of the actuators' names must match the names of suggested parameterizations.
+        sensors: Sequence[Sensor]
+            Objects that can produce data to acquire data from the beamline using the Bluesky RunEngine.
+        evaluation_function: EvaluationFunction
+            A callable to evaluate data from a Bluesky run and produce outcomes.
+        acquisition_plan: AcquisitionPlan, optional
+            A Bluesky plan to acquire data from the beamline. If not provided, a default plan will be used.
+        """
+        instance = object.__new__(cls)
+        instance._optimizer = AxOptimizer.from_checkpoint(checkpoint_path)
+        instance._actuators = actuators
+        instance._sensors = sensors
+        instance._evaluation_function = evaluation_function
+        instance._acquisition_plan = acquisition_plan
+
+        return instance
 
     @property
     def sensors(self) -> Sequence[Sensor]:
         return self._sensors
 
     @property
-    def dofs(self) -> Sequence[DOF]:
-        return list(self._dofs.values())
-
-    @property
-    def objectives(self) -> Sequence[Objective]:
-        return list(self._objectives.values())
+    def actuators(self) -> Sequence[Actuator]:
+        return self._actuators
 
     @property
     def evaluation_function(self) -> EvaluationFunction:
@@ -113,16 +148,12 @@ class Agent:
         return self._acquisition_plan
 
     @property
-    def dof_constraints(self) -> Sequence[DOFConstraint] | None:
-        return self._dof_constraints
-
-    @property
-    def outcome_constraints(self) -> Sequence[OutcomeConstraint] | None:
-        return self._outcome_constraints
-
-    @property
     def ax_client(self) -> Client:
         return self._optimizer.ax_client
+
+    @property
+    def checkpoint_path(self) -> str | None:
+        return self._optimizer.checkpoint_path
 
     def to_optimization_problem(self) -> OptimizationProblem:
         """
@@ -144,7 +175,7 @@ class Agent:
         """
         return OptimizationProblem(
             optimizer=self._optimizer,
-            actuators=[dof.actuator for dof in self.dofs if dof.actuator is not None],
+            actuators=self.actuators,
             sensors=self.sensors,
             evaluation_function=self.evaluation_function,
             acquisition_plan=self.acquisition_plan,
@@ -299,3 +330,9 @@ class Agent:
             *args,
             **kwargs,
         )
+
+    def checkpoint(self) -> None:
+        """
+        Save the agent's state to a JSON file.
+        """
+        self._optimizer.checkpoint()

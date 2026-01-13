@@ -36,18 +36,45 @@ def test_agent_init(mock_evaluation_function, mock_acquisition_plan):
         sensors=[readable],
         dofs=[dof1, dof2],
         objectives=[objective],
-        evaluation=mock_evaluation_function,
+        evaluation_function=mock_evaluation_function,
         dof_constraints=[constraint],
         acquisition_plan=mock_acquisition_plan,
         name="test_experiment",
     )
     assert agent.sensors == [readable]
-    assert agent.dofs == [dof1, dof2]
-    assert agent.objectives == [objective]
+    assert agent.actuators == [dof1.actuator, dof2.actuator]
     assert agent.evaluation_function == mock_evaluation_function
-    assert agent.dof_constraints == [constraint]
     assert agent.acquisition_plan == mock_acquisition_plan
     assert isinstance(agent.ax_client, Client)
+
+
+def test_agent_checkpoint(mock_evaluation_function, mock_acquisition_plan, tmp_path):
+    checkpoint_path = tmp_path / "checkpoint.json"
+    readable = ReadableSignal(name="test_readable")
+    agent = Agent(
+        sensors=[ReadableSignal(name="test_readable")],
+        dofs=[RangeDOF(name="x1", bounds=(0, 10), parameter_type="float")],
+        objectives=[Objective(name="test_objective", minimize=False)],
+        evaluation_function=mock_evaluation_function,
+        acquisition_plan=mock_acquisition_plan,
+        checkpoint_path=str(checkpoint_path),
+    )
+
+    assert agent.checkpoint_path == str(checkpoint_path)
+    assert not checkpoint_path.exists()
+    agent.ingest([{"x1": 0.1, "test_objective": 0.2}])
+    agent.ax_client.configure_generation_strategy()
+    agent.checkpoint()
+    assert checkpoint_path.exists()
+
+    agent = Agent.from_checkpoint(
+        str(checkpoint_path),
+        sensors=[readable],
+        actuators=[],
+        evaluation_function=mock_evaluation_function,
+        acquisition_plan=mock_acquisition_plan,
+    )
+    assert len(agent.ax_client.summarize()) == 1
 
 
 def test_agent_to_optimization_problem(mock_evaluation_function):
@@ -62,7 +89,7 @@ def test_agent_to_optimization_problem(mock_evaluation_function):
         sensors=[],
         dofs=[dof1, dof2],
         objectives=[objective],
-        evaluation=mock_evaluation_function,
+        evaluation_function=mock_evaluation_function,
         dof_constraints=[constraint],
     )
     optimization_problem = agent.to_optimization_problem()
@@ -79,7 +106,7 @@ def test_agent_suggest(mock_evaluation_function):
     dof1 = RangeDOF(actuator=movable1, bounds=(0, 10), parameter_type="float")
     dof2 = RangeDOF(actuator=movable2, bounds=(0, 10), parameter_type="float")
     objective = Objective(name="test_objective", minimize=False)
-    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
+    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation_function=mock_evaluation_function)
 
     parameterizations = agent.suggest(1)
     assert len(parameterizations) == 1
@@ -96,7 +123,7 @@ def test_agent_suggest_multiple(mock_evaluation_function):
     dof1 = RangeDOF(actuator=movable1, bounds=(0, 10), parameter_type="float")
     dof2 = RangeDOF(actuator=movable2, bounds=(0, 10), parameter_type="float")
     objective = Objective(name="test_objective", minimize=False)
-    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
+    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation_function=mock_evaluation_function)
 
     parameterizations = agent.suggest(5)
     assert len(parameterizations) == 5
@@ -114,7 +141,7 @@ def test_agent_ingest(mock_evaluation_function):
     dof1 = RangeDOF(actuator=movable1, bounds=(0, 10), parameter_type="float")
     dof2 = RangeDOF(actuator=movable2, bounds=(0, 10), parameter_type="float")
     objective = Objective(name="test_objective", minimize=False)
-    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
+    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation_function=mock_evaluation_function)
 
     agent.ingest([{"test_movable1": 0.1, "test_movable2": 0.2, "test_objective": 0.3}])
 
@@ -132,7 +159,7 @@ def test_agent_ingest_multiple(mock_evaluation_function):
     dof1 = RangeDOF(actuator=movable1, bounds=(0, 10), parameter_type="float")
     dof2 = RangeDOF(actuator=movable2, bounds=(0, 10), parameter_type="float")
     objective = Objective(name="test_objective", minimize=False)
-    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
+    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation_function=mock_evaluation_function)
 
     agent.ingest(
         [
@@ -154,7 +181,7 @@ def test_ingest_baseline(mock_evaluation_function):
     dof1 = RangeDOF(actuator=movable1, bounds=(0, 10), parameter_type="float")
     dof2 = RangeDOF(actuator=movable2, bounds=(0, 10), parameter_type="float")
     objective = Objective(name="test_objective", minimize=False)
-    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation=mock_evaluation_function)
+    agent = Agent(sensors=[], dofs=[dof1, dof2], objectives=[objective], evaluation_function=mock_evaluation_function)
 
     agent.ingest([{"test_movable1": 0.1, "test_movable2": 0.2, "test_objective": 0.3, "_id": "baseline"}])
 
