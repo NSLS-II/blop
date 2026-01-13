@@ -151,7 +151,7 @@ agent = Agent(
     sensors=sensors,
     dofs=dofs,
     objectives=objectives,
-    evaluation=Himmelblau2DEvaluation(tiled_client=tiled_client),
+    evaluation_function=Himmelblau2DEvaluation(tiled_client=tiled_client),
     name="simple-experiment",
     description="A simple experiment optimizing the Himmelblau function",
 )

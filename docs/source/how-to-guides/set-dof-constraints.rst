@@ -124,6 +124,6 @@ Configure an agent with DOF constraints
         sensors=[],
         dofs=[dof1, dof2, dof3],
         objectives=[objective],
-        evaluation=evaluation_function,
+        evaluation_function=evaluation_function,
         dof_constraints=[constraint],
     )

@@ -87,7 +87,7 @@ class BlopQserverAgent(BlopAxAgent):
         The degrees of freedom that the agent can control, which determine the search space.
     objectives : Sequence[Objective]
         The objectives which the agent will try to optimize.
-    evaluation : EvaluationFunction
+    evaluation_function : EvaluationFunction
         The function to evaluate acquired data and produce outcomes.
     acquisition_plan : str, optional
         The name of the plan on the queueserver
@@ -121,7 +121,7 @@ class BlopQserverAgent(BlopAxAgent):
         sensors: Sequence[Sensor],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        evaluation: EvaluationFunction = None,
+        evaluation_function: EvaluationFunction = None,
         acquisition_plan: str = "acquire",
         dof_constraints: Sequence[DOFConstraint] = None,
         qserver_control_addr: str = "tcp://localhost:60615",
@@ -134,7 +134,7 @@ class BlopQserverAgent(BlopAxAgent):
             sensors=sensors,
             dofs=dofs,
             objectives=objectives,
-            evaluation=evaluation,
+            evaluation_function=evaluation_function,
             acquisition_plan=acquisition_plan,
             dof_constraints=dof_constraints,
             **kwargs,

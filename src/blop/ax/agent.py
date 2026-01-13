@@ -33,7 +33,7 @@ class Agent:
         The degrees of freedom that the agent can control, which determine the search space.
     objectives : Sequence[Objective]
         The objectives which the agent will try to optimize.
-    evaluation : EvaluationFunction
+    evaluation_function : EvaluationFunction
         The function to evaluate acquired data and produce outcomes.
     acquisition_plan : AcquisitionPlan | None, optional
         The acquisition plan to use for acquiring data from the beamline. If not provided,
@@ -69,7 +69,7 @@ class Agent:
         sensors: Sequence[Sensor],
         dofs: Sequence[DOF],
         objectives: Sequence[Objective],
-        evaluation: EvaluationFunction,
+        evaluation_function: EvaluationFunction,
         acquisition_plan: AcquisitionPlan | None = None,
         dof_constraints: Sequence[DOFConstraint] | None = None,
         outcome_constraints: Sequence[OutcomeConstraint] | None = None,
@@ -78,7 +78,7 @@ class Agent:
     ):
         self._sensors = sensors
         self._actuators = [dof.actuator for dof in dofs if dof.actuator is not None]
-        self._evaluation_function = evaluation
+        self._evaluation_function = evaluation_function
         self._acquisition_plan = acquisition_plan
         self._optimizer = AxOptimizer(
             parameters=[dof.to_ax_parameter_config() for dof in dofs],
@@ -95,9 +95,9 @@ class Agent:
     def from_checkpoint(
         cls,
         checkpoint_path: str,
-        sensors: Sequence[Sensor],
         actuators: Sequence[Actuator],
-        evaluation: EvaluationFunction,
+        sensors: Sequence[Sensor],
+        evaluation_function: EvaluationFunction,
         acquisition_plan: AcquisitionPlan | None = None,
     ) -> "Agent":
         """
@@ -112,22 +112,21 @@ class Agent:
         ----------
         checkpoint_path : str
             The checkpoint path to load the agent from.
-        sensors : Sequence[Sensor]
-            The sensors to use for acquisition. These should be the minimal set
-            of sensors that are needed to compute the objectives.
-        actuators : Sequence[Actuator]
-            Devices that are controllable from Bluesky that are part of the acquisition.
-        evaluation : EvaluationFunction
-            The function to evaluate acquired data and produce outcomes.
-        acquisition_plan : AcquisitionPlan | None, optional
-            The acquisition plan to use for acquiring data from the beamline. If not provided,
-            :func:`blop.plans.default_acquire` will be used.
+        actuators: Sequence[Actuator]
+            Objects that can be moved to control the beamline using the Bluesky RunEngine.
+            A subset of the actuators' names must match the names of suggested parameterizations.
+        sensors: Sequence[Sensor]
+            Objects that can produce data to acquire data from the beamline using the Bluesky RunEngine.
+        evaluation_function: EvaluationFunction
+            A callable to evaluate data from a Bluesky run and produce outcomes.
+        acquisition_plan: AcquisitionPlan, optional
+            A Bluesky plan to acquire data from the beamline. If not provided, a default plan will be used.
         """
         instance = object.__new__(cls)
         instance._optimizer = AxOptimizer.from_checkpoint(checkpoint_path)
-        instance._sensors = sensors
         instance._actuators = actuators
-        instance._evaluation_function = evaluation
+        instance._sensors = sensors
+        instance._evaluation_function = evaluation_function
         instance._acquisition_plan = acquisition_plan
 
         return instance
