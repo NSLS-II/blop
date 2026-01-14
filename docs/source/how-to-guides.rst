@@ -7,6 +7,7 @@ How-to Guides
    how-to-guides/use-ophyd-devices.rst
    how-to-guides/attach-data-to-experiments.rst
    how-to-guides/custom-generation-strategies.rst
+   how-to-guides/interactive-optimization.rst
    how-to-guides/set-dof-constraints.rst
    how-to-guides/set-outcome-constraints.rst
    how-to-guides/acquire-baseline.rst
