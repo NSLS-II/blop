@@ -1,5 +1,5 @@
 Interactive Optimization
-=======================
+========================
 
 This guide explains how to use Blop's interactive optimization mode, which gives you fine-grained control over the optimization process through user prompts and manual interventions.
 
