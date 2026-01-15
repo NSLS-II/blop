@@ -312,15 +312,17 @@ def optimize(
     optimize_step : The plan to execute a single step of the optimization.
     """
 
-    # Check if running under pytest
+    # Check if running under pytest or doctest
     in_pytest = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+    in_doctest = "doctest" in sys.modules or "_pytest.doctest" in sys.modules
 
-    # Only prompt for interactive mode (NOT in pytest (terminal or notebook is OK))
-    if not in_pytest:
+    # Only prompt for interactive mode if NOT in automated test environments
+    if not (in_pytest or in_doctest):
         use_interactive = ask_user_for_input(
             "Would you like to run the optimization in interactive mode?", options={"y": "Yes", "n": "No"}
         )
     else:
+        # Running in automated test environment - use non-interactive mode
         use_interactive = False
 
     if use_interactive == "y":
