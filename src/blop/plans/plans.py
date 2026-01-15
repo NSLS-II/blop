@@ -312,17 +312,38 @@ def optimize(
     optimize_step : The plan to execute a single step of the optimization.
     """
 
-    # Check if running under pytest or doctest
-    in_pytest = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
-    in_doctest = "doctest" in sys.modules or "_pytest.doctest" in sys.modules
+    # Check if stdin is available for user input
+    stdin_available = True
 
-    # Only prompt for interactive mode if NOT in automated test environments
-    if not (in_pytest or in_doctest):
+    # Check if running under pytest or doctest
+    if (
+        "pytest" in sys.modules
+        or "PYTEST_CURRENT_TEST" in os.environ
+        or "doctest" in sys.modules
+        or "_pytest.doctest" in sys.modules
+    ):
+        stdin_available = False
+    # if:
+    # Check if running in a Jupyter environment without stdin support
+    try:
+        from IPython.core.getipython import get_ipython
+
+        ipython = get_ipython()
+        if ipython is not None:
+            # The kernel attribute only exists in IPyKernel environments
+            kernel = getattr(ipython, "kernel", None)
+            if kernel is not None and not getattr(kernel, "_allow_stdin", True):
+                stdin_available = False
+    except (ImportError, AttributeError):
+        pass
+
+    # Only prompt for interactive mode if stdin is available
+    if stdin_available:
         use_interactive = ask_user_for_input(
             "Would you like to run the optimization in interactive mode?", options={"y": "Yes", "n": "No"}
         )
     else:
-        # Running in automated test environment - use non-interactive mode
+        # stdin not available - use non-interactive mode
         use_interactive = False
 
     if use_interactive == "y":
