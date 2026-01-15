@@ -313,15 +313,14 @@ def optimize(
 
     # Only prompt for interactive mode if stdin is available (not in tests/automated environments)
     if sys.stdin.isatty():
-        response = ask_user_for_input(
+        use_interactive = ask_user_for_input(
             "Would you like to run the optimization in interactive mode?", options={"y": "Yes", "n": "No"}
         )
-        use_interactive = response == "y"
     else:
         # Running in automated/test environment - use non-interactive mode
         use_interactive = False
 
-    if use_interactive:
+    if use_interactive == "y":
         yield from optimize_manual(optimization_problem, iterations, n_points, *args, **kwargs)
     else:
         yield from optimize_normal(optimization_problem, iterations, n_points, checkpoint_interval, *args, **kwargs)

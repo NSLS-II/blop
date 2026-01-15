@@ -19,39 +19,39 @@ When you run an optimization, the system follows this workflow:
 
 .. code-block:: text
 
-    1. Would you like to go interactively?
+    Would you like to go interactively?
        ├─ No: Run optimize_normal (automatic mode)
        │         └─ Completes all iterations automatically
        │
        └─ Yes: Interactive mode
               │
               1. Manually approve suggestions?
-                 ├─ No:  Use optimize_step (automated suggestions)
-                 │         └─ Go to step 8 (post-iteration options)
-                 │
-                 └─ Yes:  Manual approval mode
-                          │
-                          1. How many steps before next approval? (x)
-                          │
-                          2. For each iteration:
-                          |   - Suggest point
-                          |   - Ask: "Do you approve this point?"
-                          |   - If Yes → evaluate point
-                          |   - If No  → abandon point, suggest new one
-                          │
-                          3. After x iterations complete
-                             └─ Go to step 8
-    
-    2. What would you like to do?
-       ├─ c → Continue optimization (no manual suggestions)
-       │      └─ Return to step 2
-       │
-       ├─ s → Suggest points manually
-       │      └─ Enter DOF values and objective values
-       │         └─ Ingest into model
-       │         └─ Return to step 2
-       │
-       └─ q → Quit optimization
+              |   ├─ No:  Use optimize_step (automated suggestions)
+              |   │         └─ Go to step 2 (post-iteration options)
+              |   │
+              |   └─ Yes:  Manual approval mode
+              |            │
+              |            a. How many steps before next approval? (x)
+              |            │
+              |            b. For each iteration:
+              |            |   - Suggest point
+              |            |   - Ask: "Do you approve this point?"
+              |            |   - If Yes → evaluate point
+              |            |   - If No  → abandon point, suggest new one
+              |            │
+              |            c. After x iterations complete
+              |               └─ Go to step 2
+              |
+              2. What would you like to do?
+                ├─ c: Continue optimization (no manual suggestions)
+                │      └─ Return to step 1
+                │
+                ├─ s: Suggest points manually
+                │      └─ Enter DOF values and objective values
+                │         └─ Ingest into model
+                │         └─ Return to step 1
+                │
+                └─ q: Quit optimization
 
 Starting an Interactive Optimization
 -------------------------------------
