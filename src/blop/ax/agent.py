@@ -215,7 +215,7 @@ class Agent:
         points : list[dict]
             A list of dictionaries, each containing outcomes for a trial. For suggested
             points, include the "_id" key. For external data, include DOF names and
-            objective values, and omit "_id".
+            objective values, and omit "_id".difference between master and main in github
 
         Notes
         -----
