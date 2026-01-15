@@ -44,8 +44,6 @@ class Agent:
         Constraints on outcomes to be satisfied during optimization.
     checkpoint_path : str | None, optional
         The path to the checkpoint file to save the optimizer's state to.
-    interactive : bool | False
-        Whether the optimization should be interactive.
     **kwargs : Any
         Additional keyword arguments to configure the Ax experiment.
 
@@ -76,14 +74,12 @@ class Agent:
         dof_constraints: Sequence[DOFConstraint] | None = None,
         outcome_constraints: Sequence[OutcomeConstraint] | None = None,
         checkpoint_path: str | None = None,
-        interactive: bool = False,
         **kwargs: Any,
     ):
         self._sensors = sensors
         self._actuators = [dof.actuator for dof in dofs if dof.actuator is not None]
         self._evaluation_function = evaluation_function
         self._acquisition_plan = acquisition_plan
-        self._interactive = interactive
         self._optimizer = AxOptimizer(
             parameters=[dof.to_ax_parameter_config() for dof in dofs],
             objective=to_ax_objective_str(objectives),
@@ -254,7 +250,7 @@ class Agent:
         """
         yield from acquire_baseline(self.to_optimization_problem(), parameterization=parameterization)
 
-    def optimize(self, iterations: int = 1, n_points: int = 1, interactive: bool = False) -> MsgGenerator[None]:
+    def optimize(self, iterations: int = 1, n_points: int = 1) -> MsgGenerator[None]:
         """
         Run Bayesian optimization.
 
@@ -289,9 +285,7 @@ class Agent:
         suggest : Get point suggestions without running acquisition.
         ingest : Manually ingest evaluation results.
         """
-        yield from optimize(
-            self.to_optimization_problem(), iterations=iterations, n_points=n_points, interactive=interactive
-        )
+        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points)
 
     def plot_objective(
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any

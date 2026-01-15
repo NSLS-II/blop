@@ -1,5 +1,7 @@
 import functools
 import logging
+import os
+import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
@@ -125,6 +127,7 @@ def optimize_step(
 def optimize_step_with_approval(
     optimization_problem: OptimizationProblem,
     n_points: int = 1,
+    n_steps: int = 1,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
@@ -137,6 +140,8 @@ def optimize_step_with_approval(
         The optimization problem to solve.
     n_points : int, optional
         The number of points to suggest.
+    n_steps : int, optional
+        The number of steps before next manual approval.
     """
     if optimization_problem.acquisition_plan is None:
         acquisition_plan = default_acquire
@@ -156,10 +161,13 @@ def optimize_step_with_approval(
             continue
 
         # Ask for manual approval for subsequent points
-        if input(f"Do you approve this point: {suggestion}? (y/n): ").strip().lower() == "y":
-            approved_suggestions.append(suggestion)
+        if trial_id is not None and trial_id % n_steps == 0:
+            if input(f"Do you approve this point: {suggestion}? (y/n): ").strip().lower() == "y":
+                approved_suggestions.append(suggestion)
+            else:
+                optimizer.ax_client._experiment.trials[trial_id].mark_abandoned()  # type: ignore[attr-defined]
         else:
-            optimizer.ax_client._experiment.trials[trial_id].mark_abandoned()  # type: ignore[attr-defined]
+            approved_suggestions.append(suggestion)
 
     if len(approved_suggestions) == 0:
         print("No suggestions approved. Skipping this optimization step.")
@@ -180,7 +188,8 @@ def optimize_manual(
     **kwargs: Any,
 ) -> MsgGenerator[None]:
     """
-    A plan to solve the optimization problem.
+    A plan to solve the optimization problem that allows for manual iteraction with the optimization process
+    through manual approval of suggestions and the ability to manually suggest points.
 
     Parameters
     ----------
@@ -198,12 +207,6 @@ def optimize_manual(
         Additional positional arguments to pass to the :func:`optimize_step` plan.
     **kwargs : Any
         Additional keyword arguments to pass to the :func:`optimize_step` plan.
-
-    See Also
-    --------
-    blop.protocols.OptimizationProblem : The problem to solve.
-    blop.protocols.Checkpointable : The protocol for checkpointable objects.
-    optimize_step : The plan to execute a single step of the optimization.
     """
     while True:
         # Ask once per cycle if user wants manual approval
@@ -213,7 +216,7 @@ def optimize_manual(
         n_steps = int(ask_user_for_input("Number of steps before next approval")) if use_manual_approval == "y" else n_points
         for i in range(iterations):
             if use_manual_approval == "y":
-                yield from optimize_step_with_approval(optimization_problem, n_steps, n_points, *args, **kwargs)
+                yield from optimize_step_with_approval(optimization_problem, n_points, n_steps, *args, **kwargs)
             else:
                 yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
 
@@ -253,7 +256,7 @@ def optimize_normal(
     **kwargs: Any,
 ) -> MsgGenerator[None]:
     """
-    A plan to solve the optimization problem.
+    A plan to solve the optimization problem that completes the loop automatically.
 
     Parameters
     ----------
@@ -279,7 +282,6 @@ def optimize(
     iterations: int = 1,
     n_points: int = 1,
     checkpoint_interval: int | None = None,
-    interactive: bool = False,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
@@ -309,15 +311,16 @@ def optimize(
     blop.protocols.Checkpointable : The protocol for checkpointable objects.
     optimize_step : The plan to execute a single step of the optimization.
     """
-    import sys
 
-    # Only prompt for interactive mode if stdin is available (not in tests/automated environments)
-    if sys.stdin.isatty():
+    # Check if running under pytest
+    in_pytest = "pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ
+
+    # Only prompt for interactive mode (NOT in pytest (terminal or notebook is OK))
+    if not in_pytest:
         use_interactive = ask_user_for_input(
             "Would you like to run the optimization in interactive mode?", options={"y": "Yes", "n": "No"}
         )
     else:
-        # Running in automated/test environment - use non-interactive mode
         use_interactive = False
 
     if use_interactive == "y":
