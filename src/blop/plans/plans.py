@@ -1,7 +1,5 @@
 import functools
 import logging
-import os
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
@@ -179,10 +177,8 @@ def optimize_step_with_approval(
 
 
 @plan
-def optimize_manual(
+def optimize_interactively(
     optimization_problem: OptimizationProblem,
-    iterations: int = 1,
-    n_points: int = 1,
     checkpoint_interval: int | None = None,
     *args: Any,
     **kwargs: Any,
@@ -195,10 +191,6 @@ def optimize_manual(
     ----------
     optimization_problem : OptimizationProblem
         The optimization problem to solve.
-    iterations : int, optional
-        The number of optimization iterations to run.
-    n_points : int, optional
-        The number of points to suggest per iteration.
     checkpoint_interval : int | None, optional
         The number of iterations between optimizer checkpoints. If None, checkpoints
         will not be saved. Optimizer must implement the
@@ -208,6 +200,8 @@ def optimize_manual(
     **kwargs : Any
         Additional keyword arguments to pass to the :func:`optimize_step` plan.
     """
+    iterations = int(ask_user_for_input("Number of optimization iterations"))
+    n_points = int(ask_user_for_input("Number of points to suggest per iteration"))
     while True:
         # Ask once per cycle if user wants manual approval
         use_manual_approval = ask_user_for_input(
@@ -235,48 +229,13 @@ def optimize_manual(
             },
         )
         if result.lower().strip() == "s":
-            suggestions = retrieve_suggestions_from_user(
-                actuators=optimization_problem.actuators,  # type: ignore[attr-defined]
-                optimizer=optimization_problem.optimizer,  # type: ignore[attr-defined]
-            )
-            if suggestions is not None:
-                optimization_problem.optimizer.ingest(suggestions)
+            yield from retrieve_suggestions_from_user(optimization_problem, *args, **kwargs)
         elif result.lower().strip() == "q":
             break
         # If result == 'c', just continue the loop (do nothing)
 
 
 @plan
-def optimize_normal(
-    optimization_problem: OptimizationProblem,
-    iterations: int = 1,
-    n_points: int = 1,
-    checkpoint_interval: int | None = None,
-    *args: Any,
-    **kwargs: Any,
-) -> MsgGenerator[None]:
-    """
-    A plan to solve the optimization problem that completes the loop automatically.
-
-    Parameters
-    ----------
-    optimization_problem : OptimizationProblem
-        The optimization problem to solve.
-    iterations : int, optional
-        The number of optimization iterations to run.
-    n_points : int, optional
-        The number of points to suggest per iteration.
-    """
-    for i in range(iterations):
-        yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
-        if checkpoint_interval and (i + 1) % checkpoint_interval == 0:
-            if not isinstance(optimization_problem.optimizer, Checkpointable):
-                raise ValueError(
-                    "The optimizer is not checkpointable. Please review your optimizer configuration or implementation."
-                )
-            optimization_problem.optimizer.checkpoint()
-
-
 def optimize(
     optimization_problem: OptimizationProblem,
     iterations: int = 1,
@@ -312,44 +271,14 @@ def optimize(
     optimize_step : The plan to execute a single step of the optimization.
     """
 
-    # Check if stdin is available for user input
-    stdin_available = True
-
-    # Check if running under pytest or doctest
-    if (
-        "pytest" in sys.modules
-        or "PYTEST_CURRENT_TEST" in os.environ
-        or "doctest" in sys.modules
-        or "_pytest.doctest" in sys.modules
-    ):
-        stdin_available = False
-    # if:
-    # Check if running in a Jupyter environment without stdin support
-    try:
-        from IPython.core.getipython import get_ipython
-
-        ipython = get_ipython()
-        if ipython is not None:
-            # The kernel attribute only exists in IPyKernel environments
-            kernel = getattr(ipython, "kernel", None)
-            if kernel is not None and not getattr(kernel, "_allow_stdin", True):
-                stdin_available = False
-    except (ImportError, AttributeError):
-        pass
-
-    # Only prompt for interactive mode if stdin is available
-    if stdin_available:
-        use_interactive = ask_user_for_input(
-            "Would you like to run the optimization in interactive mode?", options={"y": "Yes", "n": "No"}
-        )
-    else:
-        # stdin not available - use non-interactive mode
-        use_interactive = False
-
-    if use_interactive == "y":
-        yield from optimize_manual(optimization_problem, iterations, n_points, *args, **kwargs)
-    else:
-        yield from optimize_normal(optimization_problem, iterations, n_points, checkpoint_interval, *args, **kwargs)
+    for i in range(iterations):
+        yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
+        if checkpoint_interval and (i + 1) % checkpoint_interval == 0:
+            if not isinstance(optimization_problem.optimizer, Checkpointable):
+                raise ValueError(
+                    "The optimizer is not checkpointable. Please review your optimizer configuration or implementation."
+                )
+            optimization_problem.optimizer.checkpoint()
 
 
 @plan

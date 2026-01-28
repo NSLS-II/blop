@@ -7,7 +7,7 @@ from ax.analysis import ContourPlot
 from ax.analysis.analysis_card import AnalysisCardBase
 from bluesky.utils import MsgGenerator
 
-from ..plans import acquire_baseline, optimize
+from ..plans import acquire_baseline, optimize, optimize_interactively
 from ..protocols import AcquisitionPlan, Actuator, EvaluationFunction, OptimizationProblem, Sensor
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
@@ -286,6 +286,34 @@ class Agent:
         ingest : Manually ingest evaluation results.
         """
         yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points)
+
+    def optimize_interactively(self) -> MsgGenerator[None]:
+        """
+        Run Bayesian optimization.
+
+        Performs iterative optimization by suggesting points, acquiring data, evaluating
+        outcomes, and updating the model. This is the main method for running optimization
+        with an agent.
+
+        Yields
+        ------
+        Msg
+            Bluesky messages for the run engine.
+
+        Notes
+        -----
+        This is the primary method for running optimization. It handles the full loop
+        of suggesting points, acquiring data, evaluating outcomes, and updating the model.
+
+        For complete examples, see :doc:`/tutorials/simple-experiment`.
+
+        See Also
+        --------
+        blop.plans.optimize : The underlying Bluesky optimization plan.
+        suggest : Get point suggestions without running acquisition.
+        ingest : Manually ingest evaluation results.
+        """
+        yield from optimize_interactively(self.to_optimization_problem())
 
     def plot_objective(
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any

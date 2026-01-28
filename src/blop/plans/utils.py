@@ -1,9 +1,10 @@
+import ast
 from typing import Any
 
 import networkx as nx
 import numpy as np
 
-from ..protocols import ID_KEY
+from ..protocols import ID_KEY, OptimizationProblem
 
 
 def get_route_index(points: np.ndarray, starting_point: np.ndarray | None = None):
@@ -68,46 +69,41 @@ def ask_user_for_input(prompt: str, options: dict | None = None) -> Any:
     return user_input
 
 
-def retrieve_suggestions_from_user(actuators: list, optimizer) -> list[dict] | None:
+def retrieve_suggestions_from_user(
+    optimization_problem: OptimizationProblem,
+    *args: Any,
+    **kwargs: Any,
+):
     """
     Retrieve manual point suggestions from the user.
 
     Parameters
     ----------
-    actuators : list
-        The actuators to suggest values for.
-    optimizer : Optimizer
-        The optimizer containing parameter and objective configurations.
-
-    Returns
-    -------
-    list[dict] | None
-        A list of suggested points as dictionaries with DOF and objective values, or None if user declined.
+    optimization_problem : OptimizationProblem
+        The optimization problem to solve.
     """
-    # Get parameter configs and objectives from the optimizer
-    objectives = optimizer.ax_client._experiment.optimization_config.objective.metrics
-    model_components = actuators + objectives
+    from .plans import default_acquire
 
-    suggestions = []
-    while True:
-        # Build a single suggestion point with all DOF and objective values
-        new_suggestion = {}
-        for item in model_components:
-            while True:
-                try:
-                    value = float(input(f"Enter value for {item.name} (float): "))
-                    new_suggestion[item.name] = value
-                    break
-                except ValueError:
-                    print(f"Invalid input. Please enter a valid number for {item.name}.")
+    dictonary_string = input(
+        "Enter list of suggestions as a list of dictionaries (e.g., [{'x1': 1.0, 'x2': 2.0}, {'x1': 3.0, 'x2': 4.0}]): "
+    )
+    suggestions = ast.literal_eval(dictonary_string)
 
-        suggestions.append(new_suggestion)
+    optimizer = optimization_problem.optimizer
 
-        # Ask if user wants to add more points
-        if (
-            ask_user_for_input("Do you want to suggest another point?", options={"y": "Yes", "n": "No, finish suggestions"})
-            == "n"
-        ):
-            break
+    # Manually attach trials
+    for suggestion in suggestions:
+        trial_idx = optimizer._client.attach_trial(parameters=suggestion)  # type: ignore[attr-defined]
+        suggestion[ID_KEY] = trial_idx
 
+    if optimization_problem.acquisition_plan is None:
+        acquisition_plan = default_acquire
+    else:
+        acquisition_plan = optimization_problem.acquisition_plan
+
+    optimizer = optimization_problem.optimizer
+    actuators = optimization_problem.actuators
+    uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
+    outcomes = optimization_problem.evaluation_function(uid, suggestions)
+    optimizer.ingest(outcomes)
     return suggestions
