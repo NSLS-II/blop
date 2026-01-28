@@ -18,40 +18,35 @@ The Interactive Optimization Flow
 When you run an optimization, the system follows this workflow:
 
 .. code-block:: text
-
-    Would you like to go interactively?
-       ├─ No: Run optimize_normal (automatic mode)
-       │         └─ Completes all iterations automatically
-       │
-       └─ Yes: Interactive mode
-              │
-              1. Manually approve suggestions?
-              |   ├─ No:  Use optimize_step (automated suggestions)
-              |   │         └─ Go to step 2 (post-iteration options)
-              |   │
-              |   └─ Yes:  Manual approval mode
-              |            │
-              |            a. How many steps before next approval? (x)
-              |            │
-              |            b. For each iteration:
-              |            |   - Suggest point
-              |            |   - Ask: "Do you approve this point?"
-              |            |   - If Yes → evaluate point
-              |            |   - If No  → abandon point, suggest new one
-              |            │
-              |            c. After x iterations complete
-              |               └─ Go to step 2
-              |
-              2. What would you like to do?
-                ├─ c: Continue optimization (no manual suggestions)
-                │      └─ Return to step 1
-                │
-                ├─ s: Suggest points manually
-                │      └─ Enter DOF values and objective values
-                │         └─ Ingest into model
-                │         └─ Return to step 1
-                │
-                └─ q: Quit optimization
+        1. Number of optimization iterations?
+        2. Number of points to suggest per iteration?
+        3. Manually approve suggestions?
+        |   ├─ No:  Use optimize_step (automated suggestions)
+        |   │         └─ Go to step 2 (post-iteration options)
+        |   │
+        |   └─ Yes:  Manual approval mode
+        |            │
+        |            a. How many steps before next approval? (x)
+        |            │
+        |            b. For each iteration:
+        |            |   - Suggest point
+        |            |   - Ask: "Do you approve this point?"
+        |            |   - If Yes → evaluate point
+        |            |   - If No  → abandon point, suggest new one
+        |            │
+        |            c. After x iterations complete
+        |               └─ Go to step 4
+        |
+        4. What would you like to do?
+          ├─ c: Continue optimization (no manual suggestions)
+          │      └─ Return to step 3
+          │
+          ├─ s: Suggest points manually
+          │      └─ Enter DOF values and objective values
+          │         └─ Ingest into model
+          │         └─ Return to step 3
+          │
+          └─ q: Quit optimization
 
 Starting an Interactive Optimization
 -------------------------------------
@@ -60,39 +55,32 @@ To start an interactive optimization, simply run the ``optimize`` method after d
 
 .. code-block:: python
 
-    RE(agent.optimize(iterations=10, n_points=1))
+    RE(agent.optimize_interactively())
 
 Initial Prompt
 ~~~~~~~~~~~~~~
 
-When you start the optimization, you'll see:
+When you start the optimization, you'll see the following prompts:
 
 .. code-block:: text
 
     +----------------------------------------------------------+
-    | Would you like to run the optimization in interactive    |
-    | mode?                                                    |
+    | Number of optimization iteration                         |
     +----------------------------------------------------------+
-      y: Yes
-      n: No
-    
-    Enter choice [y,n]:
 
-- Choose ``y`` for interactive mode with full control
-- Choose ``n`` for automatic mode (runs all iterations without prompts)
+- Input the number of iteractions you would like
 
-Automatic Mode (Non-Interactive)
----------------------------------
+.. code-block:: text
 
-If you choose ``n`` (No) at the initial prompt, the optimization runs in automatic mode:
+    +----------------------------------------------------------+
+    | Number of points to suggest per iteraction               |
+    +----------------------------------------------------------+
 
-- All iterations execute without user intervention
-- Points are suggested, evaluated, and ingested automatically
+- Input the number of points per iteration you want
 
 Manual Approval Mode
 --------------------
-
-If you choose ``y`` (Yes) for interactive mode, you'll be asked:
+Afterwards, for every loop of optimization you will see the following:
 
 .. code-block:: text
 
@@ -114,7 +102,6 @@ If you choose ``y`` (Yes), you'll then be asked:
     +----------------------------------------------------------+
     | Number of steps before next approval                     |
     +----------------------------------------------------------+
-    > 
 
 Enter how often you would like to be able to manually approve a suggested point. If for a suggested point, manual approval is given, you'll see:
 
@@ -126,15 +113,6 @@ Enter how often you would like to be able to manually approve a suggested point.
 
 - Enter ``y`` to evaluate this point
 - Enter ``n`` to abandon this point (it won't be evaluated, and will be marked as ``abandoned``)
-
-Automated Suggestions (No Manual Approval)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-If you choose ``n`` (No) for manual approval, the optimizer will:
-
-1. Generate suggestions automatically
-2. Evaluate all points without asking for approval
-3. Proceed to post-iteration options (see below)
 
 Post-Iteration Options
 ----------------------
@@ -171,29 +149,7 @@ Allows you to manually input points with known objective values. This is useful 
 - You want to guide the optimization to specific regions
 - You've performed experiments outside of Blop and want to incorporate the results
 
-When you choose this option, you'll be prompted to enter values for each DOF and objective:
-
-.. code-block:: text
-
-    Enter value for x1 (float): 2.5
-    Enter value for x2 (float): 1.3
-    Enter value for my_objective (float): 42.7
-    
-    +----------------------------------------------------------+
-    | Do you want to suggest another point?                    |
-    +----------------------------------------------------------+
-      y: Yes
-      n: No, finish suggestions
-    
-    Enter choice [y,n]:
-
-If you enter an invalid number (like "abc"), you'll see:
-
-.. code-block:: text
-
-    Invalid input. Please enter a valid number for x1.
-
-And you'll be asked to try again for that specific parameter.
+When you choose this option, you'll be prompted to enter values for each DOF as a list of dictionaries with the keys as the DOFs
 
 Option q: Quit Optimization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
