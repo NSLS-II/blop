@@ -97,7 +97,7 @@ def optimize_step(
     n_points: int = 1,
     *args: Any,
     **kwargs: Any,
-) -> MsgGenerator[None]:
+) -> MsgGenerator[tuple[list[dict], list[dict]]]:
     """
     A single step of the optimization loop.
 
@@ -107,6 +107,11 @@ def optimize_step(
         The optimization problem to solve.
     n_points : int, optional
         The number of points to suggest.
+
+    Returns
+    -------
+    tuple[list[dict], list[dict]]
+        A tuple containing the suggestions and outcomes of the step.
     """
     if optimization_problem.acquisition_plan is None:
         acquisition_plan = default_acquire
@@ -119,6 +124,40 @@ def optimize_step(
     uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
     optimizer.ingest(outcomes)
+
+    return suggestions, outcomes
+
+
+def _maybe_checkpoint(optimizer: Optimizer, checkpoint_interval: int | None, iteration: int) -> None:
+    if checkpoint_interval and (iteration + 1) % checkpoint_interval == 0:
+        if not isinstance(optimizer, Checkpointable):
+            raise ValueError(
+                "The optimizer is not checkpointable. Please review your optimizer configuration or implementation."
+            )
+        optimizer.checkpoint()
+
+
+@plan
+def _read_step(suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, Readable]) -> MsgGenerator[None]:
+    # TODO: Support for manual suggestions where there is no "_id" key?
+    suggestion_by_id = {suggestion[ID_KEY]: suggestion.pop(ID_KEY) for suggestion in suggestions}
+    outcome_by_id = {outcome[ID_KEY]: outcome.pop(ID_KEY) for outcome in outcomes}
+
+    for key in sorted(suggestion_by_id.keys()):
+        for name, value in suggestion_by_id[key].items():
+            if name not in readable_cache:
+                readable_cache[name] = ReadableSignal(name, initial_value=value, type="array")
+            else:
+                readable_cache[name].value = value
+
+        for name, value in outcome_by_id[key].items():
+            if name not in readable_cache:
+                readable_cache[name] = ReadableSignal(name, initial_value=value, type="array")
+            else:
+                readable_cache[name].value = value
+            
+        yield from read(list(readable_cache.values()))
+        yield from bps.save()
 
 
 @plan
@@ -157,14 +196,16 @@ def optimize(
     optimize_step : The plan to execute a single step of the optimization.
     """
 
+    # Cache to track readables created from suggestions and outcomes
+    readable_cache: dict[str, Readable] = {}
+
     for i in range(iterations):
-        yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
-        if checkpoint_interval and (i + 1) % checkpoint_interval == 0:
-            if not isinstance(optimization_problem.optimizer, Checkpointable):
-                raise ValueError(
-                    "The optimizer is not checkpointable. Please review your optimizer configuration or implementation."
-                )
-            optimization_problem.optimizer.checkpoint()
+        suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
+
+        # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
+        yield from _read_step(suggestions, outcomes, readable_cache)
+
+        _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
 
 
 @plan
