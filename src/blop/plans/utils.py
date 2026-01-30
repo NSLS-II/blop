@@ -6,7 +6,7 @@ import networkx as nx
 import numpy as np
 from numpy.typing import ArrayLike
 from event_model import DataKey
-from bluesky.protocols import Readable, Reading, HasHints, Hints
+from bluesky.protocols import Readable, Reading, HasHints, Hints, HasParent
 
 from ..protocols import ID_KEY
 
@@ -27,7 +27,7 @@ def _infer_data_key(value: ArrayLike) -> DataKey:
     return DataKey(source="blop_optimization", dtype=dtype, shape=shape, dtype_numpy=dtype_numpy)
 
 
-class SimpleReadable(Readable, HasHints):
+class SimpleReadable(Readable, HasHints, HasParent):
     """
     A simple readable object that can be used in Bluesky plans.
 
@@ -44,6 +44,10 @@ class SimpleReadable(Readable, HasHints):
         self._name = name
         self._value = initial_value
         self._data_key = None
+
+    @property
+    def parent(self) -> Any | None:
+        return None
 
     @property
     def name(self) -> str:

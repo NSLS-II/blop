@@ -79,16 +79,19 @@ def default_acquire(
             current_position = None
         suggestions = route_suggestions(suggestions, starting_position=current_position)
 
-    md = {"blop_suggestions": suggestions}
+    md = {"blop_suggestions": suggestions, "run_key": "default_acquire"}
     plan_args = _unpack_for_list_scan(suggestions, actuators)
     return (
         # TODO: fix argument type in bluesky.plans.list_scan
-        yield from bp.list_scan(
-            readables,
-            *plan_args,  # type: ignore[arg-type]
-            per_step=per_step,
-            md=md,
-            **kwargs,
+        yield from bpp.set_run_key_wrapper(
+            bp.list_scan(
+                readables,
+                *plan_args,  # type: ignore[arg-type]
+                per_step=per_step,
+                md=md,
+                **kwargs,
+            ),
+            "default_acquire",
         )
     )
 
@@ -145,8 +148,16 @@ def _read_step(suggestions: list[dict], outcomes: list[dict], readable_cache: di
     """Helper plan to read the suggestions and outcomes of a single optimization step."""
     # TODO: How to support manual suggestions where there is no "_id" key?
     # Group by ID_KEY to get proper suggestion/outcome order
-    suggestion_by_id = {suggestion[ID_KEY]: suggestion.copy().pop(ID_KEY) for suggestion in suggestions}
-    outcome_by_id = {outcome[ID_KEY]: outcome.copy().pop(ID_KEY) for outcome in outcomes}
+    suggestion_by_id = {}
+    outcome_by_id = {}
+    for suggestion in suggestions:
+        suggestion_copy = suggestion.copy()
+        key = suggestion_copy.pop(ID_KEY)
+        suggestion_by_id[key] = suggestion_copy
+    for outcome in outcomes:
+        outcome_copy = outcome.copy()
+        key = outcome_copy.pop(ID_KEY)
+        outcome_by_id[key] = outcome_copy
 
     # Flatten the suggestions and outcomes into a single dictionary of lists
     suggestions_flat: dict[str, list[Any]] = defaultdict(list)
@@ -170,8 +181,7 @@ def _read_step(suggestions: list[dict], outcomes: list[dict], readable_cache: di
             readable_cache[name].update(value)
             
     # Read and save to produce a single event
-    yield from read(list(readable_cache.values()))
-    yield from bps.save()
+    yield from bps.trigger_and_read(list(readable_cache.values()))
 
 
 @plan
@@ -224,14 +234,15 @@ def optimize(
         acquisition_plan_name = optimization_problem.acquisition_plan.__class__.__name__
     _md = {
         "plan_name": "optimize",
-        "sensors": optimization_problem.sensors,
-        "actuators": optimization_problem.actuators,
+        "sensors": [sensor.name for sensor in optimization_problem.sensors],
+        "actuators": [actuator.name for actuator in optimization_problem.actuators],
         "evaluation_function": evaluation_function_name,
         "acquisition_plan": acquisition_plan_name,
         "optimizer": optimization_problem.optimizer.__class__.__name__,
         "iterations": iterations,
         "n_points": n_points,
         "checkpoint_interval": checkpoint_interval,
+        "run_key": "optimize",
     }
 
     # Encapsulate the optimization plan in a run decorator
@@ -250,7 +261,7 @@ def optimize(
 
     
     # Start the optimization run
-    yield from _optimize()
+    return (yield from _optimize())
 
 
 @plan
