@@ -20,7 +20,8 @@ def _infer_data_key(value: ArrayLike) -> DataKey:
         shape = list(numpy_array.shape)
     else:
         shape = []
-        if isinstance(numpy_array[0], (int, float)):
+        item = numpy_array[0] if len(numpy_array.shape) == 1 else numpy_array.item()
+        if isinstance(item, (int, float)):
             dtype = "number"
         else:
             dtype = "string"
@@ -42,8 +43,11 @@ class SimpleReadable(Readable, HasHints, HasParent):
     """
     def __init__(self, name: str, initial_value: ArrayLike) -> None:
         self._name = name
-        self._value = initial_value
         self._data_key = None
+
+        if isinstance(initial_value, Sequence) and len(initial_value) == 1:
+            initial_value = initial_value[0]
+        self._value = initial_value
 
     @property
     def parent(self) -> Any | None:
@@ -67,6 +71,8 @@ class SimpleReadable(Readable, HasHints, HasParent):
         return { self.name: self._data_key }
 
     def update(self, value: ArrayLike) -> None:
+        if isinstance(value, Sequence) and len(value) == 1:
+            value = value[0]
         self._value = value
     
     def read(self) -> dict[str, Reading]:
