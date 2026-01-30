@@ -21,7 +21,7 @@ def RE():
 def test_optimize(RE):
     optimizer = MagicMock(spec=Optimizer)
     optimizer.suggest.return_value = [{"x1": 0.0, "_id": 0}]
-    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0}])
+    evaluation_function = MagicMock(spec=EvaluationFunction, return_value=[{"objective": 0.0, "_id": 0}])
     optimization_problem = OptimizationProblem(
         optimizer=optimizer,
         actuators=[MovableSignal("x1", initial_value=-1.0)],

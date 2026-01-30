@@ -125,9 +125,13 @@ def optimize_step(
     optimizer = optimization_problem.optimizer
     actuators = optimization_problem.actuators
     suggestions = optimizer.suggest(n_points)
+    if any(ID_KEY not in suggestion for suggestion in suggestions):
+        raise ValueError(f"All suggestions must contain an '{ID_KEY}' key to later match with the outcomes. Please review your optimizer implementation. Got suggestions: {suggestions}")
 
     uid = yield from acquisition_plan(suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
     outcomes = optimization_problem.evaluation_function(uid, suggestions)
+    if any(ID_KEY not in outcome for outcome in outcomes):
+        raise ValueError(f"All outcomes must contain an '{ID_KEY}' key that matches with the suggestions. Please review your evaluation function. Got suggestions: {suggestions} and outcomes: {outcomes}")
     optimizer.ingest(outcomes)
 
     return suggestions, outcomes
@@ -148,7 +152,6 @@ def _read_step(
     suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, SimpleReadable]
 ) -> MsgGenerator[None]:
     """Helper plan to read the suggestions and outcomes of a single optimization step."""
-    # TODO: How to support manual suggestions where there is no "_id" key?
     # Group by ID_KEY to get proper suggestion/outcome order
     suggestion_by_id = {}
     outcome_by_id = {}
