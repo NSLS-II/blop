@@ -1,15 +1,17 @@
 import functools
 import logging
+from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, cast
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
+import bluesky.preprocessors as bpp
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
-from ..protocols import ID_KEY, Actuator, Checkpointable, OptimizationProblem, Sensor
-from .utils import route_suggestions
+from ..protocols import ID_KEY, Actuator, Checkpointable, OptimizationProblem, Sensor, Optimizer
+from .utils import route_suggestions, SimpleReadable
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,7 @@ def optimize_step(
 
 
 def _maybe_checkpoint(optimizer: Optimizer, checkpoint_interval: int | None, iteration: int) -> None:
+    """Helper function to maybe create a checkpoint of the optimizer state at a given interval and iteration."""
     if checkpoint_interval and (iteration + 1) % checkpoint_interval == 0:
         if not isinstance(optimizer, Checkpointable):
             raise ValueError(
@@ -138,26 +141,37 @@ def _maybe_checkpoint(optimizer: Optimizer, checkpoint_interval: int | None, ite
 
 
 @plan
-def _read_step(suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, Readable]) -> MsgGenerator[None]:
-    # TODO: Support for manual suggestions where there is no "_id" key?
-    suggestion_by_id = {suggestion[ID_KEY]: suggestion.pop(ID_KEY) for suggestion in suggestions}
-    outcome_by_id = {outcome[ID_KEY]: outcome.pop(ID_KEY) for outcome in outcomes}
+def _read_step(suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, SimpleReadable]) -> MsgGenerator[None]:
+    """Helper plan to read the suggestions and outcomes of a single optimization step."""
+    # TODO: How to support manual suggestions where there is no "_id" key?
+    # Group by ID_KEY to get proper suggestion/outcome order
+    suggestion_by_id = {suggestion[ID_KEY]: suggestion.copy().pop(ID_KEY) for suggestion in suggestions}
+    outcome_by_id = {outcome[ID_KEY]: outcome.copy().pop(ID_KEY) for outcome in outcomes}
 
+    # Flatten the suggestions and outcomes into a single dictionary of lists
+    suggestions_flat: dict[str, list[Any]] = defaultdict(list)
+    outcomes_flat: dict[str, list[Any]] = defaultdict(list)
     for key in sorted(suggestion_by_id.keys()):
         for name, value in suggestion_by_id[key].items():
-            if name not in readable_cache:
-                readable_cache[name] = ReadableSignal(name, initial_value=value, type="array")
-            else:
-                readable_cache[name].value = value
-
+            suggestions_flat[name].append(value)
         for name, value in outcome_by_id[key].items():
-            if name not in readable_cache:
-                readable_cache[name] = ReadableSignal(name, initial_value=value, type="array")
-            else:
-                readable_cache[name].value = value
+            outcomes_flat[name].append(value)
+
+    # Create or update the SimpleReadables for the suggestions and outcomes
+    for name, value in suggestions_flat.items():
+        if name not in readable_cache:
+            readable_cache[name] = SimpleReadable(name, initial_value=value)
+        else:
+            readable_cache[name].update(value)
+    for name, value in outcomes_flat.items():
+        if name not in readable_cache:
+            readable_cache[name] = SimpleReadable(name, initial_value=value)
+        else:
+            readable_cache[name].update(value)
             
-        yield from read(list(readable_cache.values()))
-        yield from bps.save()
+    # Read and save to produce a single event
+    yield from read(list(readable_cache.values()))
+    yield from bps.save()
 
 
 @plan
@@ -197,15 +211,46 @@ def optimize(
     """
 
     # Cache to track readables created from suggestions and outcomes
-    readable_cache: dict[str, Readable] = {}
+    readable_cache: dict[str, SimpleReadable] = {}
 
-    for i in range(iterations):
-        suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
+    # Collect metadata for this optimization run
+    if hasattr(optimization_problem.evaluation_function, "__name__"):
+        evaluation_function_name = optimization_problem.evaluation_function.__name__  # type: ignore[attr-defined]
+    else:
+        evaluation_function_name = optimization_problem.evaluation_function.__class__.__name__
+    if hasattr(optimization_problem.acquisition_plan, "__name__"):
+        acquisition_plan_name = optimization_problem.acquisition_plan.__name__  # type: ignore[attr-defined]
+    else:
+        acquisition_plan_name = optimization_problem.acquisition_plan.__class__.__name__
+    _md = {
+        "plan_name": "optimize",
+        "sensors": optimization_problem.sensors,
+        "actuators": optimization_problem.actuators,
+        "evaluation_function": evaluation_function_name,
+        "acquisition_plan": acquisition_plan_name,
+        "optimizer": optimization_problem.optimizer.__class__.__name__,
+        "iterations": iterations,
+        "n_points": n_points,
+        "checkpoint_interval": checkpoint_interval,
+    }
 
-        # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
-        yield from _read_step(suggestions, outcomes, readable_cache)
+    # Encapsulate the optimization plan in a run decorator
+    @bpp.set_run_key_decorator("optimize")
+    @bpp.run_decorator(md=_md)
+    def _optimize():
+        for i in range(iterations):
+            # Perform a single step of the optimization
+            suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
 
-        _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
+            # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
+            yield from _read_step(suggestions, outcomes, readable_cache)
+
+            # Possibly take a checkpoint of the optimizer state
+            _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
+
+    
+    # Start the optimization run
+    yield from _optimize()
 
 
 @plan
