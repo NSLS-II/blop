@@ -1,12 +1,12 @@
-from collections.abc import Sequence
 import time
+from collections.abc import Sequence
 from typing import Any
 
 import networkx as nx
 import numpy as np
-from numpy.typing import ArrayLike
+from bluesky.protocols import HasHints, HasParent, Hints, Readable, Reading
 from event_model import DataKey
-from bluesky.protocols import Readable, Reading, HasHints, Hints, HasParent
+from numpy.typing import ArrayLike
 
 from ..protocols import ID_KEY
 
@@ -41,6 +41,7 @@ class SimpleReadable(Readable, HasHints, HasParent):
     initial_value : numpy.typing.ArrayLike
         The initial value of the readable instance.
     """
+
     def __init__(self, name: str, initial_value: ArrayLike) -> None:
         self._name = name
         self._data_key = None
@@ -68,13 +69,13 @@ class SimpleReadable(Readable, HasHints, HasParent):
     def describe(self) -> dict[str, DataKey]:
         if not self._data_key:
             self._data_key = _infer_data_key(self._value)
-        return { self.name: self._data_key }
+        return {self.name: self._data_key}
 
     def update(self, value: ArrayLike) -> None:
         if isinstance(value, Sequence) and len(value) == 1:
             value = value[0]
         self._value = value
-    
+
     def read(self) -> dict[str, Reading]:
         return {
             self.name: {

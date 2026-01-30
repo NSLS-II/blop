@@ -10,8 +10,8 @@ import bluesky.preprocessors as bpp
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
-from ..protocols import ID_KEY, Actuator, Checkpointable, OptimizationProblem, Sensor, Optimizer
-from .utils import route_suggestions, SimpleReadable
+from ..protocols import ID_KEY, Actuator, Checkpointable, OptimizationProblem, Optimizer, Sensor
+from .utils import SimpleReadable, route_suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,9 @@ def _maybe_checkpoint(optimizer: Optimizer, checkpoint_interval: int | None, ite
 
 
 @plan
-def _read_step(suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, SimpleReadable]) -> MsgGenerator[None]:
+def _read_step(
+    suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, SimpleReadable]
+) -> MsgGenerator[None]:
     """Helper plan to read the suggestions and outcomes of a single optimization step."""
     # TODO: How to support manual suggestions where there is no "_id" key?
     # Group by ID_KEY to get proper suggestion/outcome order
@@ -179,7 +181,7 @@ def _read_step(suggestions: list[dict], outcomes: list[dict], readable_cache: di
             readable_cache[name] = SimpleReadable(name, initial_value=value)
         else:
             readable_cache[name].update(value)
-            
+
     # Read and save to produce a single event
     yield from bps.trigger_and_read(list(readable_cache.values()))
 
@@ -259,7 +261,6 @@ def optimize(
             # Possibly take a checkpoint of the optimizer state
             _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
 
-    
     # Start the optimization run
     return (yield from _optimize())
 
