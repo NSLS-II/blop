@@ -184,13 +184,13 @@ def _read_step(
     outcome_by_id = {}
     for suggestion in suggestions:
         suggestion_copy = suggestion.copy()
-        key = suggestion_copy.pop(ID_KEY)
+        key = str(suggestion_copy.pop(ID_KEY))
         suggestion_by_id[key] = suggestion_copy
     for outcome in outcomes:
         outcome_copy = outcome.copy()
-        key = outcome_copy.pop(ID_KEY)
+        key = str(outcome_copy.pop(ID_KEY))
         outcome_by_id[key] = outcome_copy
-    sids = set(suggestion_by_id.keys())
+    sids = set(str(sid) for sid in suggestion_by_id.keys())
     if sids != set(outcome_by_id.keys()):
         raise ValueError(
             "The suggestions and outcomes must contain the same IDs. Got suggestions: "
@@ -218,14 +218,17 @@ def _read_step(
         # Pad outcome arrays with NaN
         for name in outcomes_flat:
             outcomes_flat[name].extend([np.nan] * (n_points - actual_n))
-        # Pad suggestion IDs with None
-        sorted_sids.extend([None] * (n_points - actual_n))
+        # Pad suggestion IDs with empty string to maintain string dtype
+        sorted_sids.extend([""] * (n_points - actual_n))
+
+    # Convert to numpy array with string dtype before passing to InferredReadable
+    sorted_sids_array = np.array(sorted_sids, dtype="<U50")
 
     # Create or update the InferredReadables for the suggestion_ids, step uid, suggestions, and outcomes
     if _SUGGESTION_IDS_KEY not in readable_cache:
-        readable_cache[_SUGGESTION_IDS_KEY] = InferredReadable(_SUGGESTION_IDS_KEY, initial_value=sorted_sids)
+        readable_cache[_SUGGESTION_IDS_KEY] = InferredReadable(_SUGGESTION_IDS_KEY, initial_value=sorted_sids_array)
     else:
-        readable_cache[_SUGGESTION_IDS_KEY].update(sorted_sids)
+        readable_cache[_SUGGESTION_IDS_KEY].update(sorted_sids_array)
     if _BLUESKY_UID_KEY not in readable_cache:
         readable_cache[_BLUESKY_UID_KEY] = InferredReadable(_BLUESKY_UID_KEY, initial_value=uid)
     else:

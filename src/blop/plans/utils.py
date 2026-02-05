@@ -46,6 +46,12 @@ class InferredReadable(Readable, HasHints, HasParent):
         self._name = name
         self._data_key = None
 
+        if isinstance(initial_value, np.ndarray):
+            self._dtype = initial_value.dtype
+            initial_value = initial_value.tolist()
+        else:
+            self._dtype = None
+
         if isinstance(initial_value, Sequence) and len(initial_value) == 1:
             initial_value = initial_value[0]
         self._value = initial_value
@@ -68,15 +74,27 @@ class InferredReadable(Readable, HasHints, HasParent):
 
     def describe(self) -> dict[str, DataKey]:
         if not self._data_key:
-            self._data_key = _infer_data_key(self._value)
+            # Use stored dtype if available, otherwise infer
+            if self._dtype is not None:
+                numpy_array = np.array(self._value, dtype=self._dtype)
+            else:
+                numpy_array = np.array(self._value)
+            self._data_key = _infer_data_key(numpy_array)
         return {self.name: self._data_key}
 
     def update(self, value: ArrayLike) -> None:
+        if isinstance(value, np.ndarray):
+            self._dtype = value.dtype
+            value = value.tolist()
+        else:
+            self._dtype = None
+
         if isinstance(value, Sequence) and len(value) == 1:
             value = value[0]
         self._value = value
 
     def read(self) -> dict[str, Reading]:
+        print(self._value)
         return {
             self.name: {
                 "value": self._value,
