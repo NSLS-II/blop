@@ -28,11 +28,11 @@ def _infer_data_key(value: ArrayLike) -> DataKey:
     return DataKey(source="blop_optimization", dtype=dtype, shape=shape, dtype_numpy=dtype_numpy)
 
 
-class SimpleReadable(Readable, HasHints, HasParent):
+class InferredReadable(Readable, HasHints, HasParent):
     """
-    A simple readable object that can be used in Bluesky plans.
+    An inferred readable object that can be used in Bluesky plans.
 
-    It performs inference on the initial value to determine the dtype and shape.
+    It performs inference on the initial value to describe the data key.
 
     Parameters
     ----------

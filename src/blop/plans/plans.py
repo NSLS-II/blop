@@ -2,7 +2,7 @@ import functools
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, cast
+from typing import Any, cast, Literal
 
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
@@ -11,9 +11,12 @@ from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
 from ..protocols import ID_KEY, Actuator, Checkpointable, OptimizationProblem, Optimizer, Sensor
-from .utils import SimpleReadable, route_suggestions
+from .utils import InferredReadable, route_suggestions
 
 logger = logging.getLogger(__name__)
+
+_BLUESKY_UID_KEY: Literal["bluesky_uid"] = "bluesky_uid"
+_SUGGESTION_IDS_KEY: Literal["suggestion_ids"] = "suggestion_ids"
 
 
 def _unpack_for_list_scan(suggestions: list[dict], actuators: Sequence[Actuator]) -> list[Any]:
@@ -102,7 +105,7 @@ def optimize_step(
     n_points: int = 1,
     *args: Any,
     **kwargs: Any,
-) -> MsgGenerator[tuple[list[dict], list[dict]]]:
+) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
     """
     A single step of the optimization loop.
 
@@ -140,7 +143,7 @@ def optimize_step(
         )
     optimizer.ingest(outcomes)
 
-    return suggestions, outcomes
+    return uid, suggestions, outcomes
 
 
 def _maybe_checkpoint(optimizer: Optimizer, checkpoint_interval: int | None, iteration: int) -> None:
@@ -155,7 +158,7 @@ def _maybe_checkpoint(optimizer: Optimizer, checkpoint_interval: int | None, ite
 
 @plan
 def _read_step(
-    suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, SimpleReadable]
+    uid: str, suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, InferredReadable]
 ) -> MsgGenerator[None]:
     """Helper plan to read the suggestions and outcomes of a single optimization step."""
     # Group by ID_KEY to get proper suggestion/outcome order
@@ -169,25 +172,41 @@ def _read_step(
         outcome_copy = outcome.copy()
         key = outcome_copy.pop(ID_KEY)
         outcome_by_id[key] = outcome_copy
+    sids = set(suggestion_by_id.keys())
+    if sids != set(outcome_by_id.keys()):
+        raise ValueError(
+            "The suggestions and outcomes must contain the same IDs. Got suggestions: "
+            f"{set(suggestion_by_id.keys())} and outcomes: {set(outcome_by_id.keys())}"
+        )
 
     # Flatten the suggestions and outcomes into a single dictionary of lists
     suggestions_flat: dict[str, list[Any]] = defaultdict(list)
     outcomes_flat: dict[str, list[Any]] = defaultdict(list)
-    for key in sorted(suggestion_by_id.keys()):
+    sorted_sids = sorted(sids)
+    # Sort for deterministic ordering, not strictly necessary
+    for key in sorted_sids:
         for name, value in suggestion_by_id[key].items():
             suggestions_flat[name].append(value)
         for name, value in outcome_by_id[key].items():
             outcomes_flat[name].append(value)
 
-    # Create or update the SimpleReadables for the suggestions and outcomes
+    # Create or update the InferredReadables for the suggestion_ids, step uid, suggestions, and outcomes
+    if _SUGGESTION_IDS_KEY not in readable_cache:
+        readable_cache[_SUGGESTION_IDS_KEY] = InferredReadable(_SUGGESTION_IDS_KEY, initial_value=sorted_sids)
+    else:
+        readable_cache[_SUGGESTION_IDS_KEY].update(sorted_sids)
+    if _BLUESKY_UID_KEY not in readable_cache:
+        readable_cache[_BLUESKY_UID_KEY] = InferredReadable(_BLUESKY_UID_KEY, initial_value=uid)
+    else:
+        readable_cache[_BLUESKY_UID_KEY].update(uid)
     for name, value in suggestions_flat.items():
         if name not in readable_cache:
-            readable_cache[name] = SimpleReadable(name, initial_value=value)
+            readable_cache[name] = InferredReadable(name, initial_value=value)
         else:
             readable_cache[name].update(value)
     for name, value in outcomes_flat.items():
         if name not in readable_cache:
-            readable_cache[name] = SimpleReadable(name, initial_value=value)
+            readable_cache[name] = InferredReadable(name, initial_value=value)
         else:
             readable_cache[name].update(value)
 
@@ -232,7 +251,7 @@ def optimize(
     """
 
     # Cache to track readables created from suggestions and outcomes
-    readable_cache: dict[str, SimpleReadable] = {}
+    readable_cache: dict[str, InferredReadable] = {}
 
     # Collect metadata for this optimization run
     if hasattr(optimization_problem.evaluation_function, "__name__"):
@@ -262,10 +281,10 @@ def optimize(
     def _optimize():
         for i in range(iterations):
             # Perform a single step of the optimization
-            suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
+            uid, suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
 
             # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
-            yield from _read_step(suggestions, outcomes, readable_cache)
+            yield from _read_step(uid, suggestions, outcomes, readable_cache)
 
             # Possibly take a checkpoint of the optimizer state
             _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
