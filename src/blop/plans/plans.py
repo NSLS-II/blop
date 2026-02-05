@@ -2,8 +2,9 @@ import functools
 import logging
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, cast, Literal
+from typing import Any, Literal, cast
 
+import numpy as np
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 import bluesky.preprocessors as bpp
@@ -158,9 +159,26 @@ def _maybe_checkpoint(optimizer: Optimizer, checkpoint_interval: int | None, ite
 
 @plan
 def _read_step(
-    uid: str, suggestions: list[dict], outcomes: list[dict], readable_cache: dict[str, InferredReadable]
+    uid: str, suggestions: list[dict], outcomes: list[dict], n_points: int, readable_cache: dict[str, InferredReadable]
 ) -> MsgGenerator[None]:
-    """Helper plan to read the suggestions and outcomes of a single optimization step."""
+    """Helper plan to read the suggestions and outcomes of a single optimization step.
+    
+    If fewer suggestions are returned than n_points arrays are padded to n_points length
+    with np.nan to ensure consistent shapes for event-model specification.
+    
+    Parameters
+    ----------
+    uid : str
+        The Bluesky run UID from the acquisition plan.
+    suggestions : list[dict]
+        List of suggestion dictionaries, each containing an ID_KEY.
+    outcomes : list[dict]
+        List of outcome dictionaries, each containing an ID_KEY matching suggestions.
+    n_points : int
+        Expected number of suggestions. Arrays will be padded to this length if needed.
+    readable_cache : dict[str, InferredReadable]
+        Cache of InferredReadable objects to reuse across iterations.
+    """
     # Group by ID_KEY to get proper suggestion/outcome order
     suggestion_by_id = {}
     outcome_by_id = {}
@@ -189,6 +207,19 @@ def _read_step(
             suggestions_flat[name].append(value)
         for name, value in outcome_by_id[key].items():
             outcomes_flat[name].append(value)
+
+    # Pad arrays to n_points if suggestions had fewer trials than expected
+    # TODO: Use awkward-array to handle this in the future
+    actual_n = len(sorted_sids)
+    if actual_n < n_points:
+        # Pad suggestion arrays with NaN
+        for name in suggestions_flat:
+            suggestions_flat[name].extend([np.nan] * (n_points - actual_n))
+        # Pad outcome arrays with NaN
+        for name in outcomes_flat:
+            outcomes_flat[name].extend([np.nan] * (n_points - actual_n))
+        # Pad suggestion IDs with None
+        sorted_sids.extend([None] * (n_points - actual_n))
 
     # Create or update the InferredReadables for the suggestion_ids, step uid, suggestions, and outcomes
     if _SUGGESTION_IDS_KEY not in readable_cache:
@@ -284,7 +315,7 @@ def optimize(
             uid, suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
 
             # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
-            yield from _read_step(uid, suggestions, outcomes, readable_cache)
+            yield from _read_step(uid, suggestions, outcomes, n_points, readable_cache)
 
             # Possibly take a checkpoint of the optimizer state
             _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
