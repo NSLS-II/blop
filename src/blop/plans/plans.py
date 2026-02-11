@@ -4,10 +4,10 @@ from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, cast
 
-import numpy as np
 import bluesky.plan_stubs as bps
 import bluesky.plans as bp
 import bluesky.preprocessors as bpp
+import numpy as np
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
@@ -162,10 +162,10 @@ def _read_step(
     uid: str, suggestions: list[dict], outcomes: list[dict], n_points: int, readable_cache: dict[str, InferredReadable]
 ) -> MsgGenerator[None]:
     """Helper plan to read the suggestions and outcomes of a single optimization step.
-    
+
     If fewer suggestions are returned than n_points arrays are padded to n_points length
     with np.nan to ensure consistent shapes for event-model specification.
-    
+
     Parameters
     ----------
     uid : str
@@ -190,7 +190,7 @@ def _read_step(
         outcome_copy = outcome.copy()
         key = str(outcome_copy.pop(ID_KEY))
         outcome_by_id[key] = outcome_copy
-    sids = set(str(sid) for sid in suggestion_by_id.keys())
+    sids = {str(sid) for sid in suggestion_by_id.keys()}
     if sids != set(outcome_by_id.keys()):
         raise ValueError(
             "The suggestions and outcomes must contain the same IDs. Got suggestions: "

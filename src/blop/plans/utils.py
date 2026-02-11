@@ -94,7 +94,6 @@ class InferredReadable(Readable, HasHints, HasParent):
         self._value = value
 
     def read(self) -> dict[str, Reading]:
-        print(self._value)
         return {
             self.name: {
                 "value": self._value,
