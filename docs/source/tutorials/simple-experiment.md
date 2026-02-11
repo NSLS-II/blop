@@ -123,8 +123,8 @@ class Himmelblau2DEvaluation():
     def __init__(self, tiled_client: Container):
         self.tiled_client = tiled_client
 
-    def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
-        run = self.tiled_client[uid]
+    def __call__(self, acquisition_md: dict, suggestions: list[dict]) -> list[dict]:
+        run = self.tiled_client[acquisition_md["uid"]]
         outcomes = []
         x1_data = run["primary/x1"].read()
         x2_data = run["primary/x2"].read()

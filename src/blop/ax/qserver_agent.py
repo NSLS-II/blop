@@ -182,7 +182,9 @@ class BlopQserverAgent(BlopAxAgent):
             logger.info("A stop document has been received, evaluating")
 
             # Evaluate it with the evaluation function
-            outcomes = self.optimization_problem.evaluation_function(uid=self.agent_suggestion_uid, suggestions=self.trials)
+            outcomes = self.optimization_problem.evaluation_function(
+                acquisition_md={"uid": self.agent_suggestion_uid}, suggestions=self.trials
+            )
 
             logger.info(f"successfully evaluated id: {self.agent_suggestion_uid}")
 

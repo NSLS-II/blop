@@ -128,9 +128,9 @@ Here's an example evaluation function that reads data from Tiled for where all d
         def __init__(self, tiled_client: Container):
             self.tiled_client = tiled_client
 
-        def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
+        def __call__(self, acquisiton_md: dict, suggestions: list[dict]) -> list[dict]:
             # Access the run data 
-            run = self.tiled_client[uid]
+            run = self.tiled_client[acquisition_md["uid"]]
             
             # Extract data columns
             motor_x_data = run["primary/motor_x"].read()
@@ -156,9 +156,9 @@ Here's an equivalent evaluation function using Databroker:
         def __init__(self, db):
             self.db = db
 
-        def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
+        def __call__(self, acquisition_md: dict, suggestions: list[dict]) -> list[dict]:
             # Access the run data as a pandas DataFrame
-            run = self.db[uid].table()
+            run = self.db[acquisition_md["uid"]].table()
             
             # Extract data columns
             motor_x_data = run["motor_x"]

@@ -121,7 +121,7 @@ With multiple objectives that can conflict (maximizing intensity might increase 
 
 The **evaluation function** is the bridge between raw experimental data and the optimizer. After each measurement, the optimizer needs to know how well that configuration performed. Your evaluation function:
 
-1. Receives a run UID and the suggestions that were tested
+1. Receives metadata containing a run UID and the suggestions that were tested
 2. Reads the relevant data from Tiled
 3. Returns outcome values for each suggestion
 
@@ -130,9 +130,9 @@ class DetectorEvaluation(EvaluationFunction):
     def __init__(self, tiled_client: Container):
         self.tiled_client = tiled_client
     
-    def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
+    def __call__(self, acquisition_md: dict, suggestions: list[dict]) -> list[dict]:
         outcomes = []
-        run = self.tiled_client[uid]
+        run = self.tiled_client[acquistion_md["uid"]]
         bl_det_sum = run["primary/bl_det_sum"].read()
         bl_det_wid_x = run["primary/bl_det_wid_x"].read()
         bl_det_wid_y = run["primary/bl_det_wid_y"].read()

@@ -88,7 +88,7 @@ class EvaluationFunction(Protocol):
     Notes
     -----
     The evaluation function is called after data acquisition to compute outcomes
-    from the acquired data. It should extract relevant data from the Bluesky run
+    from the acquired data. For example, it could extract relevant data from the Bluesky run
     and compute objective values and metrics for each suggestion.
 
     Examples
@@ -101,14 +101,15 @@ class EvaluationFunction(Protocol):
     blop.ax.Agent : Accepts an evaluation function during initialization.
     """
 
-    def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
+    def __call__(self, acquisition_md: dict, suggestions: list[dict]) -> list[dict]:
         """
         Evaluate the data from a Bluesky run and produce outcomes.
 
         Parameters
         ----------
-        uid: str
-            The unique identifier of the Bluesky run to evaluate.
+        acquisition_md: dict
+            The metadata describing the acquisition plan. Used to retrieve the acquired data.
+            Typically contains the UID of the Bluesky run.
         suggestions: list[dict]
             A list of dictionaries, each containing the parameterization of a point to evaluate.
             The "_id" key is optional and can be used to identify each suggestion.
@@ -150,7 +151,7 @@ class AcquisitionPlan(Protocol):
         suggestions: list[dict],
         actuators: Sequence[Actuator],
         sensors: Sequence[Sensor] | None = None,
-    ) -> MsgGenerator[str]:
+    ) -> MsgGenerator[dict]:
         """
         Acquire data for optimization.
 
@@ -170,8 +171,8 @@ class AcquisitionPlan(Protocol):
 
         Returns
         -------
-        str
-            The unique identifier of the Bluesky run.
+        dict
+            Metadata describing the acquisition. Typically contains the UID of the Bluesky run.
         """
         ...
 

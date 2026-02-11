@@ -114,7 +114,7 @@ Here we configure an agent with three DOFs and two objectives. The second object
 
     outcome_constraints = [OutcomeConstraint("x >= baseline", x=objectives[1])]
 
-    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
+    def evaluation_function(acquisition_md: dict, suggestions: list[dict]) -> list[dict]:
         """Replace this with your own evaluation function."""
         outcomes = []
         for suggestion in suggestions:

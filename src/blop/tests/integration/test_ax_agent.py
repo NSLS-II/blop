@@ -21,8 +21,8 @@ def test_ax_agent_sim_beamline(RE, setup):
         Objective(name="bl_det_wid_y", minimize=True),
     ]
 
-    def evaluation_function(uid: str, suggestions: list[dict]) -> list[dict]:
-        run = setup[uid]
+    def evaluation_function(acquisition_md: dict, suggestions: list[dict]) -> list[dict]:
+        run = setup[acquisition_md["uid"]]
 
         bl_det_sums = run["primary/bl_det_sum"].read()
         bl_det_wid_x = run["primary/bl_det_wid_x"].read()
