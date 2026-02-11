@@ -23,7 +23,7 @@ The ``name`` attribute of the signal will be used as the name of the :class:`blo
         sensors=[some_readable_signal],
         dofs=[dof],
         objectives=[Objective(name="result", minimize=False)],
-        evaluation_function=lambda acquisition_md, suggestions: [{"result": 0.1}],
+        evaluation_function=lambda acquisition_md, suggestions: [{"result": 0.1, "_id": suggestion["_id"]} for suggestion in suggestions],
     )
 
 Ophyd-async devices
@@ -48,7 +48,7 @@ Once again, the ``name`` attribute of the signal will be used as the name of the
         sensors=[some_readable_signal],
         dofs=[dof],
         objectives=[Objective(name="result", minimize=False)],
-        evaluation_function=lambda acquisition_md, suggestions: [{"result": 0.1}],
+        evaluation_function=lambda acquisition_md, suggestions: [{"result": 0.1, "_id": suggestion["_id"]} for suggestion in suggestions],
     )
 
 Using your devices in custom acquisition plans
@@ -70,6 +70,7 @@ If you use a custom acquisition plan by implementing the :class:`blop.protocols.
         assert actuators[0].name == "signal1"
         assert sensors[0].name == "signal2"
         yield from bps.null()
+        return "test-uid-123"
 
     RE = RunEngine({})
 
@@ -83,7 +84,7 @@ If you use a custom acquisition plan by implementing the :class:`blop.protocols.
         dofs=[dof],
         acquisition_plan=custom_acquire,
         objectives=[Objective(name="result", minimize=False)],
-        evaluation_function=lambda acquisition_md, suggestions: [{"result": 0.1, "_id": 0}],
+        evaluation_function=lambda acquisition_md, suggestions: [{"result": 0.1, "_id": suggestion["_id"]} for suggestion in suggestions],
     )
 
     RE(agent.optimize())

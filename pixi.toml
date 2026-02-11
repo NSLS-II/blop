@@ -30,14 +30,14 @@ area-detector-handlers = ">=0.0.10,<0.0.11"
 matplotlib-base = ">=3.10.6,<4"
 pyqt = ">=5.15.11,<6"
 ophyd = ">=1.11.0,<2"
-databroker = ">=1.2.0,<1.3"
-tiled = ">=0.1.1"
+databroker = ">=2.0.0"
+tiled = ">=0.2.0"
 
 [feature.dev.pypi-dependencies]
 blop = { path = ".", editable = true }
 nbval = "*"
 xrt = ">=1.6.1,<2"
-bluesky-tiled-plugins = ">=2.0.0b69, <3"
+bluesky-tiled-plugins = ">=2.0.0, <3"
 
 [feature.docs.dependencies]
 ophyd-async = "*"
