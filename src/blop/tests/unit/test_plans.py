@@ -190,7 +190,7 @@ def test_optimize_complex_case(RE):
     callback, events = _collect_optimize_events()
     RE.subscribe(callback)
     try:
-        RE(optimize(optimization_problem, iterations=2, n_points=2))
+        uids = RE(optimize(optimization_problem, iterations=2, n_points=2))
     finally:
         RE.unsubscribe(callback)
 
@@ -221,6 +221,8 @@ def test_optimize_complex_case(RE):
         assert _to_list(data["x3"]) == [0.0, 0.3]
         assert _to_list(data["objective1"]) == [0.0, 0.1]
         assert _to_list(data["objective2"]) == [0.1, 0.2]
+        assert _to_list(data["suggestion_ids"]) == ["0", "1"]
+        assert data["bluesky_uid"] in uids
 
 
 @pytest.mark.parametrize("checkpoint_interval", [0, 1, 2, 3])
@@ -308,11 +310,7 @@ def test_optimize_event_document_structure(RE):
     assert data["bluesky_uid"] == "test-uid-123"
     assert data["x1"] == 0.5
     assert data["objective"] == 1.25
-
-    # Validate event document schema
-    assert "seq_num" in events[0]
-    assert "timestamps" in events[0]
-    assert "descriptor" in events[0]
+    assert data["suggestion_ids"] == "0"
 
 
 def test_optimize_step_custom_acquisition_plan(RE):

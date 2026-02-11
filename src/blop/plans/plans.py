@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 
 _BLUESKY_UID_KEY: Literal["bluesky_uid"] = "bluesky_uid"
 _SUGGESTION_IDS_KEY: Literal["suggestion_ids"] = "suggestion_ids"
+_DEFAULT_ACQUIRE_RUN_KEY: Literal["default_acquire"] = "default_acquire"
+_OPTIMIZE_RUN_KEY: Literal["optimize"] = "optimize"
 
 
 def _unpack_for_list_scan(suggestions: list[dict], actuators: Sequence[Actuator]) -> list[Any]:
@@ -83,7 +85,7 @@ def default_acquire(
             current_position = None
         suggestions = route_suggestions(suggestions, starting_position=current_position)
 
-    md = {"blop_suggestions": suggestions, "run_key": "default_acquire"}
+    md = {"blop_suggestions": suggestions, "run_key": _DEFAULT_ACQUIRE_RUN_KEY}
     plan_args = _unpack_for_list_scan(suggestions, actuators)
     return (
         # TODO: fix argument type in bluesky.plans.list_scan
@@ -95,7 +97,7 @@ def default_acquire(
                 md=md,
                 **kwargs,
             ),
-            "default_acquire",
+            _DEFAULT_ACQUIRE_RUN_KEY,
         )
     )
 
@@ -200,8 +202,8 @@ def _read_step(
     # Flatten the suggestions and outcomes into a single dictionary of lists
     suggestions_flat: dict[str, list[Any]] = defaultdict(list)
     outcomes_flat: dict[str, list[Any]] = defaultdict(list)
-    sorted_sids = sorted(sids)
     # Sort for deterministic ordering, not strictly necessary
+    sorted_sids = sorted(sids)
     for key in sorted_sids:
         for name, value in suggestion_by_id[key].items():
             suggestions_flat[name].append(value)
@@ -221,14 +223,11 @@ def _read_step(
         # Pad suggestion IDs with empty string to maintain string dtype
         sorted_sids.extend([""] * (n_points - actual_n))
 
-    # Convert to numpy array with string dtype before passing to InferredReadable
-    sorted_sids_array = np.array(sorted_sids, dtype="<U50")
-
     # Create or update the InferredReadables for the suggestion_ids, step uid, suggestions, and outcomes
     if _SUGGESTION_IDS_KEY not in readable_cache:
-        readable_cache[_SUGGESTION_IDS_KEY] = InferredReadable(_SUGGESTION_IDS_KEY, initial_value=sorted_sids_array)
+        readable_cache[_SUGGESTION_IDS_KEY] = InferredReadable(_SUGGESTION_IDS_KEY, initial_value=sorted_sids)
     else:
-        readable_cache[_SUGGESTION_IDS_KEY].update(sorted_sids_array)
+        readable_cache[_SUGGESTION_IDS_KEY].update(sorted_sids)
     if _BLUESKY_UID_KEY not in readable_cache:
         readable_cache[_BLUESKY_UID_KEY] = InferredReadable(_BLUESKY_UID_KEY, initial_value=uid)
     else:
@@ -306,11 +305,11 @@ def optimize(
         "iterations": iterations,
         "n_points": n_points,
         "checkpoint_interval": checkpoint_interval,
-        "run_key": "optimize",
+        "run_key": _OPTIMIZE_RUN_KEY,
     }
 
     # Encapsulate the optimization plan in a run decorator
-    @bpp.set_run_key_decorator("optimize")
+    @bpp.set_run_key_decorator(_OPTIMIZE_RUN_KEY)
     @bpp.run_decorator(md=_md)
     def _optimize():
         for i in range(iterations):
