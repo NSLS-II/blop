@@ -78,6 +78,9 @@ docs = [
   "bluesky-tiled-plugins",
   "xrt>=1.6.1,<2",
 ]
+cpu = [
+  # Empty extra - the source configuration below routes to CPU-only index
+]
 
 [project.urls]
 Homepage = "https://github.com/NSLS-II/blop"
@@ -139,3 +142,15 @@ ignore = [
     "src/blop/bayesian/",  # TODO: Remove this and fix type errors
     "src/blop/ax/qserver_agent.py",  # TODO: Remove this and fix type errors
 ]
+
+# Configure PyTorch CPU-only installation when [cpu] extra is requested
+# This requires uv (https://docs.astral.sh/uv/)
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", marker = "extra == 'cpu'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true  # Only use this index for torch-related packages
