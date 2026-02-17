@@ -10,7 +10,7 @@ jobs:
     strategy:
       matrix:
         host-os: ["ubuntu-latest"]
-        python-version: ["py310", "py311", "py312", "py313"]
+        python-version: ["py310", "py311", "py312", "py313", "py310-cpu", "py311-cpu", "py312-cpu", "py313-cpu"]
       fail-fast: false
 
     defaults:
@@ -33,6 +33,31 @@ jobs:
           environments: ${{ matrix.python-version }}
           cache: false
           activate-environment: ${{ matrix.python-version }}
+
+      - name: Verify PyTorch variant
+        run: |
+          python -c "
+          import torch
+          import sys
+          
+          env_name = '${{ matrix.python-version }}'
+          print(f'Environment: {env_name}')
+          print(f'PyTorch version: {torch.__version__}')
+          print(f'CUDA available: {torch.cuda.is_available()}')
+          
+          # Verify CPU-only environments have CPU-only PyTorch
+          if '-cpu' in env_name:
+              if '+cpu' not in torch.__version__:
+                  print(f'ERROR: Expected CPU-only PyTorch in {env_name}, got {torch.__version__}')
+                  sys.exit(1)
+              print('✓ Verified CPU-only PyTorch installation')
+          else:
+              # Verify default environments have GPU-enabled PyTorch
+              if '+cpu' in torch.__version__:
+                  print(f'ERROR: Expected GPU-enabled PyTorch in {env_name}, got {torch.__version__}')
+                  sys.exit(1)
+              print('✓ Verified GPU-enabled PyTorch installation')
+          "
 
       - name: Run unit tests
         run: pixi run unit-tests
