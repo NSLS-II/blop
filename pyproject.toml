@@ -49,6 +49,7 @@ dev = [
   "ipykernel",
   "ruff",
   "nbstripout",
+  "numpy>=1.22,<2.4",
   "pre-commit",
   "pandas-stubs",
   "coverage",
