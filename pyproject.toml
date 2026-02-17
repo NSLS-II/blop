@@ -57,6 +57,7 @@ dev = [
   "tiled[all]>=0.2.0",
   "matplotlib",
   "pyqt5",
+  "pyright",
   "ophyd",
   "h5py",
   "area-detector-handlers",
