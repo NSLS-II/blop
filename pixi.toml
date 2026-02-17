@@ -29,18 +29,6 @@ unit-tests = "pytest src/blop/tests/unit"
 [feature.docs.pypi-dependencies]
 blop = { path = ".", editable = true, extras = ["docs"] }
 
-[feature.jupyter.dependencies]
-ipython = ">=9.4.0, <10"
-ipykernel = "*"
-jupyter = ">=1.1.1, <2"
-jupyterlab = "~=4.2.4"
-jupyterlite-core = "==0.4.0"
-jupyterlite-xeus = "*"
-notebook = "~=7.2.1"
-jupyterlab-myst = ">=2.4"
-jupytext = ">=1.16"
-ipympl = ">=0.9"
-
 [feature.py310.dependencies]
 python = "3.10.*"
 
@@ -63,20 +51,10 @@ build-docs = "make -C docs/ html"
 doc-tests = "make -C docs/ test"
 convert-tutorials-to-ipynb = "jupytext --to notebook docs/source/tutorials/*.md"
 
-[feature.jupyter.tasks]
-start-jupyter = "jupyter lab"
-test-tutorials = "bash docs/test.sh"
-
-[feature.jupyter.activation]
-# Workaround overrides JupyterLab configuration (at the environment level) to
-# make double-clicking on a Jupytext Markdown file open that file as a
-# notebook. This is important for the development workflow for contributors.
-scripts = ["docs/activate.sh"]
-
 [environments]
 dev = ["dev"]
 dev-cpu = ["dev-cpu"]
-docs = ["docs", "jupyter"]
+docs = ["docs"]
 py310 = ["dev", "py310"]
 py311 = ["dev", "py311"]
 py312 = ["dev", "py312"]
