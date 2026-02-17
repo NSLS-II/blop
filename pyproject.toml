@@ -53,12 +53,12 @@ dev = [
   "pre-commit",
   "pandas-stubs",
   "coverage",
-  "databroker>=2.0.0",
   "tiled[all]>=0.2.0",
   "matplotlib",
   "pyqt5",
   "pyright",
   "ophyd",
+  "ophyd-async",
   "h5py",
   "area-detector-handlers",
   "bluesky-tiled-plugins",
@@ -70,15 +70,8 @@ docs = [
   "myst-nb",
   "furo",
   "jupytext",
-  "databroker>=2.0.0",
-  "tiled[all]>=0.2.0",
-  "matplotlib",
-  "pyqt5",
-  "ophyd",
-  "h5py",
-  "area-detector-handlers",
-  "bluesky-tiled-plugins",
-  "xrt>=1.6.1,<2",
+  "pydata-sphinx-theme",
+  "blop[dev,cpu]"
 ]
 cpu = [
   # Empty extra - the source configuration below routes to CPU-only index
