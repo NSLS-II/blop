@@ -27,7 +27,7 @@ unit-tests = "pytest src/blop/tests/unit"
 [feature.docs.dependencies]
 
 [feature.docs.pypi-dependencies]
-blop = { path = ".", editable = true, extras = ["docs"] }
+blop = { path = ".", editable = true, extras = ["docs", "cpu"] }
 
 [feature.py310.dependencies]
 python = "3.10.*"
@@ -55,10 +55,6 @@ convert-tutorials-to-ipynb = "jupytext --to notebook docs/source/tutorials/*.md"
 dev = ["dev"]
 dev-cpu = ["dev-cpu"]
 docs = ["docs"]
-py310 = ["dev", "py310"]
-py311 = ["dev", "py311"]
-py312 = ["dev", "py312"]
-py313 = ["dev", "py313"]
 py310-cpu = ["dev-cpu", "py310"]
 py311-cpu = ["dev-cpu", "py311"]
 py312-cpu = ["dev-cpu", "py312"]
