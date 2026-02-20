@@ -1,10 +1,11 @@
+import importlib.util
 import logging
 from collections.abc import Sequence
 from typing import Any
-import importlib.util
 
 from ax import Client
 from ax.analysis import ContourPlot
+
 # ===============================
 # TODO: Remove when Python 3.10 is no longer supported
 if importlib.util.find_spec("ax.core.analysis_card") is not None:
