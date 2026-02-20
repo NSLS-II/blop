@@ -12,7 +12,7 @@ from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
 from ..protocols import ID_KEY, Actuator, CanRegisterSuggestions, Checkpointable, OptimizationProblem, Optimizer, Sensor
-from .utils import InferredReadable, route_suggestions, collect_optimization_metadata
+from .utils import InferredReadable, collect_optimization_metadata, route_suggestions
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +259,6 @@ def optimize(
     n_points: int = 1,
     checkpoint_interval: int | None = None,
     readable_cache: dict[str, InferredReadable] | None = None,
-    *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
     """
@@ -280,8 +279,6 @@ def optimize(
     readable_cache: dict[str, InferredReadable] | None = None
         Cache of readable objects to store the suggestions and outcomes as events.
         If None, a new cache will be created.
-    *args : Any
-        Additional positional arguments to pass to the :func:`optimize_step` plan.
     **kwargs : Any
         Additional keyword arguments to pass to the :func:`optimize_step` plan.
 
@@ -296,13 +293,15 @@ def optimize(
     readable_cache = readable_cache or {}
 
     _md = collect_optimization_metadata(optimization_problem)
-    _md.update({
-        "plan_name": "optimize",
-        "iterations": iterations,
-        "n_points": n_points,
-        "checkpoint_interval": checkpoint_interval,
-        "run_key": _OPTIMIZE_RUN_KEY,
-    })
+    _md.update(
+        {
+            "plan_name": "optimize",
+            "iterations": iterations,
+            "n_points": n_points,
+            "checkpoint_interval": checkpoint_interval,
+            "run_key": _OPTIMIZE_RUN_KEY,
+        }
+    )
 
     # Encapsulate the optimization plan in a run decorator
     @bpp.set_run_key_decorator(_OPTIMIZE_RUN_KEY)
@@ -310,7 +309,7 @@ def optimize(
     def _optimize() -> MsgGenerator[None]:
         for i in range(iterations):
             # Perform a single step of the optimization
-            yield from optimize_step(optimization_problem, n_points, readable_cache=readable_cache, *args, **kwargs)
+            yield from optimize_step(optimization_problem, n_points, readable_cache=readable_cache, **kwargs)
 
             # Possibly take a checkpoint of the optimizer state
             _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
@@ -339,10 +338,10 @@ def sample_suggestions(
         The optimization problem.
     suggestions : list[dict]
         Parameter combinations to evaluate. Can be:
-        
+
         - Optimizer suggestions (with "_id" keys from suggest())
         - Manual points (without "_id", requires CanRegisterSuggestions protocol)
-        
+
     readable_cache : dict[str, InferredReadable] | None
         Cache for storing suggestions/outcomes as events.
     **kwargs : Any
@@ -369,32 +368,39 @@ def sample_suggestions(
     """
 
     # Ensure the suggestions have an ID_KEY or register them with the optimizer
-    if not isinstance(optimization_problem.optimizer, CanRegisterSuggestions) and any(ID_KEY not in suggestion for suggestion in suggestions):
+    if not isinstance(optimization_problem.optimizer, CanRegisterSuggestions) and any(
+        ID_KEY not in suggestion for suggestion in suggestions
+    ):
         raise ValueError(
-            f"All suggestions must contain an '{ID_KEY}' key to later match with the outcomes or your optimizer must implement the "
-            f"`blop.protocols.CanRegisterSuggestions` protocol. Please review your optimizer implementation. Got suggestions: {suggestions}"
+            f"All suggestions must contain an '{ID_KEY}' key to later match with the outcomes or your optimizer must "
+            "implement the `blop.protocols.CanRegisterSuggestions` protocol. Please review your optimizer "
+            f"implementation. Got suggestions: {suggestions}"
         )
     elif isinstance(optimization_problem.optimizer, CanRegisterSuggestions):
         suggestions = optimization_problem.optimizer.register_suggestions(suggestions)
 
     # Collect the metadata for the run
     _md = collect_optimization_metadata(optimization_problem)
-    _md.update({
-        "plan_name": "sample_suggestions",
-        "suggestions": suggestions,
-        "run_key": _SAMPLE_SUGGESTIONS_RUN_KEY,
-    })
+    _md.update(
+        {
+            "plan_name": "sample_suggestions",
+            "suggestions": suggestions,
+            "run_key": _SAMPLE_SUGGESTIONS_RUN_KEY,
+        }
+    )
 
     @bpp.set_run_key_decorator(_SAMPLE_SUGGESTIONS_RUN_KEY)
     @bpp.run_decorator(md=_md)
     def _inner_sample_suggestions() -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
-        
+
         # Acquire data, evaluate, and ingest outcomes
         if optimization_problem.acquisition_plan is None:
             acquisition_plan = default_acquire
         else:
             acquisition_plan = optimization_problem.acquisition_plan
-        uid = yield from acquisition_plan(suggestions, optimization_problem.actuators, optimization_problem.sensors, **kwargs)
+        uid = yield from acquisition_plan(
+            suggestions, optimization_problem.actuators, optimization_problem.sensors, **kwargs
+        )
         outcomes = optimization_problem.evaluation_function(uid, suggestions)
         optimization_problem.optimizer.ingest(outcomes)
 
@@ -402,7 +408,7 @@ def sample_suggestions(
         yield from _read_step(uid, suggestions, outcomes, len(suggestions), readable_cache or {})
 
         return uid, suggestions, outcomes
-    
+
     return (yield from _inner_sample_suggestions())
 
 

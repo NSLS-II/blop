@@ -5,8 +5,8 @@ from .plans import (
     optimize,
     optimize_step,
     per_step_background_read,
-    sample_suggestions,
     read,
+    sample_suggestions,
     take_reading_with_background,
 )
 from .utils import get_route_index, route_suggestions

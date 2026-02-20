@@ -15,8 +15,8 @@ else:
 # ===============================
 from bluesky.utils import MsgGenerator
 
-from ..plans.utils import InferredReadable
 from ..plans import acquire_baseline, optimize, sample_suggestions
+from ..plans.utils import InferredReadable
 from ..protocols import AcquisitionPlan, Actuator, EvaluationFunction, OptimizationProblem, Sensor
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
@@ -225,7 +225,7 @@ class Agent:
         points : list[dict]
             A list of dictionaries, each containing outcomes for a trial. For suggested
             points, include the "_id" key. For external data, include DOF names and
-            objective values, and omit "_id".difference between master and main in github
+            objective values, and omit "_id".
 
         Notes
         -----
@@ -295,7 +295,9 @@ class Agent:
         suggest : Get point suggestions without running acquisition.
         ingest : Manually ingest evaluation results.
         """
-        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points, readable_cache=self._readable_cache)
+        yield from optimize(
+            self.to_optimization_problem(), iterations=iterations, n_points=n_points, readable_cache=self._readable_cache
+        )
 
     def sample_suggestions(self, suggestions: list[dict]) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
         """
@@ -319,8 +321,11 @@ class Agent:
         suggest : Get optimizer suggestions.
         optimize : Run full optimization loop.
         """
-        return (yield from sample_suggestions(self.to_optimization_problem(), suggestions=suggestions, readable_cache=self._readable_cache))
-
+        return (
+            yield from sample_suggestions(
+                self.to_optimization_problem(), suggestions=suggestions, readable_cache=self._readable_cache
+            )
+        )
 
     def plot_objective(
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any
