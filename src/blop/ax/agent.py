@@ -1,10 +1,17 @@
 import logging
 from collections.abc import Sequence
 from typing import Any
+import importlib.util
 
 from ax import Client
 from ax.analysis import ContourPlot
-from ax.core.analysis_card import AnalysisCardBase
+# ===============================
+# TODO: Remove when Python 3.10 is no longer supported
+if importlib.util.find_spec("ax.core.analysis_card") is not None:
+    from ax.core.analysis_card import AnalysisCardBase
+else:
+    from ax.analysis.analysis_card import AnalysisCardBase  # type: ignore[import-untyped]
+# ===============================
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
