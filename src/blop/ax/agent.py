@@ -299,17 +299,25 @@ class Agent:
 
     def sample_suggestions(self, suggestions: list[dict]) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
         """
-        Sample suggestions for the optimization problem.
+        Evaluate specific parameter combinations.
+
+        Acquires data for given suggestions and ingests results. Supports both
+        optimizer suggestions and manual points.
 
         Parameters
         ----------
-        suggestions: list[dict]
-            The suggestions to sample points from.
+        suggestions : list[dict]
+            Either optimizer suggestions (with "_id") or manual points (without "_id").
 
         Returns
         -------
         tuple[str, list[dict], list[dict]]
-            A tuple containing the UID, suggestions, and outcomes of the sampled points.
+            Bluesky run UID, suggestions with "_id", and outcomes.
+
+        See Also
+        --------
+        suggest : Get optimizer suggestions.
+        optimize : Run full optimization loop.
         """
         return (yield from sample_suggestions(self.to_optimization_problem(), suggestions=suggestions, readable_cache=self._readable_cache))
 

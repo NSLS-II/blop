@@ -327,19 +327,45 @@ def sample_suggestions(
     **kwargs: Any,
 ) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
     """
-    A plan to sample points for the optimization problem with given suggestions.
+    Evaluate specific parameter combinations.
+
+    This plan acquires data for given suggestions and ingests results into the optimizer.
+    Supports both optimizer-generated suggestions (with "_id") and manual points
+    (without "_id", if optimizer implements CanRegisterSuggestions).
 
     Parameters
     ----------
     optimization_problem : OptimizationProblem
-        The optimization problem to solve.
+        The optimization problem.
     suggestions : list[dict]
-        The suggestions to sample.
-    readable_cache : dict[str, InferredReadable] | None = None
-        Cache of readable objects to store the suggestions and outcomes as events.
-        If None, a new cache will be created.
+        Parameter combinations to evaluate. Can be:
+        
+        - Optimizer suggestions (with "_id" keys from suggest())
+        - Manual points (without "_id", requires CanRegisterSuggestions protocol)
+        
+    readable_cache : dict[str, InferredReadable] | None
+        Cache for storing suggestions/outcomes as events.
     **kwargs : Any
-        Additional keyword arguments to pass to the acquisition plan.
+        Additional arguments for acquisition plan.
+
+    Returns
+    -------
+    uid : str
+        Bluesky run UID.
+    suggestions : list[dict]
+        Suggestions with "_id" keys.
+    outcomes : list[dict]
+        Evaluated outcomes.
+
+    Raises
+    ------
+    ValueError
+        If suggestions lack "_id" and optimizer doesn't implement CanRegisterSuggestions.
+
+    See Also
+    --------
+    optimize_step : Standard optimizer-driven step.
+    blop.protocols.CanRegisterSuggestions : Protocol for manual suggestions.
     """
 
     # Ensure the suggestions have an ID_KEY or register them with the optimizer
