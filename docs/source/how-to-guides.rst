@@ -11,4 +11,4 @@ How-to Guides
    how-to-guides/set-dof-constraints.rst
    how-to-guides/set-outcome-constraints.rst
    how-to-guides/acquire-baseline.rst
-   how-to-guides/tiled-databroker.rst
+   how-to-guides/use-tiled.rst
