@@ -107,7 +107,6 @@ def default_acquire(
 def optimize_step(
     optimization_problem: OptimizationProblem,
     n_points: int = 1,
-    readable_cache: dict[str, InferredReadable] | None = None,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
@@ -147,9 +146,6 @@ def optimize_step(
             f"evaluation function. Got suggestions: {suggestions} and outcomes: {outcomes}"
         )
     optimizer.ingest(outcomes)
-
-    # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
-    yield from _read_step(uid, suggestions, outcomes, n_points, readable_cache or {})
 
     return uid, suggestions, outcomes
 
@@ -309,7 +305,10 @@ def optimize(
     def _optimize() -> MsgGenerator[None]:
         for i in range(iterations):
             # Perform a single step of the optimization
-            yield from optimize_step(optimization_problem, n_points, readable_cache=readable_cache, **kwargs)
+            uid, suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, **kwargs)
+
+            # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
+            yield from _read_step(uid, suggestions, outcomes, n_points, readable_cache)
 
             # Possibly take a checkpoint of the optimizer state
             _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
