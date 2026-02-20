@@ -15,7 +15,8 @@ else:
 # ===============================
 from bluesky.utils import MsgGenerator
 
-from ..plans import acquire_baseline, optimize, optimize_interactively
+from ..plans.utils import InferredReadable
+from ..plans import acquire_baseline, optimize, sample_suggestions
 from ..protocols import AcquisitionPlan, Actuator, EvaluationFunction, OptimizationProblem, Sensor
 from .dof import DOF, DOFConstraint
 from .objective import Objective, OutcomeConstraint, to_ax_objective_str
@@ -98,6 +99,7 @@ class Agent:
             checkpoint_path=checkpoint_path,
             **kwargs,
         )
+        self._readable_cache: dict[str, InferredReadable] = {}
 
     @classmethod
     def from_checkpoint(
@@ -293,35 +295,24 @@ class Agent:
         suggest : Get point suggestions without running acquisition.
         ingest : Manually ingest evaluation results.
         """
-        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points)
+        yield from optimize(self.to_optimization_problem(), iterations=iterations, n_points=n_points, readable_cache=self._readable_cache)
 
-    def optimize_interactively(self) -> MsgGenerator[None]:
+    def sample_suggestions(self, suggestions: list[dict]) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
         """
-        Run Bayesian optimization.
+        Sample suggestions for the optimization problem.
 
-        Performs iterative optimization by suggesting points, acquiring data, evaluating
-        outcomes, and updating the model. This is the main method for running optimization
-        with an agent.
+        Parameters
+        ----------
+        suggestions: list[dict]
+            The suggestions to sample points from.
 
-        Yields
-        ------
-        Msg
-            Bluesky messages for the run engine.
-
-        Notes
-        -----
-        This is the primary method for running optimization. It handles the full loop
-        of suggesting points, acquiring data, evaluating outcomes, and updating the model.
-
-        For complete examples, see :doc:`/tutorials/simple-experiment`.
-
-        See Also
-        --------
-        blop.plans.optimize : The underlying Bluesky optimization plan.
-        suggest : Get point suggestions without running acquisition.
-        ingest : Manually ingest evaluation results.
+        Returns
+        -------
+        tuple[str, list[dict], list[dict]]
+            A tuple containing the UID, suggestions, and outcomes of the sampled points.
         """
-        yield from optimize_interactively(self.to_optimization_problem())
+        return (yield from sample_suggestions(self.to_optimization_problem(), suggestions=suggestions, readable_cache=self._readable_cache))
+
 
     def plot_objective(
         self, x_dof_name: str, y_dof_name: str, objective_name: str, *args: Any, **kwargs: Any

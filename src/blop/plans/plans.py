@@ -11,14 +11,15 @@ import numpy as np
 from bluesky.protocols import Readable, Reading
 from bluesky.utils import MsgGenerator, plan
 
-from ..protocols import ID_KEY, Actuator, Checkpointable, OptimizationProblem, Optimizer, Sensor
-from .utils import InferredReadable, route_suggestions, ask_user_for_input, retrieve_suggestions_from_user, 
+from ..protocols import ID_KEY, Actuator, CanRegisterSuggestions, Checkpointable, OptimizationProblem, Optimizer, Sensor
+from .utils import InferredReadable, route_suggestions, collect_optimization_metadata
 
 logger = logging.getLogger(__name__)
 
 _BLUESKY_UID_KEY: Literal["bluesky_uid"] = "bluesky_uid"
 _SUGGESTION_IDS_KEY: Literal["suggestion_ids"] = "suggestion_ids"
 _DEFAULT_ACQUIRE_RUN_KEY: Literal["default_acquire"] = "default_acquire"
+_SAMPLE_SUGGESTIONS_RUN_KEY: Literal["sample_suggestions"] = "sample_suggestions"
 _OPTIMIZE_RUN_KEY: Literal["optimize"] = "optimize"
 
 
@@ -106,6 +107,7 @@ def default_acquire(
 def optimize_step(
     optimization_problem: OptimizationProblem,
     n_points: int = 1,
+    readable_cache: dict[str, InferredReadable] | None = None,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
@@ -145,6 +147,9 @@ def optimize_step(
             f"evaluation function. Got suggestions: {suggestions} and outcomes: {outcomes}"
         )
     optimizer.ingest(outcomes)
+
+    # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
+    yield from _read_step(uid, suggestions, outcomes, n_points, readable_cache or {})
 
     return uid, suggestions, outcomes
 
@@ -248,125 +253,12 @@ def _read_step(
 
 
 @plan
-def optimize_step_with_approval(
-    optimization_problem: OptimizationProblem,
-    n_points: int = 1,
-    n_steps: int = 1,
-    *args: Any,
-    **kwargs: Any,
-) -> MsgGenerator[None]:
-    """
-    A single step of the optimization loop with manual approval of suggestions.
-
-    Parameters
-    ----------
-    optimization_problem : OptimizationProblem
-        The optimization problem to solve.
-    n_points : int, optional
-        The number of points to suggest.
-    n_steps : int, optional
-        The number of steps before next manual approval.
-    """
-    if optimization_problem.acquisition_plan is None:
-        acquisition_plan = default_acquire
-    else:
-        acquisition_plan = optimization_problem.acquisition_plan
-    optimizer = optimization_problem.optimizer
-    actuators = optimization_problem.actuators
-    suggestions = optimizer.suggest(n_points)
-
-    approved_suggestions = []
-    for suggestion in suggestions:
-        trial_id = suggestion.get(ID_KEY)
-
-        # Auto-approve first 5 points to build initial model
-        if trial_id is not None and trial_id < 5:
-            approved_suggestions.append(suggestion)
-            continue
-
-        # Ask for manual approval for subsequent points
-        if trial_id is not None and trial_id % n_steps == 0:
-            if input(f"Do you approve this point: {suggestion}? (y/n): ").strip().lower() == "y":
-                approved_suggestions.append(suggestion)
-            else:
-                optimizer.ax_client._experiment.trials[trial_id].mark_abandoned()  # type: ignore[attr-defined]
-        else:
-            approved_suggestions.append(suggestion)
-
-    if len(approved_suggestions) == 0:
-        print("No suggestions approved. Skipping this optimization step.")
-        return
-
-    uid = yield from acquisition_plan(approved_suggestions, actuators, optimization_problem.sensors, *args, **kwargs)
-    outcomes = optimization_problem.evaluation_function(uid, approved_suggestions)
-    optimizer.ingest(outcomes)
-
-
-@plan
-def optimize_interactively(
-    optimization_problem: OptimizationProblem,
-    checkpoint_interval: int | None = None,
-    *args: Any,
-    **kwargs: Any,
-) -> MsgGenerator[None]:
-    """
-    A plan to solve the optimization problem that allows for manual iteraction with the optimization process
-    through manual approval of suggestions and the ability to manually suggest points.
-
-    Parameters
-    ----------
-    optimization_problem : OptimizationProblem
-        The optimization problem to solve.
-    checkpoint_interval : int | None, optional
-        The number of iterations between optimizer checkpoints. If None, checkpoints
-        will not be saved. Optimizer must implement the
-        :class:`blop.protocols.Checkpointable` protocol.
-    *args : Any
-        Additional positional arguments to pass to the :func:`optimize_step` plan.
-    **kwargs : Any
-        Additional keyword arguments to pass to the :func:`optimize_step` plan.
-    """
-    iterations = int(ask_user_for_input("Number of optimization iterations"))
-    n_points = int(ask_user_for_input("Number of points to suggest per iteration"))
-    while True:
-        # Ask once per cycle if user wants manual approval
-        use_manual_approval = ask_user_for_input(
-            "Would you like to manually approve suggestions?", options={"y": "Yes", "n": "No"}
-        )
-        n_steps = int(ask_user_for_input("Number of steps before next approval")) if use_manual_approval == "y" else n_points
-        for i in range(iterations):
-            if use_manual_approval == "y":
-                yield from optimize_step_with_approval(optimization_problem, n_points, n_steps, *args, **kwargs)
-            else:
-                yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
-
-            if checkpoint_interval and (i + 1) % checkpoint_interval == 0:
-                if not isinstance(optimization_problem.optimizer, Checkpointable):
-                    raise ValueError(
-                        "The optimizer is not checkpointable. Please review your optimizer configuration or implementation."
-                    )
-                optimization_problem.optimizer.checkpoint()
-        result = ask_user_for_input(
-            "What would you like to do?",
-            options={
-                "c": "continue optimization without suggestion",
-                "s": "suggest points manually",
-                "q": "quit optimization",
-            },
-        )
-        if result.lower().strip() == "s":
-            yield from retrieve_suggestions_from_user(optimization_problem, *args, **kwargs)
-        elif result.lower().strip() == "q":
-            break
-        # If result == 'c', just continue the loop (do nothing)
-
-
-@plan
 def optimize(
     optimization_problem: OptimizationProblem,
     iterations: int = 1,
     n_points: int = 1,
     checkpoint_interval: int | None = None,
+    readable_cache: dict[str, InferredReadable] | None = None,
     *args: Any,
     **kwargs: Any,
 ) -> MsgGenerator[None]:
@@ -385,6 +277,9 @@ def optimize(
         The number of iterations between optimizer checkpoints. If None, checkpoints
         will not be saved. Optimizer must implement the
         :class:`blop.protocols.Checkpointable` protocol.
+    readable_cache: dict[str, InferredReadable] | None = None
+        Cache of readable objects to store the suggestions and outcomes as events.
+        If None, a new cache will be created.
     *args : Any
         Additional positional arguments to pass to the :func:`optimize_step` plan.
     **kwargs : Any
@@ -398,46 +293,91 @@ def optimize(
     """
 
     # Cache to track readables created from suggestions and outcomes
-    readable_cache: dict[str, InferredReadable] = {}
+    readable_cache = readable_cache or {}
 
-    # Collect metadata for this optimization run
-    if hasattr(optimization_problem.evaluation_function, "__name__"):
-        evaluation_function_name = optimization_problem.evaluation_function.__name__  # type: ignore[attr-defined]
-    else:
-        evaluation_function_name = optimization_problem.evaluation_function.__class__.__name__
-    if hasattr(optimization_problem.acquisition_plan, "__name__"):
-        acquisition_plan_name = optimization_problem.acquisition_plan.__name__  # type: ignore[attr-defined]
-    else:
-        acquisition_plan_name = optimization_problem.acquisition_plan.__class__.__name__
-    _md = {
+    _md = collect_optimization_metadata(optimization_problem)
+    _md.update({
         "plan_name": "optimize",
-        "sensors": [sensor.name for sensor in optimization_problem.sensors],
-        "actuators": [actuator.name for actuator in optimization_problem.actuators],
-        "evaluation_function": evaluation_function_name,
-        "acquisition_plan": acquisition_plan_name,
-        "optimizer": optimization_problem.optimizer.__class__.__name__,
         "iterations": iterations,
         "n_points": n_points,
         "checkpoint_interval": checkpoint_interval,
         "run_key": _OPTIMIZE_RUN_KEY,
-    }
+    })
 
     # Encapsulate the optimization plan in a run decorator
     @bpp.set_run_key_decorator(_OPTIMIZE_RUN_KEY)
     @bpp.run_decorator(md=_md)
-    def _optimize():
+    def _optimize() -> MsgGenerator[None]:
         for i in range(iterations):
             # Perform a single step of the optimization
-            uid, suggestions, outcomes = yield from optimize_step(optimization_problem, n_points, *args, **kwargs)
-
-            # Read the optimization step into the Bluesky and emit events for each suggestion and outcome
-            yield from _read_step(uid, suggestions, outcomes, n_points, readable_cache)
+            yield from optimize_step(optimization_problem, n_points, readable_cache=readable_cache, *args, **kwargs)
 
             # Possibly take a checkpoint of the optimizer state
             _maybe_checkpoint(optimization_problem.optimizer, checkpoint_interval, i)
 
     # Start the optimization run
     return (yield from _optimize())
+
+
+@plan
+def sample_suggestions(
+    optimization_problem: OptimizationProblem,
+    suggestions: list[dict],
+    readable_cache: dict[str, InferredReadable] | None = None,
+    **kwargs: Any,
+) -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
+    """
+    A plan to sample points for the optimization problem with given suggestions.
+
+    Parameters
+    ----------
+    optimization_problem : OptimizationProblem
+        The optimization problem to solve.
+    suggestions : list[dict]
+        The suggestions to sample.
+    readable_cache : dict[str, InferredReadable] | None = None
+        Cache of readable objects to store the suggestions and outcomes as events.
+        If None, a new cache will be created.
+    **kwargs : Any
+        Additional keyword arguments to pass to the acquisition plan.
+    """
+
+    # Ensure the suggestions have an ID_KEY or register them with the optimizer
+    if not isinstance(optimization_problem.optimizer, CanRegisterSuggestions) and any(ID_KEY not in suggestion for suggestion in suggestions):
+        raise ValueError(
+            f"All suggestions must contain an '{ID_KEY}' key to later match with the outcomes or your optimizer must implement the "
+            f"`blop.protocols.CanRegisterSuggestions` protocol. Please review your optimizer implementation. Got suggestions: {suggestions}"
+        )
+    elif isinstance(optimization_problem.optimizer, CanRegisterSuggestions):
+        suggestions = optimization_problem.optimizer.register_suggestions(suggestions)
+
+    # Collect the metadata for the run
+    _md = collect_optimization_metadata(optimization_problem)
+    _md.update({
+        "plan_name": "sample_suggestions",
+        "suggestions": suggestions,
+        "run_key": _SAMPLE_SUGGESTIONS_RUN_KEY,
+    })
+
+    @bpp.set_run_key_decorator(_SAMPLE_SUGGESTIONS_RUN_KEY)
+    @bpp.run_decorator(md=_md)
+    def _inner_sample_suggestions() -> MsgGenerator[tuple[str, list[dict], list[dict]]]:
+        
+        # Acquire data, evaluate, and ingest outcomes
+        if optimization_problem.acquisition_plan is None:
+            acquisition_plan = default_acquire
+        else:
+            acquisition_plan = optimization_problem.acquisition_plan
+        uid = yield from acquisition_plan(suggestions, optimization_problem.actuators, optimization_problem.sensors, **kwargs)
+        outcomes = optimization_problem.evaluation_function(uid, suggestions)
+        optimization_problem.optimizer.ingest(outcomes)
+
+        # Emit a Bluesky event
+        yield from _read_step(uid, suggestions, outcomes, len(suggestions), readable_cache or {})
+
+        return uid, suggestions, outcomes
+    
+    return (yield from _inner_sample_suggestions())
 
 
 @plan
