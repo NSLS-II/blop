@@ -4,7 +4,7 @@ from typing import Any
 
 from ax import Client
 from ax.analysis import ContourPlot
-from ax.analysis.analysis_card import AnalysisCardBase
+from ax.core.analysis_card import AnalysisCardBase
 from bluesky.utils import MsgGenerator
 
 from ..plans import acquire_baseline, optimize
