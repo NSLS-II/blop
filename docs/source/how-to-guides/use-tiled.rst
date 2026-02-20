@@ -61,14 +61,14 @@
     motor_x = MovableSignal(name="motor_x")
 
 
-Tiled/Databroker with Blop
+Tiled with Blop
 ================================
-This guide explains how we can use Tiled and Databroker for data storage and retrieval with Blop.
+This guide explains how we can use Tiled for data storage and retrieval with Blop.
 
 Setting Up Data Access
 -----------------------
 
-To access the data for optimization, you have to connect to a Tiled server or Databroker instance:
+To access the data for optimization, you have to connect to a Tiled server instance:
 
 **Tiled:**
 
@@ -86,16 +86,6 @@ To access the data for optimization, you have to connect to a Tiled server or Da
     RE.subscribe(tiled_writer)
 
 
-**Databroker:**
-
-.. testcode::
-
-    from databroker import Broker
-
-    db = Broker.named("temp")
-
-For more details, see `Tiled <https://github.com/bluesky/tiled>`_ or `Databroker <https://github.com/bluesky/databroker>`_ .
-
 Data Storage with Blop's Default Plans
 ---------------------------------------
 
@@ -109,9 +99,9 @@ When a custom acquisition plan is used, how the data is stored depends on the pl
 Creating an Evaluation Function
 --------------------------------
 
-To access data from Tiled or Databroker within your evaluation function, create a class that:
+To access data from Tiled within your evaluation function, create a class that:
 
-1. Accepts a client/broker instance in its ``__init__`` method
+1. Accepts a client instance in its ``__init__`` method
 2. Implements a ``__call__`` method that retrieves data using the latest run UID
 3. Processes the data to compute optimization objectives
 
@@ -145,34 +135,6 @@ Here's an example evaluation function that reads data from Tiled for where all d
                 outcomes.append(outcome)
             return outcomes
             
-Evaluation Function with Databroker
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-Here's an equivalent evaluation function using Databroker:
-
-.. testcode::
-
-    class DatabrokerEvaluation:
-        def __init__(self, db):
-            self.db = db
-
-        def __call__(self, uid: str, suggestions: list[dict]) -> list[dict]:
-            # Access the run data as a pandas DataFrame
-            run = self.db[uid].table()
-            
-            # Extract data columns
-            motor_x_data = run["motor_x"]
-            outcomes = []
-            for suggestion in suggestions:
-                suggestion_id = suggestion["_id"]
-                motor_x = motor_x_data[suggestion_id % len(motor_x_data) + 1]
-                outcome = {
-                    "_id": suggestion["_id"],
-                    "objective1": 0.1 * motor_x,
-                }
-                outcomes.append(outcome)
-            return outcomes
-
 Configure an agent
 ------------------
 
@@ -193,18 +155,3 @@ Configure an agent
     )
     RE(agent.optimize())
     server.close()
-
-or for Databroker:
-
-.. testcode::
-    
-    RE = RunEngine()
-    RE.subscribe(db.insert)
-
-    agent_db = Agent(
-        sensors=[motor_x],
-        dofs=[dof1],
-        objectives=[objective],
-        evaluation_function=DatabrokerEvaluation(db=db),
-    )
-    RE(agent_db.optimize())

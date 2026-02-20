@@ -21,6 +21,35 @@ To install the package using the ``conda`` package manager, run the following co
 
    $ conda install -c conda-forge blop
 
+PyTorch Acceleration Options
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+By default, ``blop`` installs PyTorch with GPU support (~7GB). For environments without GPU support,
+or to reduce installation size, you can install a CPU-only version (~900MB) using ``uv``:
+
+.. code:: bash
+
+   $ pip install uv
+   $ uv pip install blop[cpu]
+
+This is particularly useful for:
+
+- Containerized deployments without GPU access
+- CI/CD pipelines
+- Development environments on laptops without NVIDIA GPUs
+- Edge computing scenarios
+
+.. note::
+
+   The CPU-only installation requires `uv <https://docs.astral.sh/uv/>`_, a fast Python package installer.
+   If you prefer to use standard ``pip``, the default installation will include GPU support.
+
+For conda users who want CPU-only PyTorch:
+
+.. code:: bash
+
+   $ conda install -c conda-forge blop pytorch cpuonly -c pytorch
+
 Running the tutorials
 ^^^^^^^^^^^^^^^^^^^^^
 

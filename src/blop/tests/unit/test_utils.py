@@ -1,7 +1,43 @@
 import numpy as np
 
-from blop.plans.utils import get_route_index, route_suggestions
+from blop.plans.utils import InferredReadable, get_route_index, route_suggestions
 from blop.protocols import ID_KEY
+
+# InferredReadable tests
+
+
+def test_inferred_readable_scalar_number():
+    r = InferredReadable("x", 1.5)
+    assert r.name == "x"
+    assert r.parent is None
+    read = r.read()
+    assert read["x"]["value"] == 1.5
+    assert "timestamp" in read["x"]
+    assert r.describe()["x"]["dtype"] == "number"
+    assert r.hints["fields"] == ["x"]
+
+
+def test_inferred_readable_scalar_string():
+    r = InferredReadable("ids", ["0"])
+    assert r.read()["ids"]["value"] == "0"
+    assert r.describe()["ids"]["dtype"] == "string"
+
+
+def test_inferred_readable_array():
+    r = InferredReadable("arr", [0.0, 0.1])
+    assert r.read()["arr"]["value"] == [0.0, 0.1]
+    assert r.describe()["arr"]["dtype"] == "array"
+
+
+def test_inferred_readable_update():
+    r = InferredReadable("x", 1.5)
+    r.update(2.0)
+    assert r.read()["x"]["value"] == 2.0
+
+    r2 = InferredReadable("arr", [0.0, 0.1])
+    r2.update(np.array([1.0, 2.0]))
+    assert list(r2.read()["arr"]["value"]) == [1.0, 2.0]
+
 
 # get_route_index tests
 
