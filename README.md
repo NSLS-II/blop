@@ -2,6 +2,7 @@
 
 
 [![Testing](https://github.com/NSLS-II/blop/actions/workflows/ci.yml/badge.svg)](https://github.com/NSLS-II/blop/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/NSLS-II/blop/branch/main/graph/badge.svg)](https://codecov.io/gh/NSLS-II/blop)
 [![PyPI](https://img.shields.io/pypi/v/blop.svg)](https://pypi.python.org/pypi/blop)
 [![Conda](https://img.shields.io/conda/vn/conda-forge/blop.svg)](https://anaconda.org/conda-forge/blop)
 
