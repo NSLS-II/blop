@@ -1,7 +1,8 @@
 FROM almalinux:9
 
 # Install basic dependencies
-RUN dnf install -y --allowerasing \
+RUN dnf upgrade -y ca-certificates \
+    && dnf install -y --allowerasing \
     git \
     curl \
     wget \
@@ -15,8 +16,8 @@ RUN dnf install -y --allowerasing \
 # Install OpenCode
 RUN curl -fsSL https://opencode.ai/install | bash
 
-# Install Pixi
-RUN curl -fsSL https://pixi.sh/install.sh | sh
+# Install Pixi with the emSign CA security fix
+RUN curl -fsSL https://pixi.sh/install.sh | PIXI_VERSION=0.82.1 sh
 
 # Add Pixi to PATH
 ENV PATH="/root/.pixi/bin:${PATH}"
@@ -25,4 +26,4 @@ ENV PATH="/root/.pixi/bin:${PATH}"
 WORKDIR /workspace
 
 # Verify installations
-RUN pixi --version || echo "Pixi installation will be verified on container start"
+RUN pixi --version

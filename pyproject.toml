@@ -21,7 +21,7 @@ maintainers = [
   { name = "Roman Chernikov", email = "rcherniko@bnl.gov" },
 ]
 requires-python = ">=3.11"
-dependencies = ["bluesky>=1.14.2", "networkx>=3", "numpy", "rich>=13"]
+dependencies = ["bluesky>=1.14.2", "certifi>=2026.10.19", "networkx>=3", "numpy", "rich>=13"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "License :: OSI Approved :: BSD License",
@@ -40,6 +40,7 @@ scipy = ["scipy>=1.2.0"]
 xopt = ["xopt>3.0.0"]
 all = ["blop[ax,queueserver,scipy,xopt]"]
 dev = [
+  "pip>=26.2.2",
   "pytest",
   "pytest-cov",
   "ipykernel",
@@ -48,6 +49,9 @@ dev = [
   "pre-commit",
   "coverage",
   "pyright",
+  "uv>=0.13.4",
+  # pre-commit seeds its hook environments with virtualenv's bundled pip.
+  "virtualenv>=21.14.12",
   "blop[all]",
 ]
 cpu = [
@@ -114,6 +118,9 @@ ignore = [
   "src/blop/bayesian/",           # TODO: Remove this and fix type errors
   "src/blop/ax/qserver_agent.py", # TODO: Remove this and fix type errors
 ]
+
+[tool.uv]
+required-version = ">=0.13.4"
 
 # Configure PyTorch CPU-only installation when [cpu] extra is requested
 # This requires uv (https://docs.astral.sh/uv/)
