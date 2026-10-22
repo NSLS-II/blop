@@ -21,7 +21,7 @@ maintainers = [
   { name = "Roman Chernikov", email = "rcherniko@bnl.gov" },
 ]
 requires-python = ">=3.11"
-dependencies = ["bluesky>=1.14.2", "certifi>=2026.10.19", "networkx>=3", "numpy", "rich>=13"]
+dependencies = ["bluesky>=1.14.2", "networkx>=3", "numpy", "rich>=13"]
 classifiers = [
   "Development Status :: 4 - Beta",
   "License :: OSI Approved :: BSD License",
@@ -50,7 +50,6 @@ dev = [
   "coverage",
   "pyright",
   "uv>=0.13.4",
-  # pre-commit seeds its hook environments with virtualenv's bundled pip.
   "virtualenv>=21.14.12",
   "blop[all]",
 ]
