@@ -1,4 +1,4 @@
-FROM ghcr.io/prefix-dev/pixi:latest
+FROM ghcr.io/prefix-dev/pixi:0.82.1
 
 WORKDIR /app
 

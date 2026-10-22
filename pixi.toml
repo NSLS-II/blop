@@ -7,8 +7,10 @@ channels = ["conda-forge"]
 name = "blop"
 platforms = ["linux-64", "osx-arm64"]
 version = "1.0.0"
+requires-pixi = ">=0.82.1"
 
 [dependencies]
+ca-certificates = ">=2026.10.19"
 python = ">=3.11.0,<3.14"
 
 [feature.dev.dependencies]

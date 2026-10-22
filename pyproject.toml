@@ -40,6 +40,7 @@ scipy = ["scipy>=1.2.0"]
 xopt = ["xopt>3.0.0"]
 all = ["blop[ax,queueserver,scipy,xopt]"]
 dev = [
+  "pip>=26.2.2",
   "pytest",
   "pytest-cov",
   "ipykernel",
@@ -48,6 +49,8 @@ dev = [
   "pre-commit",
   "coverage",
   "pyright",
+  "uv>=0.13.4",
+  "virtualenv>=21.14.12",
   "blop[all]",
 ]
 cpu = [
@@ -114,6 +117,9 @@ ignore = [
   "src/blop/bayesian/",           # TODO: Remove this and fix type errors
   "src/blop/ax/qserver_agent.py", # TODO: Remove this and fix type errors
 ]
+
+[tool.uv]
+required-version = ">=0.13.4"
 
 # Configure PyTorch CPU-only installation when [cpu] extra is requested
 # This requires uv (https://docs.astral.sh/uv/)
