@@ -20,16 +20,6 @@ or with conda:
 conda install -c conda-forge blop
 ```
 
-## Development
-
-A devcontainer is available with OpenCode and Pixi pre-installed. To use it:
-
-```bash
-./launch-devcontainer.sh
-```
-
-Or open in VS Code and select "Reopen in Container".
-
 ## Citation
 
 If you use this package in your work, please cite the following paper:
