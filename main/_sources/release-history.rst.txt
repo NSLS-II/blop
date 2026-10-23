@@ -2,14 +2,50 @@
 Release History
 ===============
 
-Unreleased
-----------
+v1.2.0 (2026-10-23)
+-------------------
+
+This is the final feature release of Blop. Development continues in
+`bluesky-adaptive <https://github.com/bluesky/bluesky-adaptive>`_ 1.0.
+
+Features
+........
+* **Single-run optimization (experimental)**: ``blop.plans.optimize_in_run`` runs the optimization
+  loop inside one Bluesky run, using ``blop.plan_stubs.list_scan_in_run`` for acquisition
+  (`#353 <https://github.com/bluesky/blop/pull/353>`_).
+* ``optimize`` and ``Agent.optimize`` accept ``iterations=None`` to run until the optimizer's
+  stopping criterion is met (`#364 <https://github.com/bluesky/blop/pull/364>`_).
+* ``default_acquire`` records suggestion IDs in scan order as ``"blop_acquisition_order"`` start
+  metadata. Use it to match acquired data to suggestions
+  (`#365 <https://github.com/bluesky/blop/pull/365>`_).
+* ``optimize`` checkpoints after each iteration, so a deferred pause stops between iterations
+  (`#378 <https://github.com/bluesky/blop/pull/378>`_).
+
+Breaking Changes
+................
+* Optimization runs record one event per suggestion, with an ``iteration`` field, instead of one
+  event per iteration with array values. ``read_step`` no longer takes ``n_points``
+  (`#376 <https://github.com/bluesky/blop/pull/376>`_).
 
 Compatibility Notes
 ...................
-* ``EvaluationFunction`` and ``AcquisitionPlan`` are now generic over the uid type, allowing
-  evaluators to accept richer backend-specific objects without requiring them to be hashable
-  (`#369 <https://github.com/bluesky/blop/issues/369>`_).
+* ``EvaluationFunction`` and ``AcquisitionPlan`` are generic over the uid type
+  (`#370 <https://github.com/bluesky/blop/pull/370>`_).
+* Suggestion ``"_id"`` values must be unique and hashable, and evaluation functions must return
+  exactly one outcome per suggestion ID (`#353 <https://github.com/bluesky/blop/pull/353>`_).
+
+Bug Fixes
+.........
+* String fields such as suggestion IDs are no longer truncated to the length of their first value
+  (`#363 <https://github.com/bluesky/blop/pull/363>`_).
+* ``default_acquire`` accepts ``md``, which the Queue Server runner requires
+  (`#359 <https://github.com/bluesky/blop/pull/359>`_).
+
+Dependency Changes
+..................
+* New ``scipy`` extra, included in ``all`` (`#374 <https://github.com/bluesky/blop/pull/374>`_).
+
+`Full Changelog <https://github.com/bluesky/blop/compare/v1.1.0...v1.2.0>`__
 
 v1.1.0 (2026-08-26)
 -------------------
